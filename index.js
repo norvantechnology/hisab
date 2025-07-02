@@ -14,7 +14,9 @@ import {
   contactRoutes,
   paymentRoutes,
   bankTransferRoutes,
-  productRoute
+  productRoute,
+  purchaseRoute,
+  stockCategoryRoute
 } from "./src/routes/index.js";
 
 dotenv.config();
@@ -41,6 +43,8 @@ app.use("/api/contact", contactRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/bankTransfer", bankTransferRoutes);
 app.use("/api/product", productRoute);
+app.use("/api/purchase", purchaseRoute);
+app.use("/api/stockCategory", stockCategoryRoute);
 
 
 

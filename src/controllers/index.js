@@ -11,6 +11,8 @@ import * as contactController from "./contactController.js";
 import * as paymentController from "./paymentController.js";
 import * as bankTransferController from "./bankTransferController.js";
 import * as productController from "./productController.js";
+import * as purchaseController from "./purchaseController.js";
+import * as stockCategoryController from "./stockCategoryController.js";
 
 
 export {
@@ -26,5 +28,7 @@ export {
   contactController,
   paymentController,
   bankTransferController,
-  productController
+  productController,
+  purchaseController,
+  stockCategoryController
 };

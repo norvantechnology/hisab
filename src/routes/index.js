@@ -11,6 +11,8 @@ import contactRoutes from "./contactRoutes.js";
 import paymentRoutes from "./paymentRoutes.js";
 import bankTransferRoutes from "./bankTransferRoutes.js";
 import productRoute from "./productRoute.js";
+import purchaseRoute from "./purchaseRoute.js";
+import stockCategoryRoute from "./stockCategoryRoute.js";
 
 
 export {
@@ -26,5 +28,7 @@ export {
   contactRoutes,
   paymentRoutes,
   bankTransferRoutes,
-  productRoute
+  productRoute,
+  purchaseRoute,
+  stockCategoryRoute
 };
