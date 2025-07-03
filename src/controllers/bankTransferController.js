@@ -151,11 +151,16 @@ export async function getBankTransferDetails(req, res) {
 }
 
 export async function updateBankTransfer(req, res) {
-  const { id, date, amount, description, referenceNumber } = req.body;
+  const { id, date, amount, description, referenceNumber, fromBankId, toBankId } = req.body;
   const { companyId, id: currentUserId } = req.currentUser || {};
 
   if (!companyId || !currentUserId) {
     return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  // Validate if trying to change bank accounts
+  if (fromBankId && toBankId && fromBankId === toBankId) {
+    return errorResponse(res, "Cannot transfer to the same account", 400);
   }
 
   const client = await pool.connect();
@@ -181,46 +186,120 @@ export async function updateBankTransfer(req, res) {
     const oldTransfer = transferQuery.rows[0];
     const oldAmount = parseFloat(oldTransfer.amount);
     const newAmount = amount ? parseFloat(amount) : oldAmount;
+    const newFromBankId = fromBankId || oldTransfer.fromBankId;
+    const newToBankId = toBankId || oldTransfer.toBankId;
 
-    // 2. If amount changed, update bank balances
-    if (amount && newAmount !== oldAmount) {
-      const difference = newAmount - oldAmount;
+    // 2. Check if bank accounts are being changed
+    const changingBanks = (fromBankId && fromBankId !== oldTransfer.fromBankId) || 
+                         (toBankId && toBankId !== oldTransfer.toBankId);
 
-      // Check if enough balance in from account
-      const fromBankBalance = parseFloat(oldTransfer.fromBankBalance);
-      if (fromBankBalance < difference) {
+    if (changingBanks) {
+      // Verify new bank accounts exist and are active
+      var banksQuery = await client.query(
+        `SELECT id, "currentBalance" FROM hisab."bankAccounts" 
+         WHERE id IN ($1, $2) AND "companyId" = $3 AND "isActive" = TRUE
+         FOR UPDATE`,
+        [newFromBankId, newToBankId, companyId]
+      );
+
+      if (banksQuery.rows.length !== 2) {
         await client.query("ROLLBACK");
-        return errorResponse(res, "Insufficient balance in source account", 400);
+        return errorResponse(res, "One or both new bank accounts not found", 404);
       }
-
-      // Update from bank balance
-      await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" - $1
-         WHERE id = $2`,
-        [difference, oldTransfer.fromBankId]
-      );
-
-      // Update to bank balance
-      await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" + $1
-         WHERE id = $2`,
-        [difference, oldTransfer.toBankId]
-      );
     }
 
-    // 3. Update transfer record
+    // 3. Handle amount changes and/or bank account changes
+    if (amount || changingBanks) {
+      const difference = newAmount - oldAmount;
+
+      // If changing banks, we need to fully reverse the old transfer and apply the new one
+      if (changingBanks) {
+        // Reverse the old transfer first
+        // Add back to original from account
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" + $1
+           WHERE id = $2`,
+          [oldAmount, oldTransfer.fromBankId]
+        );
+
+        // Subtract from original to account
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" - $1
+           WHERE id = $2`,
+          [oldAmount, oldTransfer.toBankId]
+        );
+
+        // Then apply the new transfer
+        // Check if enough balance in new from account
+        const newFromBank = (changingBanks && fromBankId) 
+          ? banksQuery.rows.find(b => b.id === newFromBankId)
+          : { currentBalance: oldTransfer.fromBankBalance };
+          
+        const newFromBankBalance = parseFloat(newFromBank.currentBalance);
+        if (newFromBankBalance < newAmount) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, "Insufficient balance in new source account", 400);
+        }
+
+        // Deduct from new from account
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" - $1
+           WHERE id = $2`,
+          [newAmount, newFromBankId]
+        );
+
+        // Add to new to account
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" + $1
+           WHERE id = $2`,
+          [newAmount, newToBankId]
+        );
+      } else if (amount) {
+        // Only amount is changing, adjust the difference
+        // Check if enough balance in from account
+        const fromBankBalance = parseFloat(oldTransfer.fromBankBalance);
+        if (fromBankBalance < difference) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, "Insufficient balance in source account", 400);
+        }
+
+        // Update from bank balance
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" - $1
+           WHERE id = $2`,
+          [difference, oldTransfer.fromBankId]
+        );
+
+        // Update to bank balance
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" + $1
+           WHERE id = $2`,
+          [difference, oldTransfer.toBankId]
+        );
+      }
+    }
+
+    // 4. Update transfer record
     const updateResult = await client.query(
       `UPDATE hisab."bankTransfers" SET
-        "date" = $1,
-        "amount" = $2,
-        "description" = $3,
-        "referenceNumber" = $4,
+        "fromBankId" = $1,
+        "toBankId" = $2,
+        "date" = $3,
+        "amount" = $4,
+        "description" = $5,
+        "referenceNumber" = $6,
         "updatedAt" = NOW()
-       WHERE id = $5 AND "companyId" = $6
+       WHERE id = $7 AND "companyId" = $8
        RETURNING *`,
       [
+        newFromBankId,
+        newToBankId,
         date || oldTransfer.date,
         newAmount,
         description || oldTransfer.description,
