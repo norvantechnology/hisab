@@ -16,7 +16,9 @@ import {
   bankTransferRoutes,
   productRoute,
   purchaseRoute,
-  stockCategoryRoute
+  stockCategoryRoute,
+  taxCategoryRoutes,
+  unitOfMeasurementsRoutes
 } from "./src/routes/index.js";
 
 dotenv.config();
@@ -45,6 +47,9 @@ app.use("/api/bankTransfer", bankTransferRoutes);
 app.use("/api/product", productRoute);
 app.use("/api/purchase", purchaseRoute);
 app.use("/api/stockCategory", stockCategoryRoute);
+app.use("/api/taxCategory", taxCategoryRoutes);
+app.use("/api/unitOfMeasurements", unitOfMeasurementsRoutes);
+
 
 
 

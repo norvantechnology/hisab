@@ -8,7 +8,6 @@ CREATE TABLE IF NOT EXISTS hisab."products" (
   "hsnCode" TEXT,
   "description" TEXT,
   "defaultInvoiceDescription" TEXT,
-  "categoryId" INTEGER,
   "isInventoryTracked" BOOLEAN DEFAULT FALSE,
   "isSerialized" BOOLEAN DEFAULT FALSE,
   "unitOfMeasurementId" INTEGER REFERENCES hisab."unitOfMeasurements"(id),

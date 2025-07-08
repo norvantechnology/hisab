@@ -13,7 +13,8 @@ import * as bankTransferController from "./bankTransferController.js";
 import * as productController from "./productController.js";
 import * as purchaseController from "./purchaseController.js";
 import * as stockCategoryController from "./stockCategoryController.js";
-
+import * as taxCategoryController from "./taxCategoryController.js";
+import * as unitOfMeasurements from "./unitOfMeasurements.js";
 
 export {
   authController,
@@ -30,5 +31,7 @@ export {
   bankTransferController,
   productController,
   purchaseController,
-  stockCategoryController
+  stockCategoryController,
+  taxCategoryController,
+  unitOfMeasurements
 };

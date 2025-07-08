@@ -12,5 +12,5 @@ CREATE TABLE IF NOT EXISTS hisab."serialNumbers" (
   FOREIGN KEY ("companyId", "productId") 
     REFERENCES hisab."products"("companyId", "id") ON DELETE CASCADE,
   
-  UNIQUE ("companyId", "serialNumber")
+  UNIQUE ("companyId", "productId", "serialNumber")  -- Changed to include productId
 );

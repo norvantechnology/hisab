@@ -13,6 +13,8 @@ import bankTransferRoutes from "./bankTransferRoutes.js";
 import productRoute from "./productRoute.js";
 import purchaseRoute from "./purchaseRoute.js";
 import stockCategoryRoute from "./stockCategoryRoute.js";
+import taxCategoryRoutes from "./taxCategoryRoutes.js";
+import unitOfMeasurementsRoutes from "./unitOfMeasurementsRoutes.js";
 
 
 export {
@@ -30,5 +32,7 @@ export {
   bankTransferRoutes,
   productRoute,
   purchaseRoute,
-  stockCategoryRoute
+  stockCategoryRoute,
+  taxCategoryRoutes,
+  unitOfMeasurementsRoutes
 };

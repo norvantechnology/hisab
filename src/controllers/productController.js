@@ -13,7 +13,6 @@ export async function createProduct(req, res) {
         isSerialized,
         unitOfMeasurementId,
         stockCategoryId,
-        categoryId,
         rate,
         isTaxInclusive,
         discount,
@@ -84,26 +83,13 @@ export async function createProduct(req, res) {
             }
         }
 
-        if (categoryId) {
-            const categoryCheck = await client.query(
-                `SELECT id FROM hisab."productCategories" 
-                 WHERE id = $1 AND "companyId" = $2`,
-                [categoryId, companyId]
-            );
-
-            if (categoryCheck.rows.length === 0) {
-                await client.query("ROLLBACK");
-                return errorResponse(res, "Product category not found or invalid for this company", 404);
-            }
-        }
-
         const productQuery = `
             INSERT INTO hisab."products" (
                 "companyId", "userId", "name", "itemType", "itemCode", "hsnCode", 
                 "description", "defaultInvoiceDescription", "isInventoryTracked", 
-                "isSerialized", "unitOfMeasurementId", "stockCategoryId", "categoryId",
+                "isSerialized", "unitOfMeasurementId", "stockCategoryId",
                 "rate", "isTaxInclusive", "discount", "taxCategoryId", "openingStockQty", 
-                "openingStockCostPerQty"
+                "currentStock", "openingStockCostPerQty"
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
             RETURNING *
         `;
@@ -119,14 +105,14 @@ export async function createProduct(req, res) {
             defaultInvoiceDescription,
             isInventoryTracked || false,
             isSerialized || false,
-            unitOfMeasurementId || null, 
+            unitOfMeasurementId || null,
             stockCategoryId || null,
-            categoryId || null,
             rate || 0,
             isTaxInclusive || false,
             discount || 0,
-            taxCategoryId || null, 
+            taxCategoryId || null,
             openingStockQty || 0,
+            openingStockQty || 0, // Set currentStock same as openingStockQty
             openingStockCostPerQty || 0
         ];
 
@@ -182,13 +168,13 @@ export async function updateProduct(req, res) {
     const updateData = req.body;
     const userId = req.currentUser?.id;
     const companyId = req.currentUser?.companyId;
-    const { productId } = updateData;
+    const { id } = updateData;
 
     if (!userId || !companyId) {
         return errorResponse(res, "Unauthorized access", 401);
     }
 
-    if (!productId) {
+    if (!id) {
         return errorResponse(res, "Product ID is required", 400);
     }
 
@@ -200,7 +186,7 @@ export async function updateProduct(req, res) {
         const productCheck = await client.query(
             `SELECT id FROM hisab."products" 
              WHERE id = $1 AND "companyId" = $2`,
-            [productId, companyId]
+            [id, companyId]
         );
 
         if (productCheck.rows.length === 0) {
@@ -208,7 +194,7 @@ export async function updateProduct(req, res) {
             return errorResponse(res, "Product not found or unauthorized", 404);
         }
 
-        if (updateData.unitOfMeasurementId !== undefined) {
+        if (updateData.unitOfMeasurementId) {
             const uomCheck = await client.query(
                 `SELECT id FROM hisab."unitOfMeasurements" WHERE id = $1`,
                 [updateData.unitOfMeasurementId]
@@ -219,7 +205,7 @@ export async function updateProduct(req, res) {
             }
         }
 
-        if (updateData.taxCategoryId !== undefined) {
+        if (updateData.taxCategoryId) {
             const taxCheck = await client.query(
                 `SELECT id FROM hisab."taxCategories" WHERE id = $1`,
                 [updateData.taxCategoryId]
@@ -230,7 +216,7 @@ export async function updateProduct(req, res) {
             }
         }
 
-        if (updateData.stockCategoryId !== undefined) {
+        if (updateData.stockCategoryId) {
             const stockCatCheck = await client.query(
                 `SELECT id FROM hisab."stockCategories" 
                  WHERE id = $1 AND "companyId" = $2`,
@@ -242,20 +228,6 @@ export async function updateProduct(req, res) {
             }
         }
 
-        if (updateData.categoryId !== undefined) {
-            if (updateData.categoryId) {
-                const categoryCheck = await client.query(
-                    `SELECT id FROM hisab."productCategories" 
-                     WHERE id = $1 AND "companyId" = $2`,
-                    [updateData.categoryId, companyId]
-                );
-                if (categoryCheck.rows.length === 0) {
-                    await client.query("ROLLBACK");
-                    return errorResponse(res, "Product category not found or invalid for this company", 404);
-                }
-            }
-        }
-
         const updateFields = [];
         const updateValues = [];
         let paramCount = 1;
@@ -263,17 +235,28 @@ export async function updateProduct(req, res) {
         const validFields = [
             "name", "itemType", "itemCode", "hsnCode", "description",
             "defaultInvoiceDescription", "isInventoryTracked", "isSerialized",
-            "unitOfMeasurementId", "stockCategoryId", "categoryId", "rate", 
-            "isTaxInclusive", "discount", "taxCategoryId", "openingStockQty", 
-            "openingStockCostPerQty"
+            "unitOfMeasurementId", "stockCategoryId", "rate",
+            "isTaxInclusive", "discount", "taxCategoryId", "openingStockQty",
+            "currentStock", "openingStockCostPerQty"
         ];
 
         for (const field of validFields) {
             if (updateData[field] !== undefined) {
                 updateFields.push(`"${field}" = $${paramCount}`);
-                updateValues.push(updateData[field]);
+                // Convert empty string to NULL for integer fields
+                updateValues.push(
+                    (field === 'taxCategoryId' || field === 'unitOfMeasurementId' || field === 'stockCategoryId') &&
+                        updateData[field] === "" ? null : updateData[field]
+                );
                 paramCount++;
             }
+        }
+
+        // Special handling for currentStock when openingStockQty is updated
+        if (updateData.openingStockQty !== undefined && updateData.currentStock === undefined) {
+            updateFields.push(`"currentStock" = $${paramCount}`);
+            updateValues.push(updateData.openingStockQty);
+            paramCount++;
         }
 
         updateFields.push(`"updatedAt" = CURRENT_TIMESTAMP`);
@@ -293,7 +276,7 @@ export async function updateProduct(req, res) {
             RETURNING *
         `;
 
-        updateValues.push(productId, companyId);
+        updateValues.push(id, companyId);
         const result = await client.query(updateQuery, updateValues);
         const updatedProduct = result.rows[0];
 
@@ -301,7 +284,7 @@ export async function updateProduct(req, res) {
             await client.query(
                 `DELETE FROM hisab."serialNumbers" 
                  WHERE "productId" = $1 AND "companyId" = $2`,
-                [productId, companyId]
+                [id, companyId]
             );
 
             for (const serial of updateData.serialNumbers) {
@@ -309,14 +292,14 @@ export async function updateProduct(req, res) {
                     `INSERT INTO hisab."serialNumbers" (
                         "companyId", "productId", "serialNumber", "status"
                     ) VALUES ($1, $2, $3, 'in_stock')`,
-                    [companyId, productId, serial]
+                    [companyId, id, serial]
                 );
             }
         }
 
         await client.query("COMMIT");
 
-        const fullProduct = await getProductDetails(client, companyId, productId);
+        const fullProduct = await getProductDetails(client, companyId, id);
 
         return successResponse(res, {
             message: "Product updated successfully",
@@ -333,7 +316,7 @@ export async function updateProduct(req, res) {
 }
 
 export async function deleteProduct(req, res) {
-    const { productId } = req.query;
+    const { id } = req.query;
     const userId = req.currentUser?.id;
     const companyId = req.currentUser?.companyId;
 
@@ -341,7 +324,7 @@ export async function deleteProduct(req, res) {
         return errorResponse(res, "Unauthorized access", 401);
     }
 
-    if (!productId) {
+    if (!id) {
         return errorResponse(res, "Product ID is required", 400);
     }
 
@@ -353,7 +336,7 @@ export async function deleteProduct(req, res) {
         const productCheck = await client.query(
             `SELECT id FROM hisab."products" 
              WHERE id = $1 AND "companyId" = $2`,
-            [productId, companyId]
+            [id, companyId]
         );
 
         if (productCheck.rows.length === 0) {
@@ -366,7 +349,7 @@ export async function deleteProduct(req, res) {
              SET "deletedAt" = CURRENT_TIMESTAMP
              WHERE id = $1 AND "companyId" = $2
              RETURNING *`,
-            [productId, companyId]
+            [id, companyId]
         );
 
         await client.query("COMMIT");
@@ -386,21 +369,21 @@ export async function deleteProduct(req, res) {
 }
 
 export async function getProduct(req, res) {
-    const { productId } = req.query;
+    const { id } = req.query;
     const companyId = req.currentUser?.companyId;
 
     if (!companyId) {
         return errorResponse(res, "Unauthorized access", 401);
     }
 
-    if (!productId) {
+    if (!id) {
         return errorResponse(res, "Product ID is required", 400);
     }
 
     const client = await pool.connect();
 
     try {
-        const fullProduct = await getProductDetails(client, companyId, productId);
+        const fullProduct = await getProductDetails(client, companyId, id);
 
         if (!fullProduct) {
             return errorResponse(res, "Product not found or unauthorized", 404);
@@ -420,7 +403,17 @@ export async function getProduct(req, res) {
 
 export async function listProducts(req, res) {
     const companyId = req.currentUser?.companyId;
-    const { search, categoryId, stockCategoryId, page = 1, limit = 20 } = req.query;
+    const {
+        search,
+        stockCategoryId,
+        itemType,
+        taxCategoryId,
+        unitOfMeasurementId,
+        itemCode,
+        hsnCode,
+        page = 1,
+        limit = 20
+    } = req.query;
 
     if (!companyId) {
         return errorResponse(res, "Unauthorized access", 401);
@@ -434,18 +427,14 @@ export async function listProducts(req, res) {
                 p.id, p.name, p."itemCode", p."hsnCode", p.rate, 
                 p."isInventoryTracked", p."currentStock", p."isSerialized",
                 p."createdAt", p."updatedAt", p."itemType",
-                uom.name as "unitOfMeasurementName",
-                sc.name as "stockCategoryName",
-                pc.name as "categoryName",
+                uom.id as "unitOfMeasurementId", uom.name as "unitOfMeasurementName",
+                sc.id as "stockCategoryId", sc.name as "stockCategoryName",
                 tc.id as "taxCategoryId", tc.name as "taxCategoryName", tc.rate as "taxRate"
             FROM hisab."products" p
             LEFT JOIN hisab."unitOfMeasurements" uom ON p."unitOfMeasurementId" = uom.id
             LEFT JOIN hisab."stockCategories" sc ON 
                 p."stockCategoryId" = sc.id AND 
                 p."companyId" = sc."companyId"
-            LEFT JOIN hisab."productCategories" pc ON 
-                p."categoryId" = pc.id AND 
-                p."companyId" = pc."companyId"
             LEFT JOIN hisab."taxCategories" tc ON p."taxCategoryId" = tc.id
             WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
         `;
@@ -454,21 +443,81 @@ export async function listProducts(req, res) {
         let paramCount = 2;
 
         if (search) {
-            query += ` AND (p.name ILIKE $${paramCount} OR p."itemCode" ILIKE $${paramCount})`;
+            query += ` AND (p.name ILIKE $${paramCount} OR p."itemCode" ILIKE $${paramCount} OR p."hsnCode" ILIKE $${paramCount})`;
             queryParams.push(`%${search}%`);
             paramCount++;
         }
 
-        if (categoryId) {
-            query += ` AND p."categoryId" = $${paramCount}`;
-            queryParams.push(categoryId);
-            paramCount++;
+        if (stockCategoryId) {
+            if (Array.isArray(stockCategoryId)) {
+                query += ` AND p."stockCategoryId" = ANY($${paramCount})`;
+                queryParams.push(stockCategoryId);
+                paramCount++;
+            } else {
+                query += ` AND p."stockCategoryId" = $${paramCount}`;
+                queryParams.push(stockCategoryId);
+                paramCount++;
+            }
         }
 
-        if (stockCategoryId) {
-            query += ` AND p."stockCategoryId" = $${paramCount}`;
-            queryParams.push(stockCategoryId);
-            paramCount++;
+        if (itemType) {
+            if (Array.isArray(itemType)) {
+                query += ` AND p."itemType" = ANY($${paramCount})`;
+                queryParams.push(itemType);
+                paramCount++;
+            } else {
+                query += ` AND p."itemType" = $${paramCount}`;
+                queryParams.push(itemType);
+                paramCount++;
+            }
+        }
+
+        if (taxCategoryId) {
+            if (Array.isArray(taxCategoryId)) {
+                query += ` AND p."taxCategoryId" = ANY($${paramCount})`;
+                queryParams.push(taxCategoryId);
+                paramCount++;
+            } else {
+                query += ` AND p."taxCategoryId" = $${paramCount}`;
+                queryParams.push(taxCategoryId);
+                paramCount++;
+            }
+        }
+
+        if (unitOfMeasurementId) {
+            if (Array.isArray(unitOfMeasurementId)) {
+                query += ` AND p."unitOfMeasurementId" = ANY($${paramCount})`;
+                queryParams.push(unitOfMeasurementId);
+                paramCount++;
+            } else {
+                query += ` AND p."unitOfMeasurementId" = $${paramCount}`;
+                queryParams.push(unitOfMeasurementId);
+                paramCount++;
+            }
+        }
+
+        if (itemCode) {
+            if (Array.isArray(itemCode)) {
+                query += ` AND p."itemCode" = ANY($${paramCount})`;
+                queryParams.push(itemCode);
+                paramCount++;
+            } else {
+                query += ` AND p."itemCode" = $${paramCount}`;
+                queryParams.push(itemCode);
+                paramCount++;
+            }
+        }
+
+        if (hsnCode) {
+            if (Array.isArray(hsnCode)) {
+                query += ` AND p."hsnCode" = ANY($${paramCount})`;
+                queryParams.push(hsnCode);
+                paramCount++;
+            } else {
+                query += ` AND p."hsnCode" = $${paramCount}`;
+                queryParams.push(hsnCode);
+                paramCount++;
+            }
         }
 
         query += `
@@ -481,27 +530,92 @@ export async function listProducts(req, res) {
 
         let countQuery = `
             SELECT COUNT(*) FROM hisab."products" p
+            LEFT JOIN hisab."unitOfMeasurements" uom ON p."unitOfMeasurementId" = uom.id
+            LEFT JOIN hisab."stockCategories" sc ON 
+                p."stockCategoryId" = sc.id AND 
+                p."companyId" = sc."companyId"
+            LEFT JOIN hisab."taxCategories" tc ON p."taxCategoryId" = tc.id
             WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
         `;
         const countParams = [companyId];
         paramCount = 2;
 
         if (search) {
-            countQuery += ` AND (p.name ILIKE $${paramCount} OR p."itemCode" ILIKE $${paramCount})`;
+            countQuery += ` AND (p.name ILIKE $${paramCount} OR p."itemCode" ILIKE $${paramCount} OR p."hsnCode" ILIKE $${paramCount})`;
             countParams.push(`%${search}%`);
             paramCount++;
         }
 
-        if (categoryId) {
-            countQuery += ` AND p."categoryId" = $${paramCount}`;
-            countParams.push(categoryId);
-            paramCount++;
+        if (stockCategoryId) {
+            if (Array.isArray(stockCategoryId)) {
+                countQuery += ` AND p."stockCategoryId" = ANY($${paramCount})`;
+                countParams.push(stockCategoryId);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."stockCategoryId" = $${paramCount}`;
+                countParams.push(stockCategoryId);
+                paramCount++;
+            }
         }
 
-        if (stockCategoryId) {
-            countQuery += ` AND p."stockCategoryId" = $${paramCount}`;
-            countParams.push(stockCategoryId);
-            paramCount++;
+        if (itemType) {
+            if (Array.isArray(itemType)) {
+                countQuery += ` AND p."itemType" = ANY($${paramCount})`;
+                countParams.push(itemType);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."itemType" = $${paramCount}`;
+                countParams.push(itemType);
+                paramCount++;
+            }
+        }
+
+        if (taxCategoryId) {
+            if (Array.isArray(taxCategoryId)) {
+                countQuery += ` AND p."taxCategoryId" = ANY($${paramCount})`;
+                countParams.push(taxCategoryId);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."taxCategoryId" = $${paramCount}`;
+                countParams.push(taxCategoryId);
+                paramCount++;
+            }
+        }
+
+        if (unitOfMeasurementId) {
+            if (Array.isArray(unitOfMeasurementId)) {
+                countQuery += ` AND p."unitOfMeasurementId" = ANY($${paramCount})`;
+                countParams.push(unitOfMeasurementId);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."unitOfMeasurementId" = $${paramCount}`;
+                countParams.push(unitOfMeasurementId);
+                paramCount++;
+            }
+        }
+
+        if (itemCode) {
+            if (Array.isArray(itemCode)) {
+                countQuery += ` AND p."itemCode" = ANY($${paramCount})`;
+                countParams.push(itemCode);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."itemCode" = $${paramCount}`;
+                countParams.push(itemCode);
+                paramCount++;
+            }
+        }
+
+        if (hsnCode) {
+            if (Array.isArray(hsnCode)) {
+                countQuery += ` AND p."hsnCode" = ANY($${paramCount})`;
+                countParams.push(hsnCode);
+                paramCount++;
+            } else {
+                countQuery += ` AND p."hsnCode" = $${paramCount}`;
+                countParams.push(hsnCode);
+                paramCount++;
+            }
         }
 
         const countResult = await client.query(countQuery, countParams);
@@ -533,8 +647,6 @@ async function getProductDetails(client, companyId, productId) {
             uom.symbol as "unitOfMeasurementSymbol",
             sc.name as "stockCategoryName",
             sc.description as "stockCategoryDescription",
-            pc.name as "categoryName",
-            pc.description as "categoryDescription",
             tc.name as "taxCategoryName", 
             tc.rate as "taxRate"
         FROM hisab."products" p
@@ -542,13 +654,10 @@ async function getProductDetails(client, companyId, productId) {
         LEFT JOIN hisab."stockCategories" sc ON 
             p."stockCategoryId" = sc.id AND 
             p."companyId" = sc."companyId"
-        LEFT JOIN hisab."productCategories" pc ON 
-            p."categoryId" = pc.id AND 
-            p."companyId" = pc."companyId"
         LEFT JOIN hisab."taxCategories" tc ON p."taxCategoryId" = tc.id
         WHERE p.id = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL
     `;
-    
+
     const productResult = await client.query(productQuery, [productId, companyId]);
 
     if (productResult.rows.length === 0) {
