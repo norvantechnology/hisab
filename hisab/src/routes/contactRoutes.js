@@ -13,6 +13,7 @@ router.put('/updateContact', authenticateUser, checkCompanyModulePermission('con
 
 // New balance calculation routes
 router.get('/:contactId/currentBalance', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContactCurrentBalance);
+router.get('/:contactId/pendingBalanceSummary', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContactPendingBalanceSummary);
 router.put('/:contactId/updateBalance', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateContactCurrentBalance);
 router.put('/updateAllBalances', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateAllContactsCurrentBalance);
 
