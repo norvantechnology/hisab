@@ -1,31 +1,52 @@
-CREATE TABLE IF NOT EXISTS hisab."contacts" (
-  "id" SERIAL PRIMARY KEY,
-  "companyId" INTEGER NOT NULL REFERENCES hisab."companies"(id) ON DELETE CASCADE,
-  "gstin" TEXT,
-  "name" TEXT NOT NULL,
-  "mobile" TEXT,
-  "email" TEXT,
-  "dueDays" INTEGER,
-  "currency" TEXT DEFAULT 'INR',
-  "billingAddress1" TEXT,
-  "billingAddress2" TEXT,
-  "billingCity" TEXT,
-  "billingPincode" TEXT,
-  "billingState" TEXT,
-  "billingCountry" TEXT DEFAULT 'India',
-  "shippingAddress1" TEXT,
-  "shippingAddress2" TEXT,
-  "shippingCity" TEXT,
-  "shippingPincode" TEXT,
-  "shippingState" TEXT,
-  "shippingCountry" TEXT DEFAULT 'India',
-  "isShippingSame" BOOLEAN DEFAULT FALSE,
-  "openingBalance" DECIMAL(15, 2) DEFAULT 0.00,
-  "remainingBalance" DECIMAL(15, 2) DEFAULT 0.00,
-  "balanceType" TEXT CHECK ("balanceType" IN ('payable', 'receivable')) DEFAULT 'payable',
-  "enablePortal" BOOLEAN DEFAULT FALSE,
-  "notes" TEXT,
-  "createdBy" INTEGER REFERENCES hisab."users"(id) ON DELETE SET NULL,
-  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- hisab.contacts definition
+
+-- Drop table
+
+-- DROP TABLE hisab.contacts;
+
+CREATE TABLE hisab.contacts (
+	id serial4 NOT NULL,
+	"companyId" int4 NOT NULL,
+	gstin text NULL,
+	"name" text NOT NULL,
+	mobile text NULL,
+	email text NULL,
+	"dueDays" int4 NULL,
+	currency text DEFAULT 'INR'::text NULL,
+	"billingAddress1" text NULL,
+	"billingAddress2" text NULL,
+	"billingCity" text NULL,
+	"billingPincode" text NULL,
+	"billingState" text NULL,
+	"billingCountry" text DEFAULT 'India'::text NULL,
+	"shippingAddress1" text NULL,
+	"shippingAddress2" text NULL,
+	"shippingCity" text NULL,
+	"shippingPincode" text NULL,
+	"shippingState" text NULL,
+	"shippingCountry" text DEFAULT 'India'::text NULL,
+	"isShippingSame" bool DEFAULT false NULL,
+	"openingBalance" numeric(15, 2) DEFAULT 0.00 NULL,
+	"openingBalanceType" text DEFAULT 'payable'::text NULL,
+	"enablePortal" bool DEFAULT false NULL,
+	notes text NULL,
+	"createdBy" int4 NULL,
+	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"updatedAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"currentBalance" numeric(15, 2) DEFAULT 0.00 NULL,
+	"currentBalanceType" text DEFAULT 'payable'::text NULL,
+	"deletedAt" timestamp NULL,
+	CONSTRAINT "contacts_balanceType_check" CHECK (("openingBalanceType" = ANY (ARRAY['payable'::text, 'receivable'::text]))),
+	CONSTRAINT contacts_pkey PRIMARY KEY (id)
 );
+
+-- Permissions
+
+ALTER TABLE hisab.contacts OWNER TO avnadmin;
+GRANT ALL ON TABLE hisab.contacts TO avnadmin;
+
+
+-- hisab.contacts foreign keys
+
+ALTER TABLE hisab.contacts ADD CONSTRAINT "contacts_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES hisab.companies(id) ON DELETE CASCADE;
+ALTER TABLE hisab.contacts ADD CONSTRAINT "contacts_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES hisab.users(id) ON DELETE SET NULL;

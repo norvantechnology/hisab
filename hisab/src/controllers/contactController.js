@@ -1,5 +1,6 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
+import { calculateContactCurrentBalance } from "../utils/balanceCalculator.js";
 
 export async function createContact(req, res) {
   const {
@@ -107,54 +108,6 @@ export async function createContact(req, res) {
   }
 }
 
-// Calculate new current balance when opening balance changes
-function calculateUpdatedCurrentBalance(
-  oldOpeningBalance, 
-  oldOpeningBalanceType,
-  currentBalance, 
-  currentBalanceType,
-  newOpeningBalance, 
-  newOpeningBalanceType
-) {
-  // Calculate the net transaction effect (difference between current and opening)
-  let netTransactionEffect = 0;
-  
-  if (oldOpeningBalanceType === currentBalanceType) {
-    // Same type: net effect is the difference
-    netTransactionEffect = currentBalance - oldOpeningBalance;
-  } else {
-    // Different types: net effect is the sum (they cancelled each other out and flipped)
-    netTransactionEffect = currentBalance + oldOpeningBalance;
-    // If old opening was payable and current is receivable, net effect should be negative
-    if (oldOpeningBalanceType === 'payable' && currentBalanceType === 'receivable') {
-      netTransactionEffect = -netTransactionEffect;
-    }
-  }
-  
-  // Apply the net transaction effect to the new opening balance
-  let newCurrentBalance = newOpeningBalance;
-  let newCurrentBalanceType = newOpeningBalanceType;
-  
-  if (newOpeningBalanceType === 'payable') {
-    // If opening is payable (we owe them), apply the net effect
-    newCurrentBalance = newOpeningBalance + netTransactionEffect;
-  } else {
-    // If opening is receivable (they owe us), apply the net effect
-    newCurrentBalance = newOpeningBalance + netTransactionEffect;
-  }
-  
-  // Handle negative balances by flipping the type
-  if (newCurrentBalance < 0) {
-    newCurrentBalance = Math.abs(newCurrentBalance);
-    newCurrentBalanceType = newCurrentBalanceType === 'payable' ? 'receivable' : 'payable';
-  }
-  
-  return {
-    balance: newCurrentBalance,
-    balanceType: newCurrentBalanceType
-  };
-}
-
 export async function getContacts(req, res) {
   const companyId = req.currentUser?.companyId;
   const {
@@ -165,7 +118,8 @@ export async function getContacts(req, res) {
     contactType,
     startDate,
     endDate,
-    skipPagination = false
+    skipPagination = false,
+    includeCalculatedBalance = false
   } = req.query;
 
   if (!companyId) {
@@ -239,12 +193,35 @@ export async function getContacts(req, res) {
 
     const result = await client.query(query, params);
 
+    let contacts = result.rows.map(contact => ({
+      ...contact,
+      currentBalance: parseFloat(contact.currentBalance),
+      openingBalance: parseFloat(contact.openingBalance)
+    }));
+
+    // Include calculated balance if requested
+    if (includeCalculatedBalance === 'true') {
+      for (let contact of contacts) {
+        try {
+          const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contact.id, companyId);
+          contact.calculatedBalance = {
+            amount: balance,
+            type: balanceType
+          };
+          contact.balanceBreakdown = breakdown;
+        } catch (error) {
+          console.error(`Error calculating balance for contact ${contact.id}:`, error);
+          contact.calculatedBalance = {
+            amount: contact.currentBalance,
+            type: contact.currentBalanceType
+          };
+          contact.balanceBreakdown = null;
+        }
+      }
+    }
+
     const responseData = {
-      contacts: result.rows.map(contact => ({
-        ...contact,
-        currentBalance: parseFloat(contact.currentBalance),
-        openingBalance: parseFloat(contact.openingBalance)
-      }))
+      contacts
     };
 
     // Add pagination info only if pagination is not skipped
@@ -668,3 +645,189 @@ export async function getDeletedContacts(req, res) {
     client.release();
   }
 }
+
+
+
+// Update contact current balance based on all transactions
+export async function updateContactCurrentBalance(req, res) {
+  const { contactId } = req.params;
+  const companyId = req.currentUser?.companyId;
+
+  if (!companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Calculate new current balance
+    const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contactId, companyId);
+
+    // Update contact with new balance
+    await client.query(
+      `UPDATE hisab."contacts" 
+       SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $3 AND "companyId" = $4`,
+      [balance, balanceType, contactId, companyId]
+    );
+
+    await client.query("COMMIT");
+
+    return successResponse(res, {
+      message: "Contact current balance updated successfully",
+      contactId,
+      currentBalance: balance,
+      currentBalanceType: balanceType,
+      breakdown
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    return errorResponse(res, "Error updating contact current balance", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get contact current balance with detailed breakdown
+export async function getContactCurrentBalance(req, res) {
+  const { contactId } = req.params;
+  const companyId = req.currentUser?.companyId;
+
+  if (!companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Calculate current balance
+    const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contactId, companyId);
+
+    // Get contact details
+    const contactQuery = await client.query(
+      `SELECT "id", "name", "currentBalance", "currentBalanceType", "openingBalance", "openingBalanceType"
+       FROM hisab."contacts" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [contactId, companyId]
+    );
+
+    if (contactQuery.rows.length === 0) {
+      return errorResponse(res, "Contact not found", 404);
+    }
+
+    const contact = contactQuery.rows[0];
+
+    // Get pending purchases count and total
+    const pendingPurchasesQuery = await client.query(
+      `SELECT COUNT(*) as count, COALESCE(SUM("remaining_amount"), 0) as total
+       FROM hisab."purchases" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL`,
+      [contactId, companyId]
+    );
+
+    const pendingInfo = pendingPurchasesQuery.rows[0];
+
+    return successResponse(res, {
+      contact: {
+        id: contact.id,
+        name: contact.name,
+        currentBalance: balance,
+        currentBalanceType: balanceType,
+        openingBalance: parseFloat(contact.openingBalance),
+        openingBalanceType: contact.openingBalanceType,
+        storedBalance: parseFloat(contact.currentBalance),
+        storedBalanceType: contact.currentBalanceType
+      },
+      breakdown,
+      calculatedBalance: {
+        amount: balance,
+        type: balanceType
+      },
+      pendingInfo: {
+        pendingPurchasesCount: parseInt(pendingInfo.count),
+        totalPendingAmount: parseFloat(pendingInfo.total),
+        hasDiscrepancy: Math.abs(balance - parseFloat(contact.currentBalance)) > 0.01
+      }
+    });
+
+  } catch (error) {
+    console.error(error);
+    return errorResponse(res, "Error calculating contact current balance", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Update all contacts current balance (for maintenance)
+export async function updateAllContactsCurrentBalance(req, res) {
+  const companyId = req.currentUser?.companyId;
+
+  if (!companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    // Get all contacts
+    const contactsQuery = await client.query(
+      `SELECT "id" FROM hisab."contacts" WHERE "companyId" = $1 AND "deletedAt" IS NULL`,
+      [companyId]
+    );
+
+    const results = [];
+    const errors = [];
+
+    for (const contact of contactsQuery.rows) {
+      try {
+        const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contact.id, companyId);
+
+        await client.query(
+          `UPDATE hisab."contacts" 
+           SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $3`,
+          [balance, balanceType, contact.id]
+        );
+
+        results.push({
+          contactId: contact.id,
+          currentBalance: balance,
+          currentBalanceType: balanceType,
+          success: true
+        });
+      } catch (error) {
+        console.error(`Error updating contact ${contact.id}:`, error);
+        errors.push({
+          contactId: contact.id,
+          error: error.message,
+          success: false
+        });
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return successResponse(res, {
+      message: "Contact balances updated",
+      totalContacts: contactsQuery.rows.length,
+      successful: results.length,
+      failed: errors.length,
+      results,
+      errors
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error(error);
+    return errorResponse(res, "Error updating contact balances", 500);
+  } finally {
+    client.release();
+  }
+}
+

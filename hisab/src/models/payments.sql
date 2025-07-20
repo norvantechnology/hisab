@@ -1,21 +1,43 @@
-CREATE TABLE IF NOT EXISTS hisab."payments" (
-  "id" SERIAL PRIMARY KEY,
-  "paymentNumber" TEXT NOT NULL,
-  "companyId" INTEGER NOT NULL REFERENCES hisab."companies"(id) ON DELETE CASCADE,
-  "contactId" INTEGER NOT NULL REFERENCES hisab."contacts"(id) ON DELETE RESTRICT,
-  "bankId" INTEGER REFERENCES hisab."bankAccounts"(id) ON DELETE SET NULL,
-  "date" DATE NOT NULL DEFAULT CURRENT_DATE,
-  "amount" DECIMAL(15, 2) NOT NULL,
-  "paymentType" TEXT CHECK ("paymentType" IN ('payment', 'receipt')) NOT NULL,
-  "description" TEXT,
-  "transactions" JSONB NOT NULL,
-  "discounts" JSONB,
-  "adjustmentType" TEXT CHECK ("adjustmentType" IN ('none', 'discount', 'extra_receipt', 'surcharge')) DEFAULT 'none',
-  "adjustmentValue" DECIMAL(15, 2),
-  "openingBalancePayment" DECIMAL(15, 2) DEFAULT 0.00,
-  "notes" TEXT,
-  "createdBy" INTEGER REFERENCES hisab."users"(id) ON DELETE SET NULL,
-  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  "deletedAt" TIMESTAMP
+-- hisab.payments definition
+
+-- Drop table
+
+-- DROP TABLE hisab.payments;
+
+CREATE TABLE hisab.payments (
+	id serial4 NOT NULL,
+	"paymentNumber" text NOT NULL,
+	"companyId" int4 NOT NULL,
+	"contactId" int4 NOT NULL,
+	"bankId" int4 NULL,
+	"date" date DEFAULT CURRENT_DATE NOT NULL,
+	amount numeric(15, 2) NOT NULL,
+	"paymentType" text NOT NULL,
+	discounts jsonb NULL,
+	notes text NULL,
+	"createdBy" int4 NULL,
+	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"updatedAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"deletedAt" timestamp NULL,
+	description text NULL,
+	"adjustmentType" text DEFAULT 'none'::text NULL,
+	"adjustmentValue" numeric(15, 2) NULL,
+	"openingBalancePayment" numeric(15, 2) DEFAULT 0.00 NULL,
+	"deletedBy" int4 NULL,
+	CONSTRAINT "payments_adjustmentType_check" CHECK (("adjustmentType" = ANY (ARRAY['none'::text, 'discount'::text, 'extra_receipt'::text, 'surcharge'::text]))),
+	CONSTRAINT "payments_paymentType_check" CHECK (("paymentType" = ANY (ARRAY['payment'::text, 'receipt'::text]))),
+	CONSTRAINT payments_pkey PRIMARY KEY (id)
 );
+
+-- Permissions
+
+ALTER TABLE hisab.payments OWNER TO avnadmin;
+GRANT ALL ON TABLE hisab.payments TO avnadmin;
+
+
+-- hisab.payments foreign keys
+
+ALTER TABLE hisab.payments ADD CONSTRAINT "payments_bankId_fkey" FOREIGN KEY ("bankId") REFERENCES hisab."bankAccounts"(id) ON DELETE SET NULL;
+ALTER TABLE hisab.payments ADD CONSTRAINT "payments_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES hisab.companies(id) ON DELETE CASCADE;
+ALTER TABLE hisab.payments ADD CONSTRAINT "payments_contactId_fkey" FOREIGN KEY ("contactId") REFERENCES hisab.contacts(id) ON DELETE RESTRICT;
+ALTER TABLE hisab.payments ADD CONSTRAINT "payments_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES hisab.users(id) ON DELETE SET NULL;

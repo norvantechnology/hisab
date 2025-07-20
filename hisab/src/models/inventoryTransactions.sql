@@ -1,24 +1,36 @@
-CREATE TABLE IF NOT EXISTS hisab."inventoryTransactions" (
-  "id" SERIAL,
-  "companyId" INTEGER NOT NULL REFERENCES hisab."companies"(id) ON DELETE CASCADE,
-  "productId" INTEGER NOT NULL,
-  "transactionType" TEXT NOT NULL CHECK ("transactionType" IN ('purchase', 'sale', 'return', 'adjustment', 'opening_stock')),
-  "quantity" DECIMAL(10, 2) NOT NULL,
-  "unitCost" DECIMAL(15, 2),
-  "totalValue" DECIMAL(15, 2),
-  "referenceId" INTEGER,
-  "referenceType" TEXT,
-  "notes" TEXT,
-  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  "createdBy" INTEGER REFERENCES hisab."users"(id),
+-- hisab."inventoryTransactions" definition
 
-  PRIMARY KEY ("companyId", "id"),
-  FOREIGN KEY ("companyId", "productId") 
-    REFERENCES hisab."products"("companyId", "id") ON DELETE CASCADE
+-- Drop table
+
+-- DROP TABLE hisab."inventoryTransactions";
+
+CREATE TABLE hisab."inventoryTransactions" (
+	id serial4 NOT NULL,
+	"companyId" int4 NOT NULL,
+	"productId" int4 NOT NULL,
+	"variantId" int4 NULL,
+	"transactionType" text NOT NULL,
+	quantity numeric(10, 2) NOT NULL,
+	"unitCost" numeric(15, 2) NULL,
+	"totalValue" numeric(15, 2) NULL,
+	"referenceId" int4 NULL,
+	"referenceType" text NULL,
+	notes text NULL,
+	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"createdBy" int4 NULL,
+	CONSTRAINT "inventoryTransactions_pkey" PRIMARY KEY ("companyId", id),
+	CONSTRAINT "inventoryTransactions_transactionType_check" CHECK (("transactionType" = ANY (ARRAY['purchase'::text, 'sale'::text, 'return'::text, 'adjustment'::text, 'opening_stock'::text])))
 );
+CREATE INDEX idx_inv_trans_company_date ON hisab."inventoryTransactions" USING btree ("companyId", "createdAt");
+CREATE INDEX idx_inv_trans_company_product ON hisab."inventoryTransactions" USING btree ("companyId", "productId");
 
-CREATE INDEX IF NOT EXISTS idx_inv_trans_company_product 
-  ON hisab."inventoryTransactions" ("companyId", "productId");
+-- Permissions
 
-CREATE INDEX IF NOT EXISTS idx_inv_trans_company_date 
-  ON hisab."inventoryTransactions" ("companyId", "createdAt");
+ALTER TABLE hisab."inventoryTransactions" OWNER TO avnadmin;
+GRANT ALL ON TABLE hisab."inventoryTransactions" TO avnadmin;
+
+
+-- hisab."inventoryTransactions" foreign keys
+
+ALTER TABLE hisab."inventoryTransactions" ADD CONSTRAINT "inventoryTransactions_companyId_fkey" FOREIGN KEY ("companyId") REFERENCES hisab.companies(id) ON DELETE CASCADE;
+ALTER TABLE hisab."inventoryTransactions" ADD CONSTRAINT "inventoryTransactions_createdBy_fkey" FOREIGN KEY ("createdBy") REFERENCES hisab.users(id);

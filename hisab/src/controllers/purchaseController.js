@@ -1,6 +1,7 @@
 import { constrainedMemory } from "process";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
+import { updateContactBalanceAfterPurchase } from "../utils/balanceCalculator.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -56,6 +57,7 @@ export async function createPurchase(req, res) {
   try {
     await client.query("BEGIN");
 
+    // Validate products and serial numbers
     for (const item of items) {
       const { productId, serialNumbers = [] } = item;
       const productRes = await client.query(
@@ -97,9 +99,10 @@ export async function createPurchase(req, res) {
       }
     }
 
-    if (bankAccountId && status === 'paid') {
+    // Validate bank account exists (only if bank payment)
+    if (bankAccountId) {
       const bankRes = await client.query(
-        `SELECT "id", "currentBalance" FROM hisab."bankAccounts"
+        `SELECT "id" FROM hisab."bankAccounts"
          WHERE "id" = $1 AND "companyId" = $2`,
         [bankAccountId, companyId]
       );
@@ -107,19 +110,12 @@ export async function createPurchase(req, res) {
         await client.query("ROLLBACK");
         return errorResponse(res, `Bank account ${bankAccountId} not found`, 404);
       }
-      const currentBalance = parseFloat(bankRes.rows[0].currentBalance);
-      if (currentBalance < netPayable) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Insufficient bank balance", 400);
-      }
     }
 
-    let currentContactBalance = 0;
-    let currentContactBalanceType = 'payable';
-
-    if (contactId && status === 'paid') {
+    // Validate contact exists (only if contact payment)
+    if (contactId) {
       const contactRes = await client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts"
+        `SELECT "id" FROM hisab."contacts"
          WHERE "id" = $1 AND "companyId" = $2`,
         [contactId, companyId]
       );
@@ -127,8 +123,6 @@ export async function createPurchase(req, res) {
         await client.query("ROLLBACK");
         return errorResponse(res, `Contact ${contactId} not found`, 404);
       }
-      currentContactBalance = parseFloat(contactRes.rows[0].currentBalance);
-      currentContactBalanceType = contactRes.rows[0].currentBalanceType;
     }
 
     const purchaseRes = await client.query(
@@ -192,6 +186,7 @@ export async function createPurchase(req, res) {
       }
     }
 
+    // Only update bank balance if status is 'paid' and bank account is provided
     if (bankAccountId && status === 'paid') {
       await client.query(
         `UPDATE hisab."bankAccounts"
@@ -201,31 +196,8 @@ export async function createPurchase(req, res) {
       );
     }
 
-    if (contactId && status === 'paid') {
-      let newBalance;
-      let newBalanceType;
-
-      if (currentContactBalanceType === 'payable') {
-        newBalance = currentContactBalance + netPayable;
-        newBalanceType = 'payable';
-      } else {
-        if (currentContactBalance >= netPayable) {
-          newBalance = currentContactBalance - netPayable;
-          newBalanceType = 'receivable';
-        } else {
-          newBalance = netPayable - currentContactBalance;
-          newBalanceType = 'payable';
-        }
-      }
-
-      await client.query(
-        `UPDATE hisab."contacts"
-         SET "currentBalance" = $1,
-             "currentBalanceType" = $2
-         WHERE "id" = $3 AND "companyId" = $4`,
-        [newBalance, newBalanceType, contactId, companyId]
-      );
-    }
+    // Update contact balance if a contact was involved
+    await updateContactBalanceAfterPurchase(client, contactId, companyId);
 
     await client.query("COMMIT");
 
@@ -255,7 +227,15 @@ export async function createPurchase(req, res) {
       return errorResponse(res, "Database column not found", 500);
     }
     
-    return errorResponse(res, "Purchase creation failed", 500);
+    // Check for specific error messages
+    if (error.message.includes('stock')) {
+      return errorResponse(res, error.message, 400);
+    }
+    if (error.message.includes('serial')) {
+      return errorResponse(res, error.message, 400);
+    }
+
+    return errorResponse(res, "Failed to create purchase", 500);
   } finally {
     client.release();
   }
@@ -381,9 +361,10 @@ export async function updatePurchase(req, res) {
       }
     }
 
-    if (bankAccountId && finalStatus === 'paid') {
+    // Validate bank account exists (only if bank payment)
+    if (bankAccountId) {
       const bankRes = await client.query(
-        `SELECT "id", "currentBalance" FROM hisab."bankAccounts"
+        `SELECT "id" FROM hisab."bankAccounts"
          WHERE "id" = $1 AND "companyId" = $2
          FOR UPDATE`,
         [bankAccountId, companyId]
@@ -393,24 +374,12 @@ export async function updatePurchase(req, res) {
         await client.query("ROLLBACK");
         return errorResponse(res, `Bank account ${bankAccountId} not found`, 404);
       }
-
-      const currentBalance = parseFloat(bankRes.rows[0].currentBalance);
-
-      if (oldPurchase.bankAccountId && oldPurchase.status === 'paid') {
-        const adjustedBalance = currentBalance + parseFloat(oldPurchase.netPayable);
-        if (adjustedBalance < netPayable) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Insufficient bank balance", 400);
-        }
-      } else if (currentBalance < netPayable) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Insufficient bank balance", 400);
-      }
     }
 
+    // Validate contact exists (only if contact payment)
     if (contactId) {
       const contactRes = await client.query(
-        `SELECT "id", "currentBalance", "currentBalanceType" FROM hisab."contacts"
+        `SELECT "id" FROM hisab."contacts"
          WHERE "id" = $1 AND "companyId" = $2
          FOR UPDATE`,
         [contactId, companyId]
@@ -430,6 +399,7 @@ export async function updatePurchase(req, res) {
       [purchaseId, companyId]
     );
 
+    // Reverse inventory changes from old purchase
     for (const oldItem of oldItemsRes.rows) {
       await client.query(
         `UPDATE hisab."products"
@@ -447,6 +417,7 @@ export async function updatePurchase(req, res) {
       }
     }
 
+    // Reverse bank balance changes from old purchase (only if it was paid via bank)
     if (oldPurchase.bankAccountId && oldPurchase.status === 'paid') {
       await client.query(
         `UPDATE hisab."bankAccounts"
@@ -456,41 +427,8 @@ export async function updatePurchase(req, res) {
       );
     }
 
-    if (oldPurchase.contactId && oldPurchase.status === 'paid') {
-      const contactRes = await client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts"
-         WHERE "id" = $1 AND "companyId" = $2`,
-        [oldPurchase.contactId, companyId]
-      );
-
-      if (contactRes.rows.length > 0) {
-        const currentBalance = parseFloat(contactRes.rows[0].currentBalance);
-        const currentBalanceType = contactRes.rows[0].currentBalanceType;
-        let newBalance;
-        let newBalanceType;
-
-        if (currentBalanceType === 'payable') {
-          if (currentBalance >= oldPurchase.netPayable) {
-            newBalance = currentBalance - oldPurchase.netPayable;
-            newBalanceType = newBalance === 0 ? 'receivable' : 'payable';
-          } else {
-            newBalance = oldPurchase.netPayable - currentBalance;
-            newBalanceType = 'receivable';
-          }
-        } else {
-          newBalance = currentBalance + oldPurchase.netPayable;
-          newBalanceType = 'receivable';
-        }
-
-        await client.query(
-          `UPDATE hisab."contacts"
-           SET "currentBalance" = $1,
-               "currentBalanceType" = $2
-           WHERE "id" = $3 AND "companyId" = $4`,
-          [newBalance, newBalanceType, oldPurchase.contactId, companyId]
-        );
-      }
-    }
+    // Update contact balance if a contact was involved
+    await updateContactBalanceAfterPurchase(client, oldPurchase.contactId, companyId);
 
     await client.query(
       `DELETE FROM hisab."purchase_items" 
@@ -536,6 +474,7 @@ export async function updatePurchase(req, res) {
       ]
     );
 
+    // Add new items and update inventory
     for (const item of items) {
       const {
         productId,
@@ -591,6 +530,7 @@ export async function updatePurchase(req, res) {
       }
     }
 
+    // Only update bank balance if status is 'paid' and bank account is provided
     if (bankAccountId && finalStatus === 'paid') {
       await client.query(
         `UPDATE hisab."bankAccounts"
@@ -600,41 +540,8 @@ export async function updatePurchase(req, res) {
       );
     }
 
-    if (contactId && finalStatus === 'paid') {
-      const contactRes = await client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts"
-         WHERE "id" = $1 AND "companyId" = $2`,
-        [contactId, companyId]
-      );
-
-      if (contactRes.rows.length > 0) {
-        const currentBalance = parseFloat(contactRes.rows[0].currentBalance);
-        const currentBalanceType = contactRes.rows[0].currentBalanceType;
-        let newBalance;
-        let newBalanceType;
-
-        if (currentBalanceType === 'payable') {
-          newBalance = currentBalance + netPayable;
-          newBalanceType = 'payable';
-        } else {
-          if (currentBalance >= netPayable) {
-            newBalance = currentBalance - netPayable;
-            newBalanceType = 'receivable';
-          } else {
-            newBalance = netPayable - currentBalance;
-            newBalanceType = 'payable';
-          }
-        }
-
-        await client.query(
-          `UPDATE hisab."contacts"
-           SET "currentBalance" = $1,
-               "currentBalanceType" = $2
-           WHERE "id" = $3 AND "companyId" = $4`,
-          [newBalance, newBalanceType, contactId, companyId]
-        );
-      }
-    }
+    // Update contact balance if a contact was involved
+    await updateContactBalanceAfterPurchase(client, contactId, companyId);
 
     await client.query("COMMIT");
 
@@ -664,6 +571,14 @@ export async function updatePurchase(req, res) {
       return errorResponse(res, "Database column not found", 500);
     }
     
+    // Check for specific error messages
+    if (error.message.includes('stock')) {
+      return errorResponse(res, error.message, 400);
+    }
+    if (error.message.includes('serial')) {
+      return errorResponse(res, error.message, 400);
+    }
+
     return errorResponse(res, "Failed to update purchase", 500);
   } finally {
     client.release();
@@ -803,54 +718,8 @@ export async function deletePurchase(req, res) {
       );
     }
 
-    // Reverse contact balance changes (only if purchase was paid and has contact)
-    if (purchase.contactId && purchase.status === 'paid') {
-      // Get current contact balance with FOR UPDATE lock
-      const contactRes = await client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts"
-         WHERE "id" = $1 AND "companyId" = $2
-         FOR UPDATE`,
-        [purchase.contactId, companyId]
-      );
-
-      if (contactRes.rows.length > 0) {
-        const currentBalance = parseFloat(contactRes.rows[0].currentBalance);
-        const currentBalanceType = contactRes.rows[0].currentBalanceType;
-        const purchaseAmount = parseFloat(purchase.netPayable);
-
-        let newBalance;
-        let newBalanceType;
-
-        // Logic to reverse the contact balance
-        // When purchase was made, we increased payable or decreased receivable
-        // Now we need to reverse that
-        if (currentBalanceType === 'payable') {
-          // Current balance is payable, we need to reduce it
-          if (currentBalance >= purchaseAmount) {
-            newBalance = currentBalance - purchaseAmount;
-            newBalanceType = newBalance === 0 ? 'receivable' : 'payable';
-          } else {
-            // If current payable is less than purchase amount, 
-            // it means the balance has become receivable
-            newBalance = purchaseAmount - currentBalance;
-            newBalanceType = 'receivable';
-          }
-        } else {
-          // Current balance is receivable, add the purchase amount to it
-          newBalance = currentBalance + purchaseAmount;
-          newBalanceType = 'receivable';
-        }
-
-        await client.query(
-          `UPDATE hisab."contacts"
-           SET "currentBalance" = $1,
-               "currentBalanceType" = $2,
-               "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "id" = $3 AND "companyId" = $4`,
-          [newBalance, newBalanceType, purchase.contactId, companyId]
-        );
-      }
-    }
+    // Update contact balance if a contact was involved
+    await updateContactBalanceAfterPurchase(client, purchase.contactId, companyId);
 
     // Soft delete purchase items first
     await client.query(

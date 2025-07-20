@@ -54,7 +54,7 @@ const PaymentForm = ({
             const maxAmount = getMaxAmount(transaction);
             return allocatedAmount > maxAmount;
         });
-    }, [pendingTransactions, transactionAllocations]);
+    }, [pendingTransactions, transactionAllocations, getMaxAmount]);
 
     // Check if any selected transaction has zero allocation
     const hasZeroAllocation = useCallback(() => {
@@ -62,7 +62,7 @@ const PaymentForm = ({
             const allocatedAmount = parseAmount(transactionAllocations[id] || 0);
             return allocatedAmount <= 0;
         });
-    }, [transactionAllocations]);
+    }, [validation.values.transactionIds, transactionAllocations]);
 
     const validationSchema = Yup.object({
         date: Yup.date().required("Date is required"),
@@ -74,7 +74,7 @@ const PaymentForm = ({
             .min(0, "Adjustment value must be positive")
             .when('adjustmentType', ([adjustmentType], schema) => {
                 return adjustmentType !== 'none'
-                    ? schema.required("Adjustment value is required").moreThan(0, "Adjustment value must be greater than 0")
+                    ? schema.required("Adjustment value is required")
                     : schema;
             }),
         transactionIds: Yup.array().min(1, "At least one transaction must be selected")
@@ -292,15 +292,33 @@ const PaymentForm = ({
         }));
     };
 
-    const getMaxAmount = (transaction) => {
+    const getMaxAmount = useCallback((transaction) => {
         return isEditMode ? transaction.maxAmount || (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
-    };
+    }, [isEditMode]);
 
     // Updated form validation logic
     const isFormValid = validation.isValid &&
         validation.values.transactionIds.length > 0 &&
         !hasOverAllocation() &&
         !hasZeroAllocation();
+
+    // Debug validation status
+    const debugValidation = {
+        isValid: validation.isValid,
+        hasTransactions: validation.values.transactionIds.length > 0,
+        noOverAllocation: !hasOverAllocation(),
+        noZeroAllocation: !hasZeroAllocation(),
+        transactionIds: validation.values.transactionIds,
+        allocations: transactionAllocations,
+        errors: validation.errors,
+        touched: validation.touched,
+        values: validation.values,
+        adjustmentType: validation.values.adjustmentType,
+        adjustmentValue: validation.values.adjustmentValue,
+        isAdjustmentValid: validation.values.adjustmentType === 'none' || (validation.values.adjustmentValue > 0)
+    };
+
+    console.log('PaymentForm Debug:', debugValidation);
 
     return (
         <Modal isOpen={isOpen} toggle={toggle} size="xl">
@@ -584,6 +602,24 @@ const PaymentForm = ({
                         {hasZeroAllocation() && (
                             <div className="text-danger small mt-2">All selected transactions must have an amount greater than 0</div>
                         )}
+
+                        {/* Debug validation status - remove this in production */}
+                        {process.env.NODE_ENV === 'development' && (
+                            <div className="mt-3 p-2 bg-light border rounded">
+                                <small className="text-muted">Debug Info:</small>
+                                <div className="small">
+                                    <div>Form Valid: {validation.isValid ? '✅' : '❌'}</div>
+                                    <div>Has Transactions: {validation.values.transactionIds.length > 0 ? '✅' : '❌'}</div>
+                                    <div>No Over Allocation: {!hasOverAllocation() ? '✅' : '❌'}</div>
+                                    <div>No Zero Allocation: {!hasZeroAllocation() ? '✅' : '❌'}</div>
+                                    <div>Adjustment Type: {validation.values.adjustmentType}</div>
+                                    <div>Adjustment Value: {validation.values.adjustmentValue}</div>
+                                    <div>Adjustment Valid: {(validation.values.adjustmentType === 'none' || validation.values.adjustmentValue > 0) ? '✅' : '❌'}</div>
+                                    <div>Button Enabled: {isFormValid ? '✅' : '❌'}</div>
+                                    <div>Form Errors: {Object.keys(validation.errors).length > 0 ? Object.keys(validation.errors).join(', ') : 'None'}</div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </Form>
             </ModalBody>
@@ -595,7 +631,7 @@ const PaymentForm = ({
                     color="primary"
                     type="submit"
                     onClick={validation.handleSubmit}
-                    disabled={isLoading || !isFormValid}
+                    disabled={isLoading}
                 >
                     {isLoading ? (
                         <>

@@ -11,5 +11,10 @@ router.get('/getContactDetails', authenticateUser, checkCompanyModulePermission(
 router.get('/getContacts', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContacts);
 router.put('/updateContact', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.updateContact);
 
+// New balance calculation routes
+router.get('/:contactId/currentBalance', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContactCurrentBalance);
+router.put('/:contactId/updateBalance', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateContactCurrentBalance);
+router.put('/updateAllBalances', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateAllContactsCurrentBalance);
+
 
 export default router;

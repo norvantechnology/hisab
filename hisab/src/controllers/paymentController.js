@@ -1,6 +1,7 @@
 import { compareSync } from "bcrypt";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
+import { calculateContactCurrentBalance } from "../utils/balanceCalculator.js";
 
 export async function createPayment(req, res) {
   const {
@@ -198,6 +199,20 @@ export async function createPayment(req, res) {
         `UPDATE hisab."bankAccounts" SET "currentBalance" = "currentBalance" + $1 WHERE id = $2`,
         [bankImpact, bankAccountId]
       );
+    }
+
+    // Update contact balance based on all transactions
+    try {
+      const { balance, balanceType } = await calculateContactCurrentBalance(client, contactId, companyId);
+      await client.query(
+        `UPDATE hisab."contacts" 
+         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $3 AND "companyId" = $4`,
+        [balance, balanceType, contactId, companyId]
+      );
+    } catch (error) {
+      console.error('Error updating contact balance after payment:', error);
+      // Don't throw error to avoid rolling back the payment transaction
     }
 
     // Create payment allocations

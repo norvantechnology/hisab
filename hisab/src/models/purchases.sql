@@ -1,3 +1,9 @@
+-- hisab.purchases definition
+
+-- Drop table
+
+-- DROP TABLE hisab.purchases;
+
 CREATE TABLE hisab.purchases (
 	id serial4 NOT NULL,
 	"companyId" int4 NOT NULL,
@@ -21,6 +27,7 @@ CREATE TABLE hisab.purchases (
 	status text DEFAULT 'pending'::text NULL,
 	remaining_amount numeric(15, 2) DEFAULT 0.00 NULL,
 	paid_amount numeric(15, 2) DEFAULT 0.00 NULL,
+	"deletedBy" int4 NULL,
 	CONSTRAINT purchases_check CHECK (((("bankAccountId" IS NOT NULL) AND ("contactId" IS NULL)) OR (("bankAccountId" IS NULL) AND ("contactId" IS NOT NULL)))),
 	CONSTRAINT purchases_pkey PRIMARY KEY (id),
 	CONSTRAINT purchases_status_check CHECK ((status = ANY (ARRAY['paid'::text, 'pending'::text])))
