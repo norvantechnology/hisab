@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS hisab."expenses" (
+  "id" SERIAL PRIMARY KEY,
+  "userId" INTEGER NOT NULL REFERENCES hisab."users"(id) ON DELETE CASCADE,
+  "companyId" INTEGER NOT NULL REFERENCES hisab."companies"(id) ON DELETE CASCADE,
+  "date" DATE NOT NULL DEFAULT CURRENT_DATE,
+  "categoryId" INTEGER REFERENCES hisab."expenseCategories"(id) ON DELETE SET NULL,
+  "bankAccountId" INTEGER REFERENCES hisab."bankAccounts"(id) ON DELETE SET NULL,
+  "amount" DECIMAL(15, 2) NOT NULL,
+  "notes" TEXT,
+  "createdBy" INTEGER REFERENCES hisab."users"(id) ON DELETE SET NULL,
+  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

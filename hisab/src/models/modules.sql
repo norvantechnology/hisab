@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS hisab."modules" (
+  "id" SERIAL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  "deletedAt" TIMESTAMP NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_modules_name ON hisab."modules" ("name");
