@@ -79,7 +79,12 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
               <h6 className="text-muted">Status</h6>
               <Badge
                 color={invoice.status === 'paid' ? 'success' : 'warning'}
-                className={`badge-soft-${invoice.status === 'paid' ? 'success' : 'warning'}`}
+                className={`${invoice.status === 'paid' ? 'bg-success' : 'bg-warning'} text-white border-0`}
+                style={{ 
+                  fontWeight: '600',
+                  fontSize: '0.75rem',
+                  padding: '0.375rem 0.75rem'
+                }}
                 pill
               >
                 {invoice.status ? invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1) : 'N/A'}

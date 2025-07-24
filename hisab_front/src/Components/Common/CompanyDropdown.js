@@ -15,9 +15,10 @@ import {
     Input,
     Button
 } from 'reactstrap';
-import { Link } from 'react-router-dom';
-import { createCompany, getAllCompanies, updateCompany } from '../../services/company';
+import { Link, useNavigate } from 'react-router-dom';
+import { createCompany, getAllCompanies, updateCompany, deleteCompany } from '../../services/company';
 import { layoutModeTypes } from '../../Components/constants/layout';
+import DeleteModal from './DeleteModal';
 
 const initialFormState = {
     gstin: '',
@@ -34,6 +35,7 @@ const initialFormState = {
 };
 
 const CompanyDropdown = ({ layoutMode }) => {
+    const navigate = useNavigate();
     const [state, setState] = useState({
         isCompanyDropdown: false,
         modal: false,
@@ -45,7 +47,9 @@ const CompanyDropdown = ({ layoutMode }) => {
         isEditMode: false,
         currentCompanyId: null,
         formData: initialFormState,
-        selectedCompany: null
+        selectedCompany: null,
+        deleteConfirmModal: false,
+        deleteCompanyId: null
     });
 
     const {
@@ -59,7 +63,9 @@ const CompanyDropdown = ({ layoutMode }) => {
         isEditMode,
         currentCompanyId,
         formData,
-        selectedCompany
+        selectedCompany,
+        deleteConfirmModal,
+        deleteCompanyId
     } = state;
 
     const isDarkTheme = layoutMode === layoutModeTypes['DARKMODE'];
@@ -110,7 +116,28 @@ const CompanyDropdown = ({ layoutMode }) => {
         try {
             const response = await getAllCompanies();
             if (response?.success) {
-                updateState({ companies: response.companies, isFetching: false });
+                const companiesList = response.companies || [];
+                
+                // If 0 companies found, redirect to welcome page
+                if (companiesList.length === 0) {
+                    // Clear any stored company data
+                    localStorage.removeItem('selectedCompanyId');
+                    updateState({ companies: [], isFetching: false });
+                    
+                    // Redirect to welcome page
+                    navigate('/welcome');
+                    return;
+                }
+                
+                updateState({ companies: companiesList, isFetching: false });
+                
+                // Auto-select first company if no company is currently selected
+                const storedCompany = getSelectedCompanyFromStorage();
+                if (companiesList.length > 0 && !storedCompany) {
+                    const firstCompany = companiesList[0];
+                    setSelectedCompanyToStorage(firstCompany.id, firstCompany);
+                    updateState({ selectedCompany: firstCompany });
+                }
             } else {
                 updateState({
                     error: response?.message || 'Failed to fetch companies',
@@ -123,13 +150,18 @@ const CompanyDropdown = ({ layoutMode }) => {
                 isFetching: false
             });
         }
-    }, [updateState]);
+    }, [updateState, getSelectedCompanyFromStorage, setSelectedCompanyToStorage, navigate]);
 
     useEffect(() => {
         if (isCompanyDropdown && companies.length === 0) {
             fetchCompanies();
         }
     }, [isCompanyDropdown, fetchCompanies, companies.length]);
+
+    // Fetch companies on component mount and auto-select first company
+    useEffect(() => {
+        fetchCompanies();
+    }, [fetchCompanies]);
 
     useEffect(() => {
         const storedCompany = getSelectedCompanyFromStorage();
@@ -165,9 +197,9 @@ const CompanyDropdown = ({ layoutMode }) => {
     const handleLogoChange = useCallback((e) => {
         const file = e.target.files[0];
         if (file) {
-            if (file.size > 2 * 1024 * 1024) { // 2MB limit
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit (aligned with backend)
                 updateState({
-                    error: 'File size should be less than 2MB'
+                    error: 'File size should be less than 5MB'
                 });
                 return;
             }
@@ -235,23 +267,61 @@ const CompanyDropdown = ({ layoutMode }) => {
         updateState({ isLoading: true, error: null, success: null });
 
         try {
-            const formDataToSend = new FormData();
+            const hasFileUpload = formData.logo && formData.logo instanceof File;
+            let dataToSend;
 
-            // Append all form fields
-            Object.keys(formData).forEach(key => {
-                if (key !== 'logoPreview' && formData[key] !== null) {
-                    formDataToSend.append(key, formData[key]);
+            if (hasFileUpload) {
+                // Use FormData when uploading a file
+                const formDataToSend = new FormData();
+
+                // Append text fields
+                const textFields = ['gstin', 'name', 'country', 'currency', 'address1', 'address2', 'city', 'pincode', 'state'];
+                textFields.forEach(key => {
+                    if (formData[key] !== null && formData[key] !== undefined) {
+                        formDataToSend.append(key, formData[key]);
+                    }
+                });
+
+                // Append logo file
+                formDataToSend.append('logo', formData.logo);
+
+                // If editing, append the ID
+                if (isEditMode) {
+                    formDataToSend.append('id', currentCompanyId);
                 }
-            });
 
-            // If editing, append the ID
-            if (isEditMode) {
-                formDataToSend.append('id', currentCompanyId);
+                dataToSend = formDataToSend;
+                console.log('Sending FormData with file upload');
+                console.log('FormData entries:');
+                for (let [key, value] of formDataToSend.entries()) {
+                    console.log(`${key}:`, value instanceof File ? `File: ${value.name} (${value.size} bytes)` : value);
+                }
+            } else {
+                // Use JSON when no file upload
+                const jsonData = {
+                    gstin: formData.gstin || '',
+                    name: formData.name || '',
+                    country: formData.country || '',
+                    currency: formData.currency || '',
+                    address1: formData.address1 || '',
+                    address2: formData.address2 || '',
+                    city: formData.city || '',
+                    pincode: formData.pincode || '',
+                    state: formData.state || ''
+                };
+
+                // If editing, include the ID
+                if (isEditMode) {
+                    jsonData.id = currentCompanyId;
+                }
+
+                dataToSend = jsonData;
+                console.log('Sending JSON data (no file upload):', jsonData);
             }
 
             const response = isEditMode
-                ? await updateCompany(formDataToSend)
-                : await createCompany(formDataToSend);
+                ? await updateCompany(dataToSend)
+                : await createCompany(dataToSend);
 
             if (response?.success) {
                 const successMessage = `Company ${isEditMode ? 'updated' : 'created'} successfully!`;
@@ -262,6 +332,16 @@ const CompanyDropdown = ({ layoutMode }) => {
                 });
 
                 await fetchCompanies();
+
+                // Auto-select the newly created company if it's the first company
+                if (!isEditMode && response?.company) {
+                    const updatedCompanies = await getAllCompanies();
+                    if (updatedCompanies?.success && updatedCompanies.companies.length === 1) {
+                        // This is the first company, auto-select it
+                        setSelectedCompanyToStorage(response.company.id, response.company);
+                        updateState({ selectedCompany: response.company });
+                    }
+                }
 
                 setTimeout(() => {
                     updateState({
@@ -283,7 +363,86 @@ const CompanyDropdown = ({ layoutMode }) => {
                 isLoading: false
             });
         }
-    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies]);
+    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies, setSelectedCompanyToStorage]);
+
+    const handleDeleteCompany = useCallback((company) => {
+        updateState({
+            deleteConfirmModal: true,
+            deleteCompanyId: company.id
+        });
+    }, [updateState]);
+
+    const confirmDeleteCompany = useCallback(async () => {
+        if (!deleteCompanyId) return;
+
+        updateState({ isLoading: true });
+        try {
+            const response = await deleteCompany(deleteCompanyId);
+            
+            if (response?.success) {
+                const successMessage = 'Company deleted successfully!';
+                updateState({
+                    success: successMessage,
+                    isLoading: false,
+                    deleteConfirmModal: false,
+                    deleteCompanyId: null
+                });
+
+                // If the deleted company was the currently selected one, clear it
+                if (selectedCompany?.id === deleteCompanyId) {
+                    localStorage.removeItem('selectedCompanyId');
+                    updateState({ selectedCompany: null });
+                }
+
+                await fetchCompanies();
+
+                // Check if this was the last company and redirect to welcome page
+                const updatedCompanies = await getAllCompanies();
+                if (updatedCompanies?.success && updatedCompanies.companies.length === 0) {
+                    // Clear any stored company data
+                    localStorage.removeItem('selectedCompanyId');
+                    
+                    // Redirect to welcome page
+                    navigate('/welcome');
+                    return;
+                }
+
+                // Auto-select first company if no company is selected after deletion
+                if (updatedCompanies?.success && updatedCompanies.companies.length > 0) {
+                    const firstCompany = updatedCompanies.companies[0];
+                    setSelectedCompanyToStorage(firstCompany.id, firstCompany);
+                    updateState({ selectedCompany: firstCompany });
+                }
+
+                setTimeout(() => {
+                    updateState({
+                        success: null
+                    });
+                }, 1500);
+            } else {
+                updateState({
+                    error: response?.message || 'Failed to delete company',
+                    isLoading: false,
+                    deleteConfirmModal: false,
+                    deleteCompanyId: null
+                });
+            }
+        } catch (err) {
+            updateState({
+                error: err.message || 'Failed to delete company',
+                isLoading: false,
+                deleteConfirmModal: false,
+                deleteCompanyId: null
+            });
+        }
+    }, [deleteCompanyId, updateState, selectedCompany, fetchCompanies, setSelectedCompanyToStorage, navigate]);
+
+    const cancelDeleteCompany = useCallback(() => {
+        updateState({
+            deleteConfirmModal: false,
+            deleteCompanyId: null
+        });
+    }, [updateState]);
 
     const getCompanyLogo = useCallback((company) => {
         if (company?.logoUrl) {
@@ -360,10 +519,20 @@ const CompanyDropdown = ({ layoutMode }) => {
                     >
                         <i className="ri-pencil-line"></i>
                     </button>
+                    <button
+                        className="btn btn-link p-0 ms-1 text-danger"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteCompany(company);
+                        }}
+                        title="Delete Company"
+                    >
+                        <i className="ri-delete-bin-line"></i>
+                    </button>
                 </div>
             </Col>
         );
-    }, [getCompanyLogo, handleCompanySelect, handleEditCompany, selectedCompany]);
+    }, [getCompanyLogo, handleCompanySelect, handleEditCompany, handleDeleteCompany, selectedCompany]);
 
     const renderLogoUploadSection = () => (
         <FormGroup>
@@ -417,7 +586,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                                 className="d-none"
                             />
                             <div className="text-muted mt-2 small">
-                                <i className="ri-information-line me-1"></i> JPG, PNG or GIF (Max 2MB)
+                                <i className="ri-information-line me-1"></i> JPG, PNG or GIF (Max 5MB)
                             </div>
                         </div>
                     </div>
@@ -748,6 +917,15 @@ const CompanyDropdown = ({ layoutMode }) => {
                     </ModalFooter>
                 </Form>
             </Modal>
+
+            {/* Delete Confirmation Modal */}
+            <DeleteModal
+                show={deleteConfirmModal}
+                onDeleteClick={confirmDeleteCompany}
+                onCloseClick={cancelDeleteCompany}
+                title="Delete Company"
+                message="Are you sure you want to delete this company? This action cannot be undone and will remove all associated data."
+            />
         </>
     );
 };

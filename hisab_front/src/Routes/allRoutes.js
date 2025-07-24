@@ -10,7 +10,9 @@ import BankTransfer from "../pages/BankTransfer";
 import Contacts from "../pages/Contacts";
 import Products from "../pages/Products";
 import Invoice from "../pages/Purchases/Invoice";
+import SalesInvoice from "../pages/Sales/Invoice";
 import Payments from "../pages/Payments";
+import WelcomePage from "../pages/Welcome/WelcomePage";
 
 
 import DashboardJobs from '../pages/Dashboardjob';
@@ -260,6 +262,7 @@ import Roles from "../pages/UserManagement/Roles";
 import Permissions from "../pages/UserManagement/Permissions";
 
 const authProtectedRoutes = [
+  { path: "/welcome", component: <WelcomePage /> },
   { path: "/bank-accounts", component: <BankAccounts /> },
   { path: "/expenses", component: <Expenses /> },
   { path: "/income", component: <Incomes /> },
@@ -270,6 +273,7 @@ const authProtectedRoutes = [
   { path: "/roles", component: <Roles /> },
   { path: "/permissions", component: <Permissions /> },
   { path: "/purchases/invoices", component: <Invoice /> },
+  { path: "/sales/invoices", component: <SalesInvoice /> },
   { path: "/payments", component: <Payments /> },
 
 
@@ -471,9 +475,9 @@ const authProtectedRoutes = [
   {
     path: "/",
     exact: true,
-    component: <Navigate to="/dashboard" />,
+    component: <Navigate to="/bank-accounts" />,
   },
-  { path: "*", component: <Navigate to="/dashboard" /> },
+  { path: "*", component: <Navigate to="/bank-accounts" /> },
   //Job pages
   { path: "/apps-job-statistics", component: <Statistics /> },
   { path: "/apps-job-lists", component: <JobList /> },

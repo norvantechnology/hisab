@@ -13,6 +13,7 @@ CREATE TABLE hisab.contacts (
 	email text NULL,
 	"dueDays" int4 NULL,
 	currency text DEFAULT 'INR'::text NULL,
+	"contactType" text DEFAULT 'customer'::text NOT NULL,
 	"billingAddress1" text NULL,
 	"billingAddress2" text NULL,
 	"billingCity" text NULL,
@@ -37,6 +38,7 @@ CREATE TABLE hisab.contacts (
 	"currentBalanceType" text DEFAULT 'payable'::text NULL,
 	"deletedAt" timestamp NULL,
 	CONSTRAINT "contacts_balanceType_check" CHECK (("openingBalanceType" = ANY (ARRAY['payable'::text, 'receivable'::text]))),
+	CONSTRAINT "contacts_contactType_check" CHECK (("contactType" = ANY (ARRAY['customer'::text, 'vendor'::text]))),
 	CONSTRAINT contacts_pkey PRIMARY KEY (id)
 );
 

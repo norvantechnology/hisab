@@ -17,6 +17,11 @@ const CURRENCIES = [
   { value: 'GBP', label: 'British Pound (£)' }
 ];
 
+const CONTACT_TYPES = [
+  { value: 'customer', label: 'Customer' },
+  { value: 'vendor', label: 'Vendor' }
+];
+
 const ContactForm = ({
   isOpen,
   toggle,
@@ -44,6 +49,7 @@ const ContactForm = ({
       email: selectedContact?.email || '',
       dueDays: getNumericValue(selectedContact?.dueDays, 0),
       currency: selectedContact?.currency || 'INR',
+      contactType: selectedContact?.contactType || 'customer',
       billingAddress1: selectedContact?.billingAddress1 || '',
       billingAddress2: selectedContact?.billingAddress2 || '',
       billingCity: selectedContact?.billingCity || '',
@@ -73,6 +79,7 @@ const ContactForm = ({
       email: Yup.string().email('Invalid email format'),
       dueDays: Yup.number().min(0, 'Due days must be 0 or more'),
       currency: Yup.string().required('Currency is required'),
+      contactType: Yup.string().required('Contact type is required'),
       billingAddress1: Yup.string().required('Billing Address Line 1 is required'),
       billingCity: Yup.string().required('Billing City is required'),
       billingPincode: Yup.string().required('Billing Pincode is required'),
@@ -216,7 +223,7 @@ const ContactForm = ({
           </Row>
 
           <Row>
-            <Col md={6}>
+            <Col md={4}>
               <FormGroup>
                 <Label>Due Days</Label>
                 <Input
@@ -232,7 +239,7 @@ const ContactForm = ({
                 <FormFeedback>{validation.errors.dueDays}</FormFeedback>
               </FormGroup>
             </Col>
-            <Col md={6}>
+            <Col md={4}>
               <FormGroup>
                 <Label>Currency <span className="text-danger">*</span></Label>
                 <Input
@@ -251,6 +258,27 @@ const ContactForm = ({
                   ))}
                 </Input>
                 <FormFeedback>{validation.errors.currency}</FormFeedback>
+              </FormGroup>
+            </Col>
+            <Col md={4}>
+              <FormGroup>
+                <Label>Contact Type <span className="text-danger">*</span></Label>
+                <Input
+                  type="select"
+                  name="contactType"
+                  value={validation.values.contactType}
+                  onChange={validation.handleChange}
+                  onBlur={validation.handleBlur}
+                  invalid={validation.touched.contactType && !!validation.errors.contactType}
+                  disabled={isProcessing}
+                >
+                  {CONTACT_TYPES.map(contactType => (
+                    <option key={contactType.value} value={contactType.value}>
+                      {contactType.label}
+                    </option>
+                  ))}
+                </Input>
+                <FormFeedback>{validation.errors.contactType}</FormFeedback>
               </FormGroup>
             </Col>
           </Row>

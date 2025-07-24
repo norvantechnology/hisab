@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiBankLine, RiUser3Line, RiArrowRightLine } from 'react-icons/ri';
 import TableContainer from '../../Components/Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 
@@ -41,20 +41,153 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
             enableColumnFilter: false
         },
         {
-            header: "Account",
-            accessorKey: "bankAccountName",
-            cell: (cell) => (
-                <span className="text-nowrap">
-                    {cell.row.original.bankAccountName || 'N/A'}
-                </span>
-            ),
+            header: "Payment Details",
+            accessorKey: "paymentDetails",
+            cell: (cell) => {
+                const { bankAccountName, contactName, status } = cell.row.original;
+                
+                // Direct bank payment
+                if (bankAccountName && !contactName) {
+                    return (
+                        <div className="d-flex align-items-center">
+                            <RiBankLine className="text-info me-2" />
+                            <span className="text-nowrap">{bankAccountName}</span>
+                        </div>
+                    );
+                }
+                
+                // Contact payment - pending (no bank account)
+                if (contactName && !bankAccountName) {
+                    return (
+                        <div className="d-flex align-items-center">
+                            <RiUser3Line className="text-warning me-2" />
+                            <span className="text-nowrap">{contactName}</span>
+                        </div>
+                    );
+                }
+                
+                // Contact payment - paid (has both contact and bank account)
+                if (contactName && bankAccountName) {
+                    return (
+                        <div className="d-flex flex-column" style={{ fontSize: '0.875rem' }}>
+                            <div className="d-flex align-items-center mb-1">
+                                <RiUser3Line className="text-warning me-1" size={14} />
+                                <span className="text-nowrap">{contactName}</span>
+                            </div>
+                            <div className="d-flex align-items-center text-muted">
+                                <RiArrowRightLine className="me-1" size={12} />
+                                <RiBankLine className="text-info me-1" size={12} />
+                                <span className="text-nowrap" style={{ fontSize: '0.8rem' }}>
+                                    Paid via {bankAccountName}
+                                </span>
+                            </div>
+                        </div>
+                    );
+                }
+                
+                return <span className="text-muted">N/A</span>;
+            },
+            enableColumnFilter: false
+        },
+        {
+            header: "Status",
+            accessorKey: "status",
+            cell: (cell) => {
+                const { status, bankAccountName, contactName } = cell.row.original;
+                
+                // Direct bank payment - always paid
+                if (bankAccountName && !contactName) {
+                    return (
+                        <Badge color="success" className="badge-soft-success">
+                            Paid
+                        </Badge>
+                    );
+                }
+                
+                // Contact payments - show actual status
+                if (contactName) {
+                    if (status === 'pending') {
+                        return (
+                            <Badge color="warning" className="badge-soft-warning">
+                                Pending
+                            </Badge>
+                        );
+                    } else if (status === 'paid') {
+                        return (
+                            <Badge color="success" className="badge-soft-success">
+                                Paid
+                            </Badge>
+                        );
+                    }
+                }
+                
+                return <span className="text-muted">—</span>;
+            },
+            enableColumnFilter: false
+        },
+        {
+            header: "Due Date",
+            accessorKey: "dueDate",
+            cell: (cell) => {
+                const { dueDate, contactName, status } = cell.row.original;
+                
+                // Only show due date for pending contact payments
+                if (contactName && status === 'pending' && dueDate) {
+                    const dueDateObj = new Date(dueDate);
+                    const today = new Date();
+                    const isOverdue = dueDateObj < today;
+                    
+                    return (
+                        <span className={`text-nowrap ${isOverdue ? 'text-danger fw-semibold' : ''}`}>
+                            {dueDateObj.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                            })}
+                            {isOverdue && (
+                                <small className="d-block text-danger">
+                                    (Overdue)
+                                </small>
+                            )}
+                        </span>
+                    );
+                }
+                
+                return <span className="text-muted">—</span>;
+            },
+            enableColumnFilter: false
+        },
+        {
+            header: "Type",
+            accessorKey: "type",
+            cell: (cell) => {
+                const { bankAccountName, contactName, status } = cell.row.original;
+                
+                if (bankAccountName && !contactName) {
+                    return (
+                        <Badge color="info" className="badge-soft-info">
+                            Direct
+                        </Badge>
+                    );
+                }
+                
+                if (contactName) {
+                    return (
+                        <Badge color="secondary" className="badge-soft-secondary">
+                            Contact
+                        </Badge>
+                    );
+                }
+                
+                return <span className="text-muted">—</span>;
+            },
             enableColumnFilter: false
         },
         { 
             header: "Notes", 
             accessorKey: "notes",
             cell: (cell) => (
-                <div className="text-truncate" style={{ maxWidth: '200px' }}>
+                <div className="text-truncate" style={{ maxWidth: '120px' }}>
                     {cell.row.original.notes || '—'}
                 </div>
             ),

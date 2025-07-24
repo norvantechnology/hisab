@@ -38,13 +38,7 @@ export async function createBankTransfer(req, res) {
     const fromBankBalance = parseFloat(fromBank.currentBalance);
     const transferAmount = parseFloat(amount);
 
-    // 2. Check sufficient balance
-    if (fromBankBalance < transferAmount) {
-      await client.query("ROLLBACK");
-      return errorResponse(res, "Insufficient balance in source account", 400);
-    }
-
-    // 3. Generate transfer number
+    // 2. Generate transfer number
     const year = new Date().getFullYear();
     const countResult = await client.query(
       `SELECT COUNT(*) FROM hisab."bankTransfers" 
@@ -53,7 +47,7 @@ export async function createBankTransfer(req, res) {
     );
     const transferNumber = `BT-${year}-${(parseInt(countResult.rows[0].count) + 1).toString().padStart(4, '0')}`;
 
-    // 4. Create transfer record
+    // 3. Create transfer record
     const transferResult = await client.query(
       `INSERT INTO hisab."bankTransfers" (
         "transferNumber", "companyId", "fromBankId", "toBankId", "date",
@@ -66,7 +60,7 @@ export async function createBankTransfer(req, res) {
       ]
     );
 
-    // 5. Update bank balances
+    // 4. Update bank balances (allow negative balances)
     await client.query(
       `UPDATE hisab."bankAccounts" 
        SET "currentBalance" = "currentBalance" - $1
@@ -231,18 +225,7 @@ export async function updateBankTransfer(req, res) {
           [oldAmount, oldTransfer.toBankId]
         );
 
-        // Then apply the new transfer
-        // Check if enough balance in new from account
-        const newFromBank = (changingBanks && fromBankId) 
-          ? banksQuery.rows.find(b => b.id === newFromBankId)
-          : { currentBalance: oldTransfer.fromBankBalance };
-          
-        const newFromBankBalance = parseFloat(newFromBank.currentBalance);
-        if (newFromBankBalance < newAmount) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Insufficient balance in new source account", 400);
-        }
-
+        // Then apply the new transfer (allow negative balances)
         // Deduct from new from account
         await client.query(
           `UPDATE hisab."bankAccounts" 
@@ -259,14 +242,7 @@ export async function updateBankTransfer(req, res) {
           [newAmount, newToBankId]
         );
       } else if (amount) {
-        // Only amount is changing, adjust the difference
-        // Check if enough balance in from account
-        const fromBankBalance = parseFloat(oldTransfer.fromBankBalance);
-        if (fromBankBalance < difference) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Insufficient balance in source account", 400);
-        }
-
+        // Only amount is changing, adjust the difference (allow negative balances)
         // Update from bank balance
         await client.query(
           `UPDATE hisab."bankAccounts" 
@@ -356,7 +332,7 @@ export async function deleteBankTransfer(req, res) {
     const transfer = transferQuery.rows[0];
     const transferAmount = parseFloat(transfer.amount);
 
-    // 2. Reverse the transfer amounts
+    // 2. Reverse the transfer amounts (allow negative balances)
     // Add back to from account
     await client.query(
       `UPDATE hisab."bankAccounts" 

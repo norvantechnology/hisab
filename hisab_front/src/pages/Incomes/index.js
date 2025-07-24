@@ -13,6 +13,7 @@ import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import Loader from '../../Components/Common/Loader';
 import { getIncomeCategories, createIncomeCategory } from '../../services/categories';
 import { getBankAccounts } from '../../services/bankAccount';
+import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { createIncome, deleteIncome, getIncomes, updateIncome } from '../../services/incomes.js'
 
@@ -24,6 +25,7 @@ const IncomesPage = () => {
         incomes: [],
         categories: [],
         bankAccounts: [],
+        contacts: [],
         loading: false,
         searchTerm: '',
         pagination: {
@@ -36,7 +38,8 @@ const IncomesPage = () => {
         filters: {
             categoryId: '',
             startDate: currentMonthRange.startDate,
-            endDate: currentMonthRange.endDate
+            endDate: currentMonthRange.endDate,
+            status: ''
         },
         modals: {
             delete: false,
@@ -52,7 +55,7 @@ const IncomesPage = () => {
     });
 
     const {
-        incomes, categories, bankAccounts, loading, searchTerm,
+        incomes, categories, bankAccounts, contacts, loading, searchTerm,
         pagination, filters, modals, selectedIncome, isEditMode,
         newCategoryName, apiLoading
     } = state;
@@ -62,16 +65,18 @@ const IncomesPage = () => {
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
-            const [incomesRes, categoriesRes, accountsRes] = await Promise.all([
+            const [incomesRes, categoriesRes, accountsRes, contactsRes] = await Promise.all([
                 getIncomes({
                     page: pagination.page,
                     limit: pagination.limit,
                     categoryId: filters.categoryId,
                     startDate: filters.startDate,
-                    endDate: filters.endDate
+                    endDate: filters.endDate,
+                    status: filters.status
                 }),
                 getIncomeCategories(),
-                getBankAccounts()
+                getBankAccounts(),
+                getContacts({ skipPagination: true })
             ]);
 
             setState(prev => ({
@@ -79,6 +84,7 @@ const IncomesPage = () => {
                 incomes: incomesRes.success ? incomesRes.incomes || [] : [],
                 categories: categoriesRes.success ? categoriesRes.categories || [] : prev.categories,
                 bankAccounts: accountsRes.success ? accountsRes.accounts || [] : prev.bankAccounts,
+                contacts: contactsRes.success ? contactsRes.contacts || [] : prev.contacts,
                 pagination: incomesRes.success ? {
                     page: incomesRes.pagination.currentPage || 1,
                     limit: incomesRes.pagination.limit || 10,
@@ -102,7 +108,7 @@ const IncomesPage = () => {
 
     useEffect(() => {
         fetchData();
-    }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate]);
+    }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate, filters.status]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
@@ -203,10 +209,30 @@ const IncomesPage = () => {
                 id: values.id,
                 date: values.date,
                 categoryId: values.categoryId,
-                bankAccountId: values.bankAccountId,
                 amount: values.amount.toString(),
                 notes: values.notes || ''
             };
+
+            // Always include all payment-related fields to ensure proper clearing
+            if (values.paymentMethod === 'bank') {
+                // Direct bank payment - clear contact fields
+                payload.bankAccountId = values.bankAccountId;
+                payload.contactId = null;
+                payload.status = null;
+                payload.dueDate = null;
+            } else if (values.paymentMethod === 'contact') {
+                // Contact payment
+                payload.contactId = values.contactId;
+                payload.status = values.status;
+                
+                if (values.status === 'pending') {
+                    payload.dueDate = values.dueDate;
+                    payload.bankAccountId = null; // Clear bank account for pending
+                } else if (values.status === 'paid') {
+                    payload.bankAccountId = values.bankAccountId; // The bank account used to receive from the contact
+                    payload.dueDate = null; // Clear due date for paid
+                }
+            }
 
             const response = isEditMode
                 ? await updateIncome(payload)
@@ -252,7 +278,13 @@ const IncomesPage = () => {
             'Date': new Date(income.date).toLocaleDateString(),
             'Category': income.categoryName || 'N/A',
             'Amount': parseFloat(income.amount || 0).toFixed(2),
+            'Payment Method': income.bankAccountName && !income.contactName ? 'Bank Account' 
+                           : income.contactName ? 'Contact' 
+                           : 'N/A',
             'Bank Account': income.bankAccountName || 'N/A',
+            'Contact': income.contactName || 'N/A',
+            'Status': income.status || 'Paid',
+            'Due Date': income.dueDate ? new Date(income.dueDate).toLocaleDateString() : 'N/A',
             'Notes': income.notes || '',
             'Created At': new Date(income.createdAt).toLocaleString()
         }));
@@ -264,7 +296,8 @@ const IncomesPage = () => {
         return incomes.filter(income =>
             income.notes?.toLowerCase().includes(term) ||
             (income.categoryName?.toLowerCase().includes(term)) ||
-            (income.bankAccountName?.toLowerCase().includes(term))
+            (income.bankAccountName?.toLowerCase().includes(term)) ||
+            (income.contactName?.toLowerCase().includes(term))
         );
     }, [incomes, searchTerm]);
 
@@ -314,6 +347,7 @@ const IncomesPage = () => {
                     isEditMode={isEditMode}
                     categories={categories}
                     bankAccounts={bankAccounts}
+                    contacts={contacts}
                     selectedIncome={selectedIncome}
                     onSubmit={handleSubmitIncome}
                     isLoading={apiLoading}

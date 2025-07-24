@@ -2,6 +2,51 @@ import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
 import { calculateContactCurrentBalance } from "../utils/balanceCalculator.js";
 
+// Helper function to calculate updated current balance when opening balance changes
+function calculateUpdatedCurrentBalance(
+  oldOpeningBalance,
+  oldOpeningBalanceType,
+  oldCurrentBalance,
+  oldCurrentBalanceType,
+  newOpeningBalance,
+  newOpeningBalanceType
+) {
+  // Calculate the difference in opening balance
+  const openingBalanceDiff = newOpeningBalance - oldOpeningBalance;
+  
+  // Calculate the impact on current balance based on opening balance type change
+  let newCurrentBalance = oldCurrentBalance;
+  let newCurrentBalanceType = oldCurrentBalanceType;
+  
+  if (oldOpeningBalanceType === newOpeningBalanceType) {
+    // Same type, just adjust the amount
+    if (oldOpeningBalanceType === 'payable') {
+      newCurrentBalance = oldCurrentBalance + openingBalanceDiff;
+    } else {
+      newCurrentBalance = oldCurrentBalance - openingBalanceDiff;
+    }
+  } else {
+    // Different types, need to recalculate
+    if (oldOpeningBalanceType === 'payable' && newOpeningBalanceType === 'receivable') {
+      // Was payable, now receivable
+      newCurrentBalance = oldCurrentBalance + oldOpeningBalance + newOpeningBalance;
+      newCurrentBalanceType = 'receivable';
+    } else if (oldOpeningBalanceType === 'receivable' && newOpeningBalanceType === 'payable') {
+      // Was receivable, now payable
+      newCurrentBalance = oldCurrentBalance + oldOpeningBalance + newOpeningBalance;
+      newCurrentBalanceType = 'payable';
+    }
+  }
+  
+  // Ensure balance is positive
+  newCurrentBalance = Math.abs(newCurrentBalance);
+  
+  return {
+    balance: newCurrentBalance,
+    balanceType: newCurrentBalanceType
+  };
+}
+
 export async function createContact(req, res) {
   const {
     gstin,
@@ -10,6 +55,7 @@ export async function createContact(req, res) {
     email,
     dueDays,
     currency = 'INR',
+    contactType = 'customer', // Default to customer
     billingAddress1,
     billingAddress2,
     billingCity,
@@ -68,19 +114,19 @@ export async function createContact(req, res) {
 
     const insertQuery = `
       INSERT INTO hisab."contacts" (
-        "companyId", "gstin", "name", "mobile", "email", "dueDays", "currency",
+        "companyId", "gstin", "name", "mobile", "email", "dueDays", "currency", "contactType",
         "billingAddress1", "billingAddress2", "billingCity", "billingPincode", 
         "billingState", "billingCountry", "isShippingSame",
         "shippingAddress1", "shippingAddress2", "shippingCity", "shippingPincode",
         "shippingState", "shippingCountry", "openingBalance", "openingBalanceType",
         "currentBalance", "currentBalanceType", "enablePortal", "notes", "createdBy"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
       RETURNING *
     `;
 
     const params = [
-      companyId, gstin, name, mobile, email, dueDays, currency,
+      companyId, gstin, name, mobile, email, dueDays, currency, contactType,
       billingAddress1, billingAddress2, billingCity, billingPincode,
       billingState, billingCountry, isShippingSame,
       finalShipping.shippingAddress1, finalShipping.shippingAddress2,
@@ -119,7 +165,7 @@ export async function getContacts(req, res) {
     startDate,
     endDate,
     skipPagination = false,
-    includeCalculatedBalance = false
+    includeCalculatedBalance = 'true' // Default to true to always show calculated balance
   } = req.query;
 
   if (!companyId) {
@@ -131,7 +177,7 @@ export async function getContacts(req, res) {
   try {
     let query = `
       SELECT 
-        id, gstin, name, mobile, email, "dueDays", currency,
+        id, gstin, name, mobile, email, "dueDays", currency, "contactType",
         "billingAddress1", "billingAddress2", "billingCity", "billingPincode",
         "billingState", "billingCountry", "shippingAddress1", "shippingAddress2",
         "shippingCity", "shippingPincode", "shippingState", "shippingCountry",
@@ -163,6 +209,13 @@ export async function getContacts(req, res) {
       paramCount++;
       query += ` AND "currentBalanceType" = $${paramCount}`;
       params.push(balanceType);
+    }
+
+    // Contact type filter
+    if (contactType && ['customer', 'vendor'].includes(contactType)) {
+      paramCount++;
+      query += ` AND "contactType" = $${paramCount}`;
+      params.push(contactType);
     }
 
     // Date range filter
@@ -199,24 +252,61 @@ export async function getContacts(req, res) {
       openingBalance: parseFloat(contact.openingBalance)
     }));
 
-    // Include calculated balance if requested
-    if (includeCalculatedBalance === 'true') {
-      for (let contact of contacts) {
-        try {
-          const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contact.id, companyId);
-          contact.calculatedBalance = {
-            amount: balance,
-            type: balanceType
-          };
-          contact.balanceBreakdown = breakdown;
-        } catch (error) {
-          console.error(`Error calculating balance for contact ${contact.id}:`, error);
-          contact.calculatedBalance = {
-            amount: contact.currentBalance,
-            type: contact.currentBalanceType
-          };
-          contact.balanceBreakdown = null;
-        }
+    // Always include calculated balance and pending purchase information
+    for (let contact of contacts) {
+      try {
+        // Get calculated balance
+        const { balance, balanceType, breakdown } = await calculateContactCurrentBalance(client, contact.id, companyId);
+        
+        // Get pending purchases summary
+        const pendingSummaryQuery = await client.query(
+          `SELECT 
+             COUNT(*) as count,
+             COALESCE(SUM("remaining_amount"), 0) as totalRemaining
+           FROM hisab."purchases" 
+           WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL`,
+          [contact.id, companyId]
+        );
+
+        // Get pending sales summary
+        const pendingSalesSummaryQuery = await client.query(
+          `SELECT 
+             COUNT(*) as count,
+             COALESCE(SUM("remaining_amount"), 0) as totalRemaining
+           FROM hisab."sales" 
+           WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL`,
+          [contact.id, companyId]
+        );
+
+        const pendingInfo = pendingSummaryQuery.rows[0];
+        const pendingSalesInfo = pendingSalesSummaryQuery.rows[0];
+
+        contact.calculatedBalance = {
+          amount: balance,
+          type: balanceType
+        };
+        contact.balanceBreakdown = breakdown;
+        contact.pendingInfo = {
+          pendingPurchasesCount: parseInt(pendingInfo.count),
+          totalPendingPurchaseAmount: parseFloat(pendingInfo.totalRemaining),
+          pendingSalesCount: parseInt(pendingSalesInfo.count),
+          totalPendingSalesAmount: parseFloat(pendingSalesInfo.totalRemaining),
+          hasDiscrepancy: Math.abs(balance - parseFloat(contact.currentBalance)) > 0.01
+        };
+      } catch (error) {
+        console.error(`Error calculating balance for contact ${contact.id}:`, error);
+        contact.calculatedBalance = {
+          amount: contact.currentBalance,
+          type: contact.currentBalanceType
+        };
+        contact.balanceBreakdown = null;
+        contact.pendingInfo = {
+          pendingPurchasesCount: 0,
+          totalPendingPurchaseAmount: 0,
+          pendingSalesCount: 0,
+          totalPendingSalesAmount: 0,
+          hasDiscrepancy: false
+        };
       }
     }
 
@@ -294,6 +384,7 @@ export async function updateContact(req, res) {
     email,
     dueDays,
     currency,
+    contactType,
     billingAddress1,
     billingAddress2,
     billingCity,
@@ -384,32 +475,33 @@ export async function updateContact(req, res) {
         "email" = $4,
         "dueDays" = $5,
         "currency" = $6,
-        "billingAddress1" = $7,
-        "billingAddress2" = $8,
-        "billingCity" = $9,
-        "billingPincode" = $10,
-        "billingState" = $11,
-        "billingCountry" = $12,
-        "isShippingSame" = $13,
-        "shippingAddress1" = $14,
-        "shippingAddress2" = $15,
-        "shippingCity" = $16,
-        "shippingPincode" = $17,
-        "shippingState" = $18,
-        "shippingCountry" = $19,
-        "openingBalance" = $20,
-        "openingBalanceType" = $21,
-        "currentBalance" = $22,
-        "currentBalanceType" = $23,
-        "enablePortal" = $24,
-        "notes" = $25,
+        "contactType" = $7,
+        "billingAddress1" = $8,
+        "billingAddress2" = $9,
+        "billingCity" = $10,
+        "billingPincode" = $11,
+        "billingState" = $12,
+        "billingCountry" = $13,
+        "isShippingSame" = $14,
+        "shippingAddress1" = $15,
+        "shippingAddress2" = $16,
+        "shippingCity" = $17,
+        "shippingPincode" = $18,
+        "shippingState" = $19,
+        "shippingCountry" = $20,
+        "openingBalance" = $21,
+        "openingBalanceType" = $22,
+        "currentBalance" = $23,
+        "currentBalanceType" = $24,
+        "enablePortal" = $25,
+        "notes" = $26,
         "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $26
+      WHERE "id" = $27
       RETURNING *
     `;
 
     const params = [
-      gstin, name, mobile, email, dueDays, currency,
+      gstin, name, mobile, email, dueDays, currency, contactType,
       billingAddress1, billingAddress2, billingCity, billingPincode,
       billingState, billingCountry, isShippingSame,
       finalShipping.shippingAddress1, finalShipping.shippingAddress2,
@@ -738,6 +830,23 @@ export async function getContactCurrentBalance(req, res) {
       [contactId, companyId]
     );
 
+    // Get detailed pending sales information
+    const pendingSalesQuery = await client.query(
+      `SELECT 
+         "id",
+         "invoiceNumber",
+         "invoiceDate",
+         "netReceivable",
+         "paid_amount",
+         "remaining_amount",
+         "status",
+         "createdAt"
+       FROM hisab."sales" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL
+       ORDER BY "invoiceDate" ASC`,
+      [contactId, companyId]
+    );
+
     // Get pending purchases count and total
     const pendingSummaryQuery = await client.query(
       `SELECT COUNT(*) as count, COALESCE(SUM("remaining_amount"), 0) as total
@@ -746,7 +855,16 @@ export async function getContactCurrentBalance(req, res) {
       [contactId, companyId]
     );
 
+    // Get pending sales count and total
+    const pendingSalesSummaryQuery = await client.query(
+      `SELECT COUNT(*) as count, COALESCE(SUM("remaining_amount"), 0) as total
+       FROM hisab."sales" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL`,
+      [contactId, companyId]
+    );
+
     const pendingInfo = pendingSummaryQuery.rows[0];
+    const pendingSalesInfo = pendingSalesSummaryQuery.rows[0];
 
     // Process pending purchases for detailed view
     const pendingPurchases = pendingPurchasesQuery.rows.map(purchase => ({
@@ -758,6 +876,18 @@ export async function getContactCurrentBalance(req, res) {
       remainingAmount: parseFloat(purchase.remaining_amount || 0),
       status: purchase.status,
       createdAt: purchase.createdAt
+    }));
+
+    // Process pending sales for detailed view
+    const pendingSales = pendingSalesQuery.rows.map(sale => ({
+      id: sale.id,
+      invoiceNumber: sale.invoiceNumber,
+      invoiceDate: sale.invoiceDate,
+      netReceivable: parseFloat(sale.netReceivable || 0),
+      paidAmount: parseFloat(sale.paid_amount || 0),
+      remainingAmount: parseFloat(sale.remaining_amount || 0),
+      status: sale.status,
+      createdAt: sale.createdAt
     }));
 
     return successResponse(res, {
@@ -776,15 +906,22 @@ export async function getContactCurrentBalance(req, res) {
         amount: balance,
         type: balanceType
       },
+      storedBalance: {
+        amount: parseFloat(contact.currentBalance),
+        type: contact.currentBalanceType
+      },
       pendingInfo: {
         pendingPurchasesCount: parseInt(pendingInfo.count),
-        totalPendingAmount: parseFloat(pendingInfo.total),
+        totalPendingPurchaseAmount: parseFloat(pendingInfo.total),
+        pendingSalesCount: parseInt(pendingSalesInfo.count),
+        totalPendingSalesAmount: parseFloat(pendingSalesInfo.total),
         hasDiscrepancy: Math.abs(balance - parseFloat(contact.currentBalance)) > 0.01,
-        pendingPurchases: pendingPurchases
+        pendingPurchases: pendingPurchases,
+        pendingSales: pendingSales
       },
       calculation: {
-        formula: "Opening Balance + Pending Purchases - Payments Made + Receipts Received + Adjustments",
-        explanation: `Based on opening balance (${breakdown.openingBalanceType} ${breakdown.openingBalance}), pending purchases (${breakdown.totalPendingPurchases}), payments made (${breakdown.totalPaymentsToContact}), receipts received (${breakdown.totalReceiptsFromContact}), and adjustments (${breakdown.totalAdjustments})`
+        formula: "Stored Current Balance + Opening Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes - Current Balance Payments + Receipts Received + Adjustments",
+        explanation: `Based on stored current balance (${breakdown.storedCurrentBalanceType} ${breakdown.storedCurrentBalance}), opening balance (${breakdown.openingBalanceType} ${breakdown.openingBalance}), pending purchases (${breakdown.totalPendingPurchases}), pending expenses (${breakdown.totalPendingExpenses}), pending sales (${breakdown.totalPendingSales}), pending incomes (${breakdown.totalPendingIncomes}), current balance payments (${breakdown.totalCurrentBalancePayments}), receipts received (${breakdown.totalReceiptsFromContact}), and adjustments (${breakdown.totalAdjustments})`
       }
     });
 
@@ -903,6 +1040,38 @@ export async function getContactPendingBalanceSummary(req, res) {
       [contactId, companyId]
     );
 
+    // Get pending sales summary
+    const pendingSalesSummaryQuery = await client.query(
+      `SELECT 
+         COUNT(*) as count,
+         COALESCE(SUM("remaining_amount"), 0) as totalRemaining,
+         COALESCE(SUM("netReceivable"), 0) as totalNetReceivable,
+         COALESCE(SUM("paid_amount"), 0) as totalPaid
+       FROM hisab."sales" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL`,
+      [contactId, companyId]
+    );
+
+    // Get pending expenses summary (amounts we owe to contact)
+    const pendingExpensesQuery = await client.query(
+      `SELECT 
+         COUNT(*) as count,
+         COALESCE(SUM("amount"), 0) as totalAmount
+       FROM hisab."expenses" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending'`,
+      [contactId, companyId]
+    );
+
+    // Get pending incomes summary (amounts contact owes us)
+    const pendingIncomesQuery = await client.query(
+      `SELECT 
+         COUNT(*) as count,
+         COALESCE(SUM("amount"), 0) as totalAmount
+       FROM hisab."incomes" 
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending'`,
+      [contactId, companyId]
+    );
+
     // Get payments summary
     const paymentsSummaryQuery = await client.query(
       `SELECT 
@@ -915,21 +1084,41 @@ export async function getContactPendingBalanceSummary(req, res) {
     );
 
     const pendingInfo = pendingSummaryQuery.rows[0];
+    const pendingSalesInfo = pendingSalesSummaryQuery.rows[0];
+    const pendingExpensesInfo = pendingExpensesQuery.rows[0];
+    const pendingIncomesInfo = pendingIncomesQuery.rows[0];
     const paymentsInfo = paymentsSummaryQuery.rows[0];
 
     // Calculate current pending balance
     const openingBalance = parseFloat(contact.openingBalance || 0);
     const openingBalanceType = contact.openingBalanceType;
-    const totalPending = parseFloat(pendingInfo.totalRemaining || 0);
+    const storedCurrentBalance = parseFloat(contact.currentBalance || 0);
+    const storedCurrentBalanceType = contact.currentBalanceType;
+    const totalPendingPurchases = parseFloat(pendingInfo.totalRemaining || 0);
+    const totalPendingSales = parseFloat(pendingSalesInfo.totalRemaining || 0);
+    const totalPendingExpenses = parseFloat(pendingExpensesInfo.totalAmount || 0);
+    const totalPendingIncomes = parseFloat(pendingIncomesInfo.totalAmount || 0);
     const totalPayments = parseFloat(paymentsInfo.totalPayments || 0);
     const totalReceipts = parseFloat(paymentsInfo.totalReceipts || 0);
 
     let currentPendingBalance = 0;
-    if (openingBalanceType === 'payable') {
-      currentPendingBalance = openingBalance + totalPending - totalPayments + totalReceipts;
+    
+    // Start with stored current balance
+    if (storedCurrentBalanceType === 'payable') {
+      currentPendingBalance = storedCurrentBalance; // We owe them
     } else {
-      currentPendingBalance = -openingBalance + totalPending - totalPayments + totalReceipts;
+      currentPendingBalance = -storedCurrentBalance; // They owe us
     }
+    
+    // Add opening balance impact
+    if (openingBalanceType === 'payable') {
+      currentPendingBalance += openingBalance; // We owe them
+    } else {
+      currentPendingBalance -= openingBalance; // They owe us
+    }
+    
+    // Add pending transactions
+    currentPendingBalance += totalPendingPurchases + totalPendingExpenses - totalPendingSales - totalPendingIncomes - totalPayments + totalReceipts;
 
     let currentPendingBalanceType = currentPendingBalance > 0 ? 'payable' : 'receivable';
     if (currentPendingBalance === 0) currentPendingBalanceType = 'payable';
@@ -941,24 +1130,36 @@ export async function getContactPendingBalanceSummary(req, res) {
         name: contact.name,
         openingBalance: openingBalance,
         openingBalanceType: openingBalanceType,
-        storedBalance: parseFloat(contact.currentBalance || 0),
-        storedBalanceType: contact.currentBalanceType
+        storedBalance: storedCurrentBalance,
+        storedBalanceType: storedCurrentBalanceType
       },
       pendingSummary: {
         pendingPurchasesCount: parseInt(pendingInfo.count),
         totalNetPayable: parseFloat(pendingInfo.totalNetPayable),
         totalPaid: parseFloat(pendingInfo.totalPaid),
         totalRemaining: parseFloat(pendingInfo.totalRemaining),
+        pendingSalesCount: parseInt(pendingSalesInfo.count),
+        totalNetReceivable: parseFloat(pendingSalesInfo.totalNetReceivable),
+        totalSalesPaid: parseFloat(pendingSalesInfo.totalPaid),
+        totalSalesRemaining: parseFloat(pendingSalesInfo.totalRemaining),
+        pendingExpensesCount: parseInt(pendingExpensesInfo.count),
+        totalPendingExpenses: totalPendingExpenses,
+        pendingIncomesCount: parseInt(pendingIncomesInfo.count),
+        totalPendingIncomes: totalPendingIncomes,
         totalPayments: totalPayments,
         totalReceipts: totalReceipts,
         currentPendingBalance: currentPendingBalance,
         currentPendingBalanceType: currentPendingBalanceType
       },
       calculation: {
-        formula: "Opening Balance + Pending Purchases - Payments Made + Receipts Received",
+        formula: "Stored Current Balance + Opening Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes - Current Balance Payments + Receipts Received",
         breakdown: {
+          storedCurrentBalance: `${storedCurrentBalanceType} ${storedCurrentBalance}`,
           openingBalance: `${openingBalanceType} ${openingBalance}`,
-          pendingPurchases: totalPending,
+          pendingPurchases: totalPendingPurchases,
+          pendingExpenses: totalPendingExpenses,
+          pendingSales: totalPendingSales,
+          pendingIncomes: totalPendingIncomes,
           paymentsMade: totalPayments,
           receiptsReceived: totalReceipts,
           result: `${currentPendingBalanceType} ${currentPendingBalance}`

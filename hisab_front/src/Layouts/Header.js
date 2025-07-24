@@ -13,9 +13,7 @@ import LanguageDropdown from '../Components/Common/LanguageDropdown';
 import WebAppsDropdown from '../Components/Common/WebAppsDropdown';
 import CompanyDropdown from '../Components/Common/CompanyDropdown';
 
-import MyCartDropdown from '../Components/Common/MyCartDropdown';
 import FullScreenDropdown from '../Components/Common/FullScreenDropdown';
-import NotificationDropdown from '../Components/Common/NotificationDropdown';
 import ProfileDropdown from '../Components/Common/ProfileDropdown';
 import LightDark from '../Components/Common/LightDark';
 
@@ -137,8 +135,6 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass }) => {
                             {/* CompanyDropdown */}
                             <CompanyDropdown />
 
-                            <MyCartDropdown />
-
                             {/* FullScreenDropdown */}
                             <FullScreenDropdown />
 
@@ -147,9 +143,6 @@ const Header = ({ onChangeLayoutMode, layoutModeType, headerClass }) => {
                                 layoutMode={layoutModeType}
                                 onChangeLayoutMode={onChangeLayoutMode}
                             />
-
-                            {/* NotificationDropdown */}
-                            <NotificationDropdown />
 
                             {/* ProfileDropdown */}
                             <ProfileDropdown />

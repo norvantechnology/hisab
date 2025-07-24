@@ -23,7 +23,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const commonMailOptions = {
-    from: `"Exellius" <${process.env.SMTP_EMAIL}>`,
+    from: `"HISAB" <${process.env.SMTP_EMAIL}>`,
     headers: {
         'X-Mailer': 'Nodemailer',
         'X-Priority': '3',

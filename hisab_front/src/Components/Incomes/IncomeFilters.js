@@ -11,6 +11,19 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
         return category ? { value: category.id, label: category.name } : null;
     };
 
+    const getSelectedStatus = () => {
+        if (!filters.status) return { value: '', label: 'All Status' };
+        return filters.status === 'paid' 
+            ? { value: 'paid', label: 'Paid' }
+            : { value: 'pending', label: 'Pending' };
+    };
+
+    const statusOptions = [
+        { value: '', label: 'All Status' },
+        { value: 'paid', label: 'Paid' },
+        { value: 'pending', label: 'Pending' }
+    ];
+
     const dateFilterOptions = [
         {
             label: 'This Month',
@@ -70,49 +83,72 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
                 {/* Mobile Layout - Stack everything vertically */}
                 <div className="d-block d-lg-none">
                     <Row className="g-3">
-                        {/* Category - Full width on mobile */}
+                        {/* Category and Status - Full width on mobile */}
                         <Col xs={12}>
-                            <FormGroup className="mb-0">
-                                <Label className="mb-2 fw-semibold">Income Category</Label>
-                                <ReactSelect
-                                    options={[
-                                        ...categories.map(category => ({
-                                            value: category.id,
-                                            label: category.name
-                                        })),
-                                        {
-                                            value: 'add_new',
-                                            label: 'Add New Category',
-                                            isAddOption: true
-                                        }
-                                    ]}
-                                    value={getSelectedCategory()}
-                                    onChange={(selectedOption) => {
-                                        if (selectedOption?.isAddOption) {
-                                            onAddCategory();
-                                        } else {
-                                            onFilterChange({
-                                                ...filters,
-                                                categoryId: selectedOption?.value || ''
-                                            });
-                                        }
-                                    }}
-                                    className="react-select-container"
-                                    classNamePrefix="react-select"
-                                    placeholder="Select Income Category"
-                                    isClearable
-                                    noOptionsMessage={() => "No income categories found"}
-                                    formatOptionLabel={(option) => (
-                                        option.isAddOption ? (
-                                            <div className="text-primary">
-                                                <RiAddLine className="align-middle me-1" />
-                                                {option.label}
-                                            </div>
-                                        ) : option.label
-                                    )}
-                                    menuPlacement="auto"
-                                />
-                            </FormGroup>
+                            <Row className="g-2">
+                                <Col xs={6}>
+                                    <FormGroup className="mb-0">
+                                        <Label className="mb-2 fw-semibold">Category</Label>
+                                        <ReactSelect
+                                            options={[
+                                                ...categories.map(category => ({
+                                                    value: category.id,
+                                                    label: category.name
+                                                })),
+                                                {
+                                                    value: 'add_new',
+                                                    label: 'Add New Category',
+                                                    isAddOption: true
+                                                }
+                                            ]}
+                                            value={getSelectedCategory()}
+                                            onChange={(selectedOption) => {
+                                                if (selectedOption?.isAddOption) {
+                                                    onAddCategory();
+                                                } else {
+                                                    onFilterChange({
+                                                        ...filters,
+                                                        categoryId: selectedOption?.value || ''
+                                                    });
+                                                }
+                                            }}
+                                            className="react-select-container"
+                                            classNamePrefix="react-select"
+                                            placeholder="Select Category"
+                                            isClearable
+                                            noOptionsMessage={() => "No income categories found"}
+                                            formatOptionLabel={(option) => (
+                                                option.isAddOption ? (
+                                                    <div className="text-primary">
+                                                        <RiAddLine className="align-middle me-1" />
+                                                        {option.label}
+                                                    </div>
+                                                ) : option.label
+                                            )}
+                                            menuPlacement="auto"
+                                        />
+                                    </FormGroup>
+                                </Col>
+                                <Col xs={6}>
+                                    <FormGroup className="mb-0">
+                                        <Label className="mb-2 fw-semibold">Status</Label>
+                                        <ReactSelect
+                                            options={statusOptions}
+                                            value={getSelectedStatus()}
+                                            onChange={(selectedOption) => {
+                                                onFilterChange({
+                                                    ...filters,
+                                                    status: selectedOption?.value || ''
+                                                });
+                                            }}
+                                            className="react-select-container"
+                                            classNamePrefix="react-select"
+                                            placeholder="Select Status"
+                                            menuPlacement="auto"
+                                        />
+                                    </FormGroup>
+                                </Col>
+                            </Row>
                         </Col>
                         
                         {/* Date Range - Full width on mobile */}
@@ -186,7 +222,8 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
                                             onClick={() => onFilterChange({
                                                 categoryId: '',
                                                 startDate: currentMonthRange.startDate,
-                                                endDate: currentMonthRange.endDate
+                                                endDate: currentMonthRange.endDate,
+                                                status: ''
                                             })}
                                             className="w-100 p-2"
                                             title="Reset Filters"
@@ -203,8 +240,8 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
                 {/* Desktop Layout - Side by side */}
                 <div className="d-none d-lg-block">
                     <Row className="g-3 align-items-end">
-                        {/* Category - 4/12 on desktop */}
-                        <Col lg={4}>
+                        {/* Category - 3/12 on desktop */}
+                        <Col lg={3}>
                             <FormGroup className="mb-0">
                                 <Label className="mb-2 fw-semibold">Income Category</Label>
                                 <ReactSelect
@@ -248,8 +285,29 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
                             </FormGroup>
                         </Col>
 
-                        {/* Date Range - 8/12 on desktop */}
-                        <Col lg={8}>
+                        {/* Status - 2/12 on desktop */}
+                        <Col lg={2}>
+                            <FormGroup className="mb-0">
+                                <Label className="mb-2 fw-semibold">Status</Label>
+                                <ReactSelect
+                                    options={statusOptions}
+                                    value={getSelectedStatus()}
+                                    onChange={(selectedOption) => {
+                                        onFilterChange({
+                                            ...filters,
+                                            status: selectedOption?.value || ''
+                                        });
+                                    }}
+                                    className="react-select-container"
+                                    classNamePrefix="react-select"
+                                    placeholder="Status"
+                                    menuPlacement="auto"
+                                />
+                            </FormGroup>
+                        </Col>
+
+                        {/* Date Range - 7/12 on desktop */}
+                        <Col lg={7}>
                             <FormGroup className="mb-0">
                                 <Label className="mb-2 fw-semibold">Date Range</Label>
                                 <div className="d-flex gap-2">
@@ -313,7 +371,8 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
                                         onClick={() => onFilterChange({
                                             categoryId: '',
                                             startDate: currentMonthRange.startDate,
-                                            endDate: currentMonthRange.endDate
+                                            endDate: currentMonthRange.endDate,
+                                            status: ''
                                         })}
                                         className="px-3"
                                         title="Reset Filters"

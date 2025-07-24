@@ -11,6 +11,16 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
         return category ? { value: category.id, label: category.name } : null;
     };
 
+    const getSelectedStatus = () => {
+        if (!filters.status) return null;
+        const statusOptions = [
+            { value: 'pending', label: 'Pending' },
+            { value: 'paid', label: 'Paid' }
+        ];
+        const status = statusOptions.find(s => s.value === filters.status);
+        return status || null;
+    };
+
     const dateFilterOptions = [
         {
             label: 'This Month',
@@ -65,14 +75,175 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
     ];
 
     return (
-        <Card className="mb-3">
+        <Card className="shadow-sm mb-4">
             <CardBody className="p-3">
-                {/* Mobile Layout - Stack everything vertically */}
-                <div className="d-block d-lg-none">
-                    <Row className="g-3">
-                        {/* Category - Full width on mobile */}
+                <Row className="g-3">
+                    {/* Large screens - horizontal layout */}
+                    <Col xs={12} className="d-none d-lg-block">
+                        <Row className="align-items-end g-3">
+                            {/* Category Filter */}
+                            <Col lg={3}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold">Category</Label>
+                                    <ReactSelect
+                                        options={[
+                                            ...categories.map(category => ({
+                                                value: category.id,
+                                                label: category.name
+                                            })),
+                                            {
+                                                value: 'add-new',
+                                                label: 'Add New Category',
+                                                isAddOption: true
+                                            }
+                                        ]}
+                                        value={getSelectedCategory()}
+                                        onChange={(selectedOption) => {
+                                            if (selectedOption?.isAddOption) {
+                                                onAddCategory();
+                                            } else {
+                                                onFilterChange({
+                                                    ...filters,
+                                                    categoryId: selectedOption?.value || ''
+                                                });
+                                            }
+                                        }}
+                                        className="react-select-container"
+                                        classNamePrefix="react-select"
+                                        placeholder="Select Category"
+                                        isClearable
+                                        noOptionsMessage={() => "No categories found"}
+                                        formatOptionLabel={(option) => (
+                                            option.isAddOption ? (
+                                                <div className="text-primary">
+                                                    <RiAddLine className="align-middle me-1" />
+                                                    {option.label}
+                                                </div>
+                                            ) : option.label
+                                        )}
+                                        menuPlacement="auto"
+                                    />
+                                </FormGroup>
+                            </Col>
+
+                            {/* Status Filter */}
+                            <Col lg={2}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold">Status</Label>
+                                    <ReactSelect
+                                        options={[
+                                            { value: 'pending', label: 'Pending' },
+                                            { value: 'paid', label: 'Paid' }
+                                        ]}
+                                        value={getSelectedStatus()}
+                                        onChange={(selectedOption) => {
+                                            onFilterChange({
+                                                ...filters,
+                                                status: selectedOption?.value || ''
+                                            });
+                                        }}
+                                        className="react-select-container"
+                                        classNamePrefix="react-select"
+                                        placeholder="All Status"
+                                        isClearable
+                                        menuPlacement="auto"
+                                    />
+                                </FormGroup>
+                            </Col>
+
+                            {/* Start Date */}
+                            <Col lg={2}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold">From Date</Label>
+                                    <Input
+                                        type="date"
+                                        value={filters.startDate}
+                                        onChange={(e) => onFilterChange({
+                                            ...filters,
+                                            startDate: e.target.value
+                                        })}
+                                    />
+                                </FormGroup>
+                            </Col>
+
+                            {/* End Date */}
+                            <Col lg={2}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold">To Date</Label>
+                                    <Input
+                                        type="date"
+                                        value={filters.endDate}
+                                        onChange={(e) => onFilterChange({
+                                            ...filters,
+                                            endDate: e.target.value
+                                        })}
+                                    />
+                                </FormGroup>
+                            </Col>
+
+                            {/* Quick Date Filters */}
+                            <Col lg={2}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold d-block">&nbsp;</Label>
+                                    <UncontrolledDropdown>
+                                        <DropdownToggle 
+                                            caret 
+                                            color="light" 
+                                            className="w-100 d-flex align-items-center justify-content-between"
+                                        >
+                                            <div className="d-flex align-items-center">
+                                                <RiCalendarLine className="align-middle me-2" />
+                                                <span>Quick Filters</span>
+                                            </div>
+                                        </DropdownToggle>
+                                        <DropdownMenu>
+                                            {dateFilterOptions.map(option => (
+                                                <DropdownItem
+                                                    key={option.value}
+                                                    onClick={option.action}
+                                                    active={
+                                                        (option.value === 'current-month' &&
+                                                            filters.startDate === currentMonthRange.startDate &&
+                                                            filters.endDate === currentMonthRange.endDate) ||
+                                                        (option.value === 'all-time' &&
+                                                            filters.startDate === '' && filters.endDate === '')
+                                                    }
+                                                >
+                                                    {option.label}
+                                                </DropdownItem>
+                                            ))}
+                                        </DropdownMenu>
+                                    </UncontrolledDropdown>
+                                </FormGroup>
+                            </Col>
+
+                            {/* Reset Button */}
+                            <Col lg={1}>
+                                <FormGroup className="mb-0">
+                                    <Label className="mb-2 fw-semibold d-block">&nbsp;</Label>
+                                    <Button
+                                        color="light"
+                                        onClick={() => onFilterChange({
+                                            categoryId: '',
+                                            status: '',
+                                            startDate: currentMonthRange.startDate,
+                                            endDate: currentMonthRange.endDate
+                                        })}
+                                        className="w-100"
+                                        title="Reset Filters"
+                                    >
+                                        <RiRefreshLine size={16} />
+                                    </Button>
+                                </FormGroup>
+                            </Col>
+                        </Row>
+                    </Col>
+
+                    {/* Mobile/Tablet Layout - Stacked */}
+                    <Col xs={12} className="d-lg-none">
+                        {/* Category Filter - Full width on mobile */}
                         <Col xs={12}>
-                            <FormGroup className="mb-0">
+                            <FormGroup className="mb-3">
                                 <Label className="mb-2 fw-semibold">Category</Label>
                                 <ReactSelect
                                     options={[
@@ -81,7 +252,7 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
                                             label: category.name
                                         })),
                                         {
-                                            value: 'add_new',
+                                            value: 'add-new',
                                             label: 'Add New Category',
                                             isAddOption: true
                                         }
@@ -110,6 +281,31 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
                                             </div>
                                         ) : option.label
                                     )}
+                                    menuPlacement="auto"
+                                />
+                            </FormGroup>
+                        </Col>
+
+                        {/* Status Filter - Full width on mobile */}
+                        <Col xs={12}>
+                            <FormGroup className="mb-3">
+                                <Label className="mb-2 fw-semibold">Status</Label>
+                                <ReactSelect
+                                    options={[
+                                        { value: 'pending', label: 'Pending' },
+                                        { value: 'paid', label: 'Paid' }
+                                    ]}
+                                    value={getSelectedStatus()}
+                                    onChange={(selectedOption) => {
+                                        onFilterChange({
+                                            ...filters,
+                                            status: selectedOption?.value || ''
+                                        });
+                                    }}
+                                    className="react-select-container"
+                                    classNamePrefix="react-select"
+                                    placeholder="All Status"
+                                    isClearable
                                     menuPlacement="auto"
                                 />
                             </FormGroup>
@@ -185,6 +381,7 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
                                             color="light"
                                             onClick={() => onFilterChange({
                                                 categoryId: '',
+                                                status: '',
                                                 startDate: currentMonthRange.startDate,
                                                 endDate: currentMonthRange.endDate
                                             })}
@@ -197,134 +394,8 @@ const ExpenseFilters = ({ categories, filters, onFilterChange, currentMonthRange
                                 </Row>
                             </FormGroup>
                         </Col>
-                    </Row>
-                </div>
-
-                {/* Desktop Layout - Side by side */}
-                <div className="d-none d-lg-block">
-                    <Row className="g-3 align-items-end">
-                        {/* Category - 4/12 on desktop */}
-                        <Col lg={4}>
-                            <FormGroup className="mb-0">
-                                <Label className="mb-2 fw-semibold">Category</Label>
-                                <ReactSelect
-                                    options={[
-                                        ...categories.map(category => ({
-                                            value: category.id,
-                                            label: category.name
-                                        })),
-                                        {
-                                            value: 'add_new',
-                                            label: 'Add New Category',
-                                            isAddOption: true
-                                        }
-                                    ]}
-                                    value={getSelectedCategory()}
-                                    onChange={(selectedOption) => {
-                                        if (selectedOption?.isAddOption) {
-                                            onAddCategory();
-                                        } else {
-                                            onFilterChange({
-                                                ...filters,
-                                                categoryId: selectedOption?.value || ''
-                                            });
-                                        }
-                                    }}
-                                    className="react-select-container"
-                                    classNamePrefix="react-select"
-                                    placeholder="Select Category"
-                                    isClearable
-                                    noOptionsMessage={() => "No categories found"}
-                                    formatOptionLabel={(option) => (
-                                        option.isAddOption ? (
-                                            <div className="text-primary">
-                                                <RiAddLine className="align-middle me-1" />
-                                                {option.label}
-                                            </div>
-                                        ) : option.label
-                                    )}
-                                    menuPlacement="auto"
-                                />
-                            </FormGroup>
-                        </Col>
-
-                        {/* Date Range - 8/12 on desktop */}
-                        <Col lg={8}>
-                            <FormGroup className="mb-0">
-                                <Label className="mb-2 fw-semibold">Date Range</Label>
-                                <div className="d-flex gap-2">
-                                    {/* Quick Filters Dropdown */}
-                                    <UncontrolledDropdown style={{ minWidth: '140px' }}>
-                                        <DropdownToggle 
-                                            caret 
-                                            color="light" 
-                                            className="text-start d-flex align-items-center justify-content-between w-100"
-                                        >
-                                            <div className="d-flex align-items-center">
-                                                <RiCalendarLine className="align-middle me-1" />
-                                                <span className="text-truncate">Quick Filters</span>
-                                            </div>
-                                        </DropdownToggle>
-                                        <DropdownMenu>
-                                            {dateFilterOptions.map(option => (
-                                                <DropdownItem
-                                                    key={option.value}
-                                                    onClick={option.action}
-                                                    active={
-                                                        (option.value === 'current-month' &&
-                                                            filters.startDate === currentMonthRange.startDate &&
-                                                            filters.endDate === currentMonthRange.endDate) ||
-                                                        (option.value === 'last-month' &&
-                                                            filters.startDate && filters.endDate &&
-                                                            !(filters.startDate === currentMonthRange.startDate &&
-                                                                filters.endDate === currentMonthRange.endDate) &&
-                                                            !(filters.startDate === '' && filters.endDate === ''))
-                                                    }
-                                                >
-                                                    {option.label}
-                                                </DropdownItem>
-                                            ))}
-                                        </DropdownMenu>
-                                    </UncontrolledDropdown>
-                                    
-                                    {/* Date Inputs */}
-                                    <Input
-                                        type="date"
-                                        value={filters.startDate}
-                                        onChange={(e) => onFilterChange({
-                                            ...filters,
-                                            startDate: e.target.value
-                                        })}
-                                        style={{ minWidth: '140px' }}
-                                    />
-                                    <Input
-                                        type="date"
-                                        value={filters.endDate}
-                                        onChange={(e) => onFilterChange({
-                                            ...filters,
-                                            endDate: e.target.value
-                                        })}
-                                        style={{ minWidth: '140px' }}
-                                    />
-                                    
-                                    {/* Reset Button */}
-                                    <Button
-                                        color="light"
-                                        onClick={() => onFilterChange({
-                                            categoryId: '',
-                                            startDate: currentMonthRange.startDate,
-                                            endDate: currentMonthRange.endDate
-                                        })}
-                                        className="px-3"
-                                        title="Reset Filters"
-                                    >
-                                        <RiRefreshLine size={16} />
-                                    </Button>
-                                </div>
-                            </FormGroup>
-                        </Col>
-                    </Row>
-                </div>
+                    </Col>
+                </Row>
             </CardBody>
         </Card>
     );

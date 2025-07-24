@@ -27,11 +27,10 @@ import { useFormik } from "formik";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { listProducts } from '../../../services/products';
+import { getNextInvoiceNumber } from '../../../services/purchaseInvoice';
 import ItemModal from './ItemModal';
 import { DISCOUNT_TYPES, TAX_TYPES, STATUS_OPTIONS } from './contant'
-import { getBankAccounts } from '../../../services/bankAccount'
-import { getContacts } from '../../../services/contacts'
-import { ACCOUNT_TYPES } from '../../BankAccounts';
+import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
 
 const PurchaseInvoiceForm = ({
   isOpen,
@@ -98,19 +97,30 @@ const PurchaseInvoiceForm = ({
   const [pagination, setPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [bankAccounts, setBankAccounts] = useState([]);
-  const [contacts, setContacts] = useState([]);
-  const [contactsPagination, setContactsPagination] = useState({ page: 1, limit: 10, total: 0, totalPages: 1 });
-  const [loadingVendors, setLoadingVendors] = useState(false);
-  const [vendorSearchTerm, setVendorSearchTerm] = useState('');
-  const [isFetchingMoreContacts, setIsFetchingMoreContacts] = useState(false);
   const scrollContainerRef = useRef(null);
-  const vendorScrollContainerRef = useRef(null);
   const isInitializedRef = useRef(false);
+  const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState('');
 
   const fetchProductsRef = useRef(false);
   const lastSearchTermRef = useRef('');
   const lastPageRef = useRef(1);
+
+  // Fetch next invoice number
+  const fetchNextInvoiceNumber = useCallback(async () => {
+    if (!isEditMode) {
+      try {
+        console.log('Fetching next invoice number for purchase...');
+        const response = await getNextInvoiceNumber();
+        console.log('Purchase invoice number response:', response);
+        if (response.success && response.data.nextInvoiceNumber) {
+          setSuggestedInvoiceNumber(response.data.nextInvoiceNumber);
+          console.log('Set suggested purchase invoice number:', response.data.nextInvoiceNumber);
+        }
+      } catch (error) {
+        console.error('Error fetching next invoice number:', error);
+      }
+    }
+  }, [isEditMode]);
 
   const calculateItemTotal = useCallback((item) => {
     const quantity = item.isSerialized ? item.serialNumbers.length : item.quantity;
@@ -336,40 +346,10 @@ const PurchaseInvoiceForm = ({
     }
   });
 
-  const fetchVendors = useCallback(async (search = '', page = 1) => {
-    setLoadingVendors(true);
-    try {
-      const bankAccountsResponse = await getBankAccounts({ search });
-      setBankAccounts(bankAccountsResponse.accounts || []);
-
-      const contactsResponse = await getContacts({ search, page, limit: contactsPagination.limit, skipPagination: true });
-      setContacts(prev => page === 1 ? contactsResponse.contacts || [] : [...prev, ...(contactsResponse.contacts || [])]);
-      setContactsPagination(contactsResponse.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 });
-    } catch (error) {
-      console.error('Error fetching vendors:', error);
-    } finally {
-      setLoadingVendors(false);
-    }
-  }, [contactsPagination.limit]);
-
-  const handleVendorSearch = useCallback((searchTerm) => {
-    setVendorSearchTerm(searchTerm);
-    fetchVendors(searchTerm, 1);
-  }, [fetchVendors]);
-
-  const handleVendorScroll = useCallback((e) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.target;
-    const isNearBottom = scrollHeight - scrollTop <= clientHeight * 1.2;
-
-    if (isNearBottom &&
-      contactsPagination.page < contactsPagination.totalPages &&
-      !isFetchingMoreContacts &&
-      !loadingVendors) {
-      setIsFetchingMoreContacts(true);
-      fetchVendors(vendorSearchTerm, contactsPagination.page + 1)
-        .finally(() => setIsFetchingMoreContacts(false));
-    }
-  }, [contactsPagination, vendorSearchTerm, isFetchingMoreContacts, loadingVendors, fetchVendors]);
+  // Custom handler for billFrom dropdown (ReactSelect)
+  const handleBillFromChange = (selectedOption) => {
+    validation.setFieldValue('billFrom', selectedOption?.value || '');
+  };
 
   const calculatedTotals = useMemo(() => {
     // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
@@ -412,7 +392,9 @@ const PurchaseInvoiceForm = ({
       const initialItems = getInitialItems();
       setItems(initialItems);
       setSelectedDate(isEditMode && selectedInvoice?.date ? new Date(selectedInvoice.date) : new Date());
-      fetchVendors();
+
+      // Fetch next invoice number for new invoices
+      fetchNextInvoiceNumber();
 
       // Clear search-related states
       setProducts([]);
@@ -422,18 +404,13 @@ const PurchaseInvoiceForm = ({
       lastSearchTermRef.current = '';
       lastPageRef.current = 1;
 
-      // Reset vendor search
-      setVendorSearchTerm('');
-      setContacts([]);
-      setContactsPagination({ page: 1, limit: 10, total: 0, totalPages: 1 });
-      
       // Mark as initialized
       isInitializedRef.current = true;
     } else {
       // Reset initialization flag when modal closes
       isInitializedRef.current = false;
     }
-  }, [isOpen, isEditMode, selectedInvoice?.id, selectedInvoice?.date, getInitialItems, fetchVendors]);
+  }, [isOpen, isEditMode, selectedInvoice?.id, selectedInvoice?.date, getInitialItems, fetchNextInvoiceNumber]);
 
   useEffect(() => {
     if (isOpen && isInitializedRef.current) {
@@ -517,6 +494,10 @@ const PurchaseInvoiceForm = ({
       fetchProducts(1, '', true);
     }
   }, [addItemModal]);
+
+  useEffect(() => {
+    fetchNextInvoiceNumber();
+  }, [fetchNextInvoiceNumber]);
 
   const getDefaultTaxRate = useCallback(() => {
     const selectedTaxType = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
@@ -648,24 +629,17 @@ const PurchaseInvoiceForm = ({
 
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
-    const vendorContainer = vendorScrollContainerRef.current;
 
     if (scrollContainer) {
       scrollContainer.addEventListener('scroll', handleScroll);
-    }
-    if (vendorContainer) {
-      vendorContainer.addEventListener('scroll', handleVendorScroll);
     }
 
     return () => {
       if (scrollContainer) {
         scrollContainer.removeEventListener('scroll', handleScroll);
       }
-      if (vendorContainer) {
-        vendorContainer.removeEventListener('scroll', handleVendorScroll);
-      }
     };
-  }, [handleScroll, handleVendorScroll]);
+  }, [handleScroll]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(product =>
@@ -676,10 +650,7 @@ const PurchaseInvoiceForm = ({
 
   const isProcessing = isSubmitting || isLoading;
 
-  const getAccountIcon = (accountType) => {
-    const type = ACCOUNT_TYPES[accountType] || ACCOUNT_TYPES.bank;
-    return React.cloneElement(type.icon, { className: `text-${type.color} me-2` });
-  };
+
 
   return (
     <>
@@ -722,8 +693,24 @@ const PurchaseInvoiceForm = ({
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
                     disabled={isProcessing}
-                    placeholder="Enter invoice number"
+                    placeholder={suggestedInvoiceNumber || "Enter invoice number"}
                   />
+                  {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
+                    <small className="text-muted">
+                      Suggested: {suggestedInvoiceNumber}
+                    </small>
+                  )}
+                  {!suggestedInvoiceNumber && !isEditMode && (
+                    <small className="text-muted">
+                      <button 
+                        type="button" 
+                        className="btn btn-link btn-sm p-0" 
+                        onClick={fetchNextInvoiceNumber}
+                      >
+                        Click to generate invoice number
+                      </button>
+                    </small>
+                  )}
                   <FormFeedback>{validation.errors.invoiceNumber}</FormFeedback>
                 </FormGroup>
               </Col>
@@ -733,47 +720,15 @@ const PurchaseInvoiceForm = ({
               <Col md={6}>
                 <FormGroup>
                   <Label>Bill From</Label>
-                  <Input
-                    type="select"
-                    name="billFrom"
+                  <BankAccountContactDropdown
                     value={validation.values.billFrom}
-                    onChange={validation.handleChange}
+                    onChange={handleBillFromChange}
                     onBlur={validation.handleBlur}
-                    invalid={validation.touched.billFrom && !!validation.errors.billFrom}
-                    disabled={isProcessing || loadingVendors}
-                  >
-                    <option value="">Select Vendor</option>
-                    {loadingVendors ? (
-                      <option disabled>Loading vendors...</option>
-                    ) : (
-                      <>
-                        {bankAccounts.length > 0 && (
-                          <optgroup label="Bank Accounts">
-                            {bankAccounts.map(account => (
-                              <option key={`bank_${account.id}`} value={`bank_${account.id}`}>
-                                {getAccountIcon(account.accountType)}
-                                {account.accountName} ({ACCOUNT_TYPES[account.accountType]?.label || account.accountType})
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-
-                        {contacts.length > 0 && (
-                          <optgroup label="Contacts">
-                            {contacts.map(contact => (
-                              <option key={`contact_${contact.id}`} value={`contact_${contact.id}`}>
-                                {contact.name}{contact.gstin ? ` (${contact.gstin})` : ''}
-                              </option>
-                            ))}
-                          </optgroup>
-                        )}
-
-                        {isFetchingMoreContacts && (
-                          <option disabled>Loading more contacts...</option>
-                        )}
-                      </>
-                    )}
-                  </Input>
+                    disabled={isProcessing}
+                    placeholder="Select Vendor"
+                    error={validation.errors.billFrom}
+                    touched={validation.touched.billFrom}
+                  />
                   <FormFeedback>{validation.errors.billFrom}</FormFeedback>
                 </FormGroup>
               </Col>

@@ -43,6 +43,25 @@ const ContactsTable = ({
             enableColumnFilter: false
         },
         {
+            header: "Type",
+            accessorKey: "contactType",
+            cell: (cell) => {
+                const contactType = cell.row.original.contactType;
+                const typeConfig = {
+                    customer: { label: 'Customer', color: 'primary' },
+                    vendor: { label: 'Vendor', color: 'info' }
+                };
+                const config = typeConfig[contactType] || { label: 'Unknown', color: 'secondary' };
+
+                return (
+                    <Badge color={config.color} className={`badge-soft-${config.color}`}>
+                        {config.label}
+                    </Badge>
+                );
+            },
+            enableColumnFilter: false
+        },
+        {
             header: "City",
             accessorKey: "billingCity",
             cell: (cell) => (
@@ -62,27 +81,28 @@ const ContactsTable = ({
         },
         {
             header: "Current Balance",
-            accessorKey: "currentBalance",
+            accessorKey: "calculatedBalance",
             cell: (cell) => {
-                const balance = parseFloat(cell.row.original.currentBalance || 0);
-                const currentBalanceType = cell.row.original.currentBalanceType;
+                // Use calculated balance if available, otherwise fall back to stored balance
+                const calculatedBalance = cell.row.original.calculatedBalance;
+                const balance = calculatedBalance ? 
+                    parseFloat(calculatedBalance.amount || 0) : 
+                    parseFloat(cell.row.original.currentBalance || 0);
+                const balanceType = calculatedBalance ? 
+                    calculatedBalance.type : 
+                    cell.row.original.currentBalanceType;
                 
-                if (currentBalanceType === 'none' || balance === 0) {
-                    return <span className="text-muted">$0.00</span>;
+                if (balanceType === 'none' || balance === 0) {
+                    return <span className="text-muted">₹0.00</span>;
                 }
 
-                const isReceivable = currentBalanceType === 'receivable';
-                const colorClass = isReceivable ? 
-                    (balance >= 0 ? 'text-success' : 'text-danger') : 
-                    (balance >= 0 ? 'text-danger' : 'text-success');
-                
-                const symbol = isReceivable ? 
-                    (balance >= 0 ? '+' : '-') : 
-                    (balance >= 0 ? '-' : '+');
+                const isReceivable = balanceType === 'receivable';
+                const color = isReceivable ? 'text-success' : 'text-danger';
+                const symbol = isReceivable ? '+' : '-';
 
                 return (
-                    <span className={`fw-bold ${colorClass}`}>
-                        {symbol}${Math.abs(balance).toFixed(2)}
+                    <span className={`fw-semibold ${color}`}>
+                        {symbol}₹{Math.abs(balance).toFixed(2)}
                     </span>
                 );
             },
@@ -90,15 +110,20 @@ const ContactsTable = ({
         },
         {
             header: "Balance Type",
-            accessorKey: "currentBalanceType",
+            accessorKey: "calculatedBalanceType",
             cell: (cell) => {
-                const currentBalanceType = cell.row.original.currentBalanceType;
+                // Use calculated balance type if available, otherwise fall back to stored type
+                const calculatedBalance = cell.row.original.calculatedBalance;
+                const balanceType = calculatedBalance ? 
+                    calculatedBalance.type : 
+                    cell.row.original.currentBalanceType;
+                    
                 const typeConfig = {
                     receivable: { label: 'Receivable', color: 'success' },
                     payable: { label: 'Payable', color: 'danger' },
                     none: { label: 'None', color: 'secondary' }
                 };
-                const config = typeConfig[currentBalanceType] || typeConfig.none;
+                const config = typeConfig[balanceType] || typeConfig.none;
 
                 return (
                     <Badge color={config.color} className={`badge-soft-${config.color}`}>

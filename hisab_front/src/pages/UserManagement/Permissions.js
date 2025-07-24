@@ -241,8 +241,8 @@ const ContactsPage = () => {
                   contact.isVendor ? 'Vendor' : 'N/A',
             'Mobile': contact.mobile || 'N/A',
             'Email': contact.email || 'N/A',
-            'Balance': contact.balanceType === 'none' ? '$0.00' : 
-                     `${contact.balanceType === 'receivable' ? '+' : '-'}$${Math.abs(parseFloat(contact.openingBalance || 0)).toFixed(2)}`,
+            'Balance': contact.balanceType === 'none' ? '₹0.00' : 
+                     `${contact.balanceType === 'receivable' ? '+' : '-'}₹${Math.abs(parseFloat(contact.openingBalance || 0)).toFixed(2)}`,
             'City': contact.billingCity || 'N/A',
             'State': contact.billingState || 'N/A',
             'Due Days': contact.dueDays ? `${contact.dueDays} days` : 'N/A',

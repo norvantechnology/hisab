@@ -12,6 +12,7 @@ import paymentRoutes from "./paymentRoutes.js";
 import bankTransferRoutes from "./bankTransferRoutes.js";
 import productRoute from "./productRoute.js";
 import purchaseRoute from "./purchaseRoute.js";
+import salesRoute from "./salesRoute.js";
 import stockCategoryRoute from "./stockCategoryRoute.js";
 import taxCategoryRoutes from "./taxCategoryRoutes.js";
 import unitOfMeasurementsRoutes from "./unitOfMeasurementsRoutes.js";
@@ -32,6 +33,7 @@ export {
   bankTransferRoutes,
   productRoute,
   purchaseRoute,
+  salesRoute,
   stockCategoryRoute,
   taxCategoryRoutes,
   unitOfMeasurementsRoutes

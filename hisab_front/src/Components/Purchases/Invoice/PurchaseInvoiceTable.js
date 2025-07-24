@@ -85,16 +85,24 @@ const PurchaseInvoiceTable = ({
             cell: (cell) => {
                 const status = cell.row.original.status || 'draft';
                 const statusConfig = {
-                    paid: { label: 'Paid', color: 'success' },
-                    pending: { label: 'Pending', color: 'warning' },
-                    partial: { label: 'Partial', color: 'info' },
-                    draft: { label: 'Draft', color: 'secondary' },
-                    cancelled: { label: 'Cancelled', color: 'danger' }
+                    paid: { label: 'Paid', color: 'success', bgColor: 'bg-success' },
+                    pending: { label: 'Pending', color: 'warning', bgColor: 'bg-warning' },
+                    partial: { label: 'Partial', color: 'info', bgColor: 'bg-info' },
+                    draft: { label: 'Draft', color: 'secondary', bgColor: 'bg-secondary' },
+                    cancelled: { label: 'Cancelled', color: 'danger', bgColor: 'bg-danger' }
                 };
                 const config = statusConfig[status] || statusConfig.draft;
 
                 return (
-                    <Badge color={config.color} className={`badge-soft-${config.color}`}>
+                    <Badge 
+                        color={config.color} 
+                        className={`${config.bgColor} text-white border-0`}
+                        style={{ 
+                            fontWeight: '600',
+                            fontSize: '0.75rem',
+                            padding: '0.375rem 0.75rem'
+                        }}
+                    >
                         {config.label}
                     </Badge>
                 );

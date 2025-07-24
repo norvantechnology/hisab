@@ -17,9 +17,7 @@ const getSelectedCompanyId = () => {
 const apiClient = axios.create({
   baseURL: process.env.REACT_APP_API_BASE_URL || '',
   timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  // Don't set default Content-Type - handle it dynamically in apiCall
 });
 
 export const apiCall = async ({
@@ -32,17 +30,32 @@ export const apiCall = async ({
   try {
     const companyId = getSelectedCompanyId();
 
+    // Build headers, handling FormData specially
+    const requestHeaders = { ...headers, companyId };
+    
+    // If data is FormData, don't set Content-Type - let browser handle it
+    if (data instanceof FormData) {
+      // Remove any Content-Type header to let browser set multipart/form-data with boundary
+      delete requestHeaders['Content-Type'];
+    } else if (!requestHeaders['Content-Type']) {
+      // Only set JSON content-type if not already specified and not FormData
+      requestHeaders['Content-Type'] = 'application/json';
+    }
+
     const config = {
       method,
       url: endpoint,
-      headers: { ...headers, companyId },
+      headers: requestHeaders,
       params,
     };
 
     if (method.toLowerCase() !== 'get' && data) {
       config.data = data;
     }
-    console.log("config>>", config)
+    
+    console.log("config>>", config);
+    console.log("data type>>", data instanceof FormData ? 'FormData' : typeof data);
+    
     const response = await apiClient.request(config);
     return response.data;
   } catch (error) {

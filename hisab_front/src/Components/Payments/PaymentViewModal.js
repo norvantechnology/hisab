@@ -1,11 +1,54 @@
 import React from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Table, Card, CardBody, Row, Col, Alert } from 'reactstrap';
-import { RiErrorWarningLine } from 'react-icons/ri';
+import { RiErrorWarningLine, RiBankLine, RiShoppingCartLine, RiMoneyDollarCircleLine, RiWalletLine, RiStoreLine } from 'react-icons/ri';
 
 const PaymentViewModal = ({ isOpen, toggle, payment }) => {
     // Helper functions
     const parseAmount = (amount) => parseFloat(amount) || 0;
     const formatAmount = (amount) => parseAmount(amount).toFixed(2);
+
+    const getTransactionTypeDisplay = (transaction) => {
+        const type = transaction.allocationType || transaction.type || 'purchase';
+        
+        switch (type) {
+            case 'current-balance':
+                return {
+                    icon: <RiWalletLine className="me-1" size={14} />,
+                    label: 'Current Balance',
+                    color: 'info'
+                };
+            case 'purchase':
+                return {
+                    icon: <RiShoppingCartLine className="me-1" size={14} />,
+                    label: 'Purchase',
+                    color: 'warning'
+                };
+            case 'sale':
+                return {
+                    icon: <RiStoreLine className="me-1" size={14} />,
+                    label: 'Sale',
+                    color: 'success'
+                };
+            case 'expense':
+                return {
+                    icon: <RiMoneyDollarCircleLine className="me-1" size={14} />,
+                    label: 'Expense',
+                    color: 'danger'
+                };
+            case 'income':
+                return {
+                    icon: <RiBankLine className="me-1" size={14} />,
+                    label: 'Income',
+                    color: 'success'
+                };
+            default:
+                return {
+                    icon: <RiShoppingCartLine className="me-1" size={14} />,
+                    label: 'Transaction',
+                    color: 'secondary'
+                };
+        }
+    };
 
     // Calculate payment summary
     const calculatePaymentSummary = () => {
@@ -22,15 +65,15 @@ const PaymentViewModal = ({ isOpen, toggle, payment }) => {
             if (payment.adjustmentType === 'discount') {
                 allocatableAmount = baseAmount + adjustmentValue;
                 adjustmentImpact = {
-                    label: `Discount (+${formatAmount(adjustmentValue)})`,
+                    label: `Discount (+₹${formatAmount(adjustmentValue)})`,
                     amount: adjustmentValue
                 };
             } else {
                 totalDeducted = baseAmount + adjustmentValue;
                 adjustmentImpact = {
                     label: payment.adjustmentType === 'surcharge'
-                        ? `Surcharge (+${formatAmount(adjustmentValue)})`
-                        : `Extra Receipt (+${formatAmount(adjustmentValue)})`,
+                        ? `Surcharge (+₹${formatAmount(adjustmentValue)})`
+                        : `Extra Receipt (+₹${formatAmount(adjustmentValue)})`,
                     amount: adjustmentValue
                 };
             }
@@ -211,25 +254,35 @@ const PaymentViewModal = ({ isOpen, toggle, payment }) => {
                                         <tr>
                                             <th>Description</th>
                                             <th>Date</th>
-                                            <th>Type</th>
+                                            <th>Transaction Type</th>
+                                            <th>Balance Type</th>
                                             <th>Original Amount</th>
                                             <th>Allocated Amount</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {payment.transactions.map((transaction) => (
-                                            <tr key={transaction.transactionId}>
-                                                <td>{transaction.description || 'N/A'}</td>
-                                                <td>{transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'}</td>
-                                                <td>
-                                                    <Badge color={transaction.balanceType === 'payable' ? 'warning' : 'success'}>
-                                                        {transaction.balanceType === 'payable' ? 'Payable' : 'Receivable'}
-                                                    </Badge>
-                                                </td>
-                                                <td>₹{formatAmount(transaction.originalAmount)}</td>
-                                                <td>₹{formatAmount(transaction.amount)}</td>
-                                            </tr>
-                                        ))}
+                                        {payment.transactions.map((transaction) => {
+                                            const typeDisplay = getTransactionTypeDisplay(transaction);
+                                            return (
+                                                <tr key={transaction.transactionId}>
+                                                    <td>{transaction.description || 'N/A'}</td>
+                                                    <td>{transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'}</td>
+                                                    <td>
+                                                        <Badge color={typeDisplay.color} className="d-flex align-items-center w-fit">
+                                                            {typeDisplay.icon}
+                                                            {typeDisplay.label}
+                                                        </Badge>
+                                                    </td>
+                                                    <td>
+                                                        <Badge color={transaction.balanceType === 'payable' ? 'warning' : 'success'}>
+                                                            {transaction.balanceType === 'payable' ? 'Payable' : 'Receivable'}
+                                                        </Badge>
+                                                    </td>
+                                                    <td>₹{formatAmount(transaction.originalAmount)}</td>
+                                                    <td>₹{formatAmount(transaction.amount)}</td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
                                 </Table>
                             ) : (

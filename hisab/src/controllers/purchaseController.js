@@ -1,7 +1,6 @@
 import { constrainedMemory } from "process";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
-import { updateContactBalanceAfterPurchase } from "../utils/balanceCalculator.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -195,9 +194,6 @@ export async function createPurchase(req, res) {
         [netPayable, bankAccountId, companyId]
       );
     }
-
-    // Update contact balance if a contact was involved
-    await updateContactBalanceAfterPurchase(client, contactId, companyId);
 
     await client.query("COMMIT");
 
@@ -427,9 +423,6 @@ export async function updatePurchase(req, res) {
       );
     }
 
-    // Update contact balance if a contact was involved
-    await updateContactBalanceAfterPurchase(client, oldPurchase.contactId, companyId);
-
     await client.query(
       `DELETE FROM hisab."purchase_items" 
        WHERE "purchaseId" = $1 AND "companyId" = $2`,
@@ -539,9 +532,6 @@ export async function updatePurchase(req, res) {
         [netPayable, bankAccountId, companyId]
       );
     }
-
-    // Update contact balance if a contact was involved
-    await updateContactBalanceAfterPurchase(client, contactId, companyId);
 
     await client.query("COMMIT");
 
@@ -717,9 +707,6 @@ export async function deletePurchase(req, res) {
         [purchase.netPayable, purchase.bankAccountId, companyId]
       );
     }
-
-    // Update contact balance if a contact was involved
-    await updateContactBalanceAfterPurchase(client, purchase.contactId, companyId);
 
     // Soft delete purchase items first
     await client.query(
@@ -956,7 +943,7 @@ export async function listPurchases(req, res) {
         c."gstin" as "contactGstin",
         
         -- User details
-        u."name" as "createdByFirstName",
+        u."name" as "createdByName",
         u."email" as "createdByEmail"
         
       FROM hisab."purchases" p
@@ -1146,7 +1133,7 @@ export async function listPurchases(req, res) {
 
           // Creator details
           createdBy: {
-            firstName: row.createdByFirstName,
+            name: row.createdByName,
             email: row.createdByEmail
           },
 
@@ -1180,6 +1167,47 @@ export async function listPurchases(req, res) {
   } catch (error) {
     console.error("List purchases error:", error);
     return errorResponse(res, "Failed to fetch purchases list", 500);
+  } finally {
+    client.release();
+  }
+}
+
+export async function getNextInvoiceNumber(req, res) {
+  const client = await pool.connect();
+  const companyId = req.currentUser?.companyId;
+
+  if (!companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  try {
+    // Get the last invoice number for this company
+    const lastInvoiceRes = await client.query(
+      `SELECT "invoiceNumber" FROM hisab."purchases" 
+       WHERE "companyId" = $1 
+       ORDER BY "invoiceNumber" DESC 
+       LIMIT 1`,
+      [companyId]
+    );
+
+    let nextInvoiceNumber = "PI-0001";
+
+    if (lastInvoiceRes.rows.length > 0) {
+      const lastInvoiceNumber = lastInvoiceRes.rows[0].invoiceNumber;
+      
+      // Extract the number part and increment it
+      const match = lastInvoiceNumber.match(/PI-(\d+)/);
+      if (match) {
+        const lastNumber = parseInt(match[1]);
+        const nextNumber = lastNumber + 1;
+        nextInvoiceNumber = `PI-${nextNumber.toString().padStart(4, '0')}`;
+      }
+    }
+
+    return successResponse(res, { nextInvoiceNumber });
+  } catch (error) {
+    console.error('Error getting next invoice number:', error);
+    return errorResponse(res, "Failed to get next invoice number", 500);
   } finally {
     client.release();
   }

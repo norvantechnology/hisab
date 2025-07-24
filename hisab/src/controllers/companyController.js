@@ -1,5 +1,5 @@
 import pool from "../config/dbConnection.js";
-import { errorResponse, successResponse } from "../utils/index.js";
+import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
 import axios from "axios";
 
 // Function to get authentication token using Client ID and Secret
@@ -110,6 +110,19 @@ export async function createCompany(req, res) {
   const client = await pool.connect();
 
   try {
+    // Handle logo upload if provided
+    let logoUrl = null;
+    if (req.file && req.file.buffer) {
+      try {
+        console.log('Uploading company logo to S3...');
+        logoUrl = await uploadFileToS3(req.file.buffer, req.file.originalname);
+        console.log('Logo uploaded successfully:', logoUrl);
+      } catch (error) {
+        console.error('Logo upload failed:', error);
+        return errorResponse(res, `Logo upload failed: ${error.message}`, 400);
+      }
+    }
+
     // If GSTIN is provided, auto-fetch company details from IRIS IRP API
     if (gstin) {
       console.log(`Fetching GST details for: ${gstin}`);
@@ -163,10 +176,10 @@ export async function createCompany(req, res) {
     // Insert company into database
     const insertQuery = `
       INSERT INTO hisab."companies"
-        ("userId", "gstin", "name", "country", "currency", "address1", "address2", "city", "pincode", "state", "createdAt", "updatedAt")
+        ("userId", "gstin", "name", "country", "currency", "address1", "address2", "city", "pincode", "state", "logoUrl", "createdAt", "updatedAt")
       VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-      RETURNING id, "name", "gstin", "country", "currency", "city", "state", "pincode", "createdAt"
+        ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      RETURNING id, "name", "gstin", "country", "currency", "city", "state", "pincode", "logoUrl", "createdAt"
     `;
 
     const result = await client.query(insertQuery, [
@@ -180,6 +193,7 @@ export async function createCompany(req, res) {
       city,
       pincode,
       state,
+      logoUrl,
     ]);
 
     return successResponse(res, {
@@ -225,6 +239,7 @@ export async function getAllCompanies(req, res) {
         c."city", 
         c."state",
         c."pincode",
+        c."logoUrl",
         c."createdAt",
         u.id as "ownerId",
         u."name" as "ownerName",
@@ -246,6 +261,7 @@ export async function getAllCompanies(req, res) {
       id: company.id,
       name: company.name,
       gstin: company.gstin,
+      logoUrl: company.logoUrl,
       location: {
         city: company.city,
         state: company.state,
@@ -258,7 +274,7 @@ export async function getAllCompanies(req, res) {
       createdAt: company.createdAt,
       owner: {
         id: company.ownerId,
-        name: `${company.ownerFirstName || ''} ${company.ownerLastName || ''}`.trim()
+        name: company.ownerName || ''
       },
       accessType: company.accessType || 'unknown',
       isOwner: company.accessType === 'owner'
@@ -298,6 +314,19 @@ export async function updateCompany(req, res) {
   const client = await pool.connect();
 
   try {
+    // Handle logo upload if provided
+    let logoUrl = null;
+    if (req.file && req.file.buffer) {
+      try {
+        console.log('Uploading company logo to S3...');
+        logoUrl = await uploadFileToS3(req.file.buffer, req.file.originalname);
+        console.log('Logo uploaded successfully:', logoUrl);
+      } catch (error) {
+        console.error('Logo upload failed:', error);
+        return errorResponse(res, `Logo upload failed: ${error.message}`, 400);
+      }
+    }
+
     // If GSTIN is provided, auto-fetch company details from IRIS IRP API
     let updatedFields = {};
     if (gstin) {
@@ -349,6 +378,7 @@ export async function updateCompany(req, res) {
       city,
       pincode,
       state,
+      ...(logoUrl && { logoUrl }), // Only include logoUrl if it exists
       ...updatedFields
     };
 
@@ -377,7 +407,7 @@ export async function updateCompany(req, res) {
       SET ${updateFields.join(', ')}
       WHERE id = $${paramIndex}
       RETURNING id, "name", "gstin", "country", "currency", "address1", "address2", 
-                "city", "pincode", "state", "createdAt", "updatedAt"
+                "city", "pincode", "state", "logoUrl", "createdAt", "updatedAt"
     `;
 
     const result = await client.query(updateQuery, updateValues);
@@ -399,6 +429,71 @@ export async function updateCompany(req, res) {
     }
 
     return errorResponse(res, "Error updating company", 500);
+  } finally {
+    client.release();
+  }
+}
+
+export async function deleteCompany(req, res) {
+  const { id } = req.params;
+  const userId = req.currentUser?.id;
+
+  if (!userId) {
+    return errorResponse(res, "Unauthorized. Please login again.", 401);
+  }
+
+  if (!id) {
+    return errorResponse(res, "Company ID is required", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // First, check if the company exists and user has permission to delete it
+    const checkQuery = `
+      SELECT id, "name", "userId" 
+      FROM hisab."companies" 
+      WHERE id = $1
+    `;
+    
+    const checkResult = await client.query(checkQuery, [id]);
+    
+    if (checkResult.rowCount === 0) {
+      return errorResponse(res, "Company not found", 404);
+    }
+
+    const company = checkResult.rows[0];
+    
+    // Only company owner can delete the company
+    if (company.userId !== userId) {
+      return errorResponse(res, "You don't have permission to delete this company", 403);
+    }
+
+    // Check if this is the currently selected company
+    const isCurrentlySelected = req.currentUser?.companyId === parseInt(id);
+    
+    // Delete the company
+    const deleteQuery = `
+      DELETE FROM hisab."companies" 
+      WHERE id = $1 AND "userId" = $2
+    `;
+    
+    const deleteResult = await client.query(deleteQuery, [id, userId]);
+    
+    if (deleteResult.rowCount === 0) {
+      return errorResponse(res, "Failed to delete company", 500);
+    }
+
+    return successResponse(res, {
+      message: "Company deleted successfully",
+      companyId: id,
+      companyName: company.name,
+      wasCurrentlySelected: isCurrentlySelected
+    });
+
+  } catch (error) {
+    console.error("Error deleting company:", error);
+    return errorResponse(res, "Error deleting company", 500);
   } finally {
     client.release();
   }

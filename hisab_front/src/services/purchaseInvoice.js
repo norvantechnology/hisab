@@ -35,3 +35,10 @@ export const getPurchase = async (params) => {
         params,
     });
 };
+
+export const getNextInvoiceNumber = async () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/purchase/getNextInvoiceNumber',
+    });
+};

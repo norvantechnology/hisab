@@ -16,6 +16,7 @@ import {
   bankTransferRoutes,
   productRoute,
   purchaseRoute,
+  salesRoute,
   stockCategoryRoute,
   taxCategoryRoutes,
   unitOfMeasurementsRoutes
@@ -46,6 +47,7 @@ app.use("/api/payment", paymentRoutes);
 app.use("/api/bankTransfer", bankTransferRoutes);
 app.use("/api/product", productRoute);
 app.use("/api/purchase", purchaseRoute);
+app.use("/api/sales", salesRoute);
 app.use("/api/stockCategory", stockCategoryRoute);
 app.use("/api/taxCategory", taxCategoryRoutes);
 app.use("/api/unitOfMeasurements", unitOfMeasurementsRoutes);

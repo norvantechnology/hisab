@@ -12,6 +12,7 @@ import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import Loader from '../../Components/Common/Loader';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { getContacts, createContact, deleteContact, updateContact } from '../../services/contacts';
+import { getBankAccounts } from '../../services/bankAccount';
 
 const ContactsPage = () => {
     const currentMonthRange = getCurrentMonthRange();
@@ -19,6 +20,7 @@ const ContactsPage = () => {
     // State management
     const [state, setState] = useState({
         contacts: [],
+        bankAccounts: [],
         loading: false,
         searchTerm: '',
         pagination: {
@@ -47,7 +49,7 @@ const ContactsPage = () => {
     });
 
     const {
-        contacts, loading, searchTerm,
+        contacts, bankAccounts, loading, searchTerm,
         pagination, filters, modals, selectedContact, isEditMode,
         apiLoading
     } = state;
@@ -91,9 +93,25 @@ const ContactsPage = () => {
         }
     };
 
+    const fetchBankAccounts = async () => {
+        try {
+            const response = await getBankAccounts({ includeInactive: false });
+            setState(prev => ({
+                ...prev,
+                bankAccounts: response?.success ? response.accounts || [] : []
+            }));
+        } catch (error) {
+            console.error("Failed to load bank accounts:", error);
+        }
+    };
+
     useEffect(() => {
         fetchData();
     }, [pagination.page, filters.contactType, filters.balanceType, filters.search, filters.startDate, filters.endDate]);
+
+    useEffect(() => {
+        fetchBankAccounts();
+    }, []);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
@@ -174,6 +192,7 @@ const ContactsPage = () => {
                 email: values.email,
                 dueDays: values.dueDays,
                 currency: values.currency,
+                contactType: values.contactType,
                 billingAddress1: values.billingAddress1,
                 billingAddress2: values.billingAddress2,
                 billingCity: values.billingCity,
@@ -236,13 +255,11 @@ const ContactsPage = () => {
         return contacts.map(contact => ({
             'Name': contact.name || 'N/A',
             'GSTIN': contact.gstin || 'N/A',
-            'Type': contact.isCustomer && contact.isVendor ? 'Customer & Vendor' : 
-                  contact.isCustomer ? 'Customer' : 
-                  contact.isVendor ? 'Vendor' : 'N/A',
+            'Type': contact.contactType ? contact.contactType.charAt(0).toUpperCase() + contact.contactType.slice(1) : 'N/A',
             'Mobile': contact.mobile || 'N/A',
             'Email': contact.email || 'N/A',
-            'Balance': contact.balanceType === 'none' ? '$0.00' : 
-                     `${contact.balanceType === 'receivable' ? '+' : '-'}$${Math.abs(parseFloat(contact.openingBalance || 0)).toFixed(2)}`,
+            'Balance': contact.balanceType === 'none' ? '₹0.00' : 
+                     `${contact.balanceType === 'receivable' ? '+' : '-'}₹${Math.abs(parseFloat(contact.openingBalance || 0)).toFixed(2)}`,
             'City': contact.billingCity || 'N/A',
             'State': contact.billingState || 'N/A',
             'Due Days': contact.dueDays ? `${contact.dueDays} days` : 'N/A',
@@ -315,6 +332,8 @@ const ContactsPage = () => {
                     isOpen={modals.view}
                     toggle={() => toggleModal('view')}
                     contact={selectedContact}
+                    bankAccounts={bankAccounts}
+                    onPaymentSuccess={fetchData}
                 />
 
                 <DeleteModal

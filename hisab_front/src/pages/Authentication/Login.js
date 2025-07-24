@@ -3,7 +3,7 @@ import { Card, CardBody, Col, Container, Input, Label, Row, Button, Form, FormFe
 import { Link, useNavigate } from "react-router-dom";
 import * as Yup from "yup";
 import { useFormik } from "formik";
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import ParticlesAuth from "../AuthenticationInner/ParticlesAuth";
 import { login } from "../../services/auth";
@@ -34,8 +34,8 @@ const Login = () => {
                 // Show success message from API
                 toast.success(message || "Login successful!");
 
-                // Redirect to dashboard
-                navigate('/dashboard');
+                // Redirect to bank accounts
+                navigate('/bank-accounts');
 
             } catch (error) {
                 console.log("error>>", error)
@@ -52,6 +52,7 @@ const Login = () => {
 
     return (
         <React.Fragment>
+            <ToastContainer closeButton={false} position="top-right" />
             <ParticlesAuth>
                 <div className="auth-page-content">
                     <Container>

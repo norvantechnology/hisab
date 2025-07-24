@@ -14,6 +14,7 @@ import Loader from '../../Components/Common/Loader';
 import { getExpenseCategories, createExpenseCategory } from '../../services/categories';
 import { createExpense, getExpenses, updateExpense, deleteExpense } from '../../services/expenses';
 import { getBankAccounts } from '../../services/bankAccount';
+import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 
 const ExpensesPage = () => {
@@ -24,6 +25,7 @@ const ExpensesPage = () => {
         expenses: [],
         categories: [],
         bankAccounts: [],
+        contacts: [],
         loading: false,
         searchTerm: '',
         pagination: {
@@ -35,6 +37,7 @@ const ExpensesPage = () => {
         },
         filters: {
             categoryId: '',
+            status: '',
             startDate: currentMonthRange.startDate,
             endDate: currentMonthRange.endDate
         },
@@ -52,7 +55,7 @@ const ExpensesPage = () => {
     });
 
     const {
-        expenses, categories, bankAccounts, loading, searchTerm,
+        expenses, categories, bankAccounts, contacts, loading, searchTerm,
         pagination, filters, modals, selectedExpense, isEditMode,
         newCategoryName, apiLoading
     } = state;
@@ -62,16 +65,18 @@ const ExpensesPage = () => {
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
-            const [expensesRes, categoriesRes, accountsRes] = await Promise.all([
+            const [expensesRes, categoriesRes, accountsRes, contactsRes] = await Promise.all([
                 getExpenses({
                     page: pagination.page,
                     limit: pagination.limit,
                     categoryId: filters.categoryId,
+                    status: filters.status,
                     startDate: filters.startDate,
                     endDate: filters.endDate
                 }),
                 getExpenseCategories(),
-                getBankAccounts()
+                getBankAccounts(),
+                getContacts({ skipPagination: true })
             ]);
 
             setState(prev => ({
@@ -79,6 +84,7 @@ const ExpensesPage = () => {
                 expenses: expensesRes.success ? expensesRes.expenses || [] : [],
                 categories: categoriesRes.success ? categoriesRes.categories || [] : prev.categories,
                 bankAccounts: accountsRes.success ? accountsRes.accounts || [] : prev.bankAccounts,
+                contacts: contactsRes.success ? contactsRes.contacts || [] : prev.contacts,
                 pagination: expensesRes.success ? {
                     page: expensesRes.pagination.currentPage || 1,
                     limit: expensesRes.pagination.limit || 10,
@@ -102,7 +108,7 @@ const ExpensesPage = () => {
 
     useEffect(() => {
         fetchData();
-    }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate]);
+    }, [pagination.page, filters.categoryId, filters.status, filters.startDate, filters.endDate]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
@@ -203,10 +209,30 @@ const ExpensesPage = () => {
                 id: values.id,
                 date: values.date,
                 categoryId: values.categoryId,
-                bankAccountId: values.bankAccountId,
                 amount: values.amount.toString(),
                 notes: values.notes || ''
             };
+
+            // Always include all payment-related fields to ensure proper clearing
+            if (values.paymentMethod === 'bank') {
+                // Direct bank payment - clear contact fields
+                payload.bankAccountId = values.bankAccountId;
+                payload.contactId = null;
+                payload.status = null;
+                payload.dueDate = null;
+            } else if (values.paymentMethod === 'contact') {
+                // Contact payment
+                payload.contactId = values.contactId;
+                payload.status = values.status;
+                
+                if (values.status === 'pending') {
+                    payload.dueDate = values.dueDate;
+                    payload.bankAccountId = null; // Clear bank account for pending
+                } else if (values.status === 'paid') {
+                    payload.bankAccountId = values.bankAccountId; // The bank account used to pay the contact
+                    payload.dueDate = null; // Clear due date for paid
+                }
+            }
 
             const response = isEditMode
                 ? await updateExpense(payload)
@@ -314,6 +340,7 @@ const ExpensesPage = () => {
                     isEditMode={isEditMode}
                     categories={categories}
                     bankAccounts={bankAccounts}
+                    contacts={contacts}
                     selectedExpense={selectedExpense}
                     onSubmit={handleSubmitExpense}
                     isLoading={apiLoading}

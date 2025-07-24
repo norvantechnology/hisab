@@ -199,8 +199,11 @@ export async function createExpense(req, res) {
     date,
     categoryId,
     bankAccountId,
+    contactId,
     amount,
-    notes
+    notes,
+    status,
+    dueDate
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -213,6 +216,41 @@ export async function createExpense(req, res) {
   // Validate required fields
   if (!date || !categoryId || !amount) {
     return errorResponse(res, "Date, category, and amount are required", 400);
+  }
+
+  // Validate payment method
+  if (!bankAccountId && !contactId) {
+    return errorResponse(res, "Either bank account or contact must be specified", 400);
+  }
+
+  // For direct bank payments: bankAccountId set, contactId null
+  // For contact payments: contactId set, and if paid then bankAccountId also set
+  if (bankAccountId && contactId) {
+    // Both can be set only for contact payments that are paid
+    if (!status || status !== 'paid') {
+      return errorResponse(res, "Both bank account and contact can only be specified for paid contact expenses", 400);
+    }
+  }
+
+  // Validate contact-specific fields
+  if (contactId) {
+    if (!status) {
+      return errorResponse(res, "Status is required when contact is specified", 400);
+    }
+    if (!['pending', 'paid'].includes(status)) {
+      return errorResponse(res, "Status must be either 'pending' or 'paid'", 400);
+    }
+    if (status === 'pending') {
+      if (!dueDate) {
+        return errorResponse(res, "Due date is required when status is pending", 400);
+      }
+      if (bankAccountId) {
+        return errorResponse(res, "Bank account should not be specified for pending contact expenses", 400);
+      }
+    }
+    if (status === 'paid' && !bankAccountId) {
+      return errorResponse(res, "Bank account is required when contact status is paid", 400);
+    }
   }
 
   const client = await pool.connect();
@@ -256,13 +294,28 @@ export async function createExpense(req, res) {
       }
     }
 
+    // Verify contact if provided
+    if (contactId) {
+      const contactCheck = await client.query(
+        `SELECT id FROM hisab."contacts" 
+         WHERE id = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
+        [contactId, companyId]
+      );
+
+      if (contactCheck.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Contact not found or unauthorized", 404);
+      }
+    }
+
     const insertQuery = `
       INSERT INTO hisab."expenses" (
         "userId", "companyId", "date", "categoryId", 
-        "bankAccountId", "amount", "notes", "createdBy",
+        "bankAccountId", "contactId", "amount", "notes", 
+        "status", "dueDate", "createdBy",
         "createdAt", "updatedAt"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
 
@@ -271,13 +324,17 @@ export async function createExpense(req, res) {
       companyId,
       date,
       categoryId,
-      bankAccountId,
+      bankAccountId || null,
+      contactId || null,
       amount,
       notes,
+      status || 'paid', // Default to 'paid' for bank account payments
+      dueDate || null,
       userId  // createdBy
     ]);
 
-    // Update bank account balance if expense is linked to one
+    // Update bank account balance if bankAccountId is provided
+    // This covers both direct bank payments and contact payments that are paid
     if (bankAccountId) {
       await client.query(
         `UPDATE hisab."bankAccounts" 
@@ -322,9 +379,9 @@ export async function deleteExpense(req, res) {
   try {
     await client.query("BEGIN");
 
-    // First verify the expense belongs to the user and get details (including bankAccountId and amount)
+    // First verify the expense belongs to the user and get details
     const verifyQuery = `
-      SELECT "bankAccountId", "amount" FROM hisab."expenses"
+      SELECT "bankAccountId", "contactId", "amount", "status" FROM hisab."expenses"
       WHERE "id" = $1 AND "userId" = $2 AND "companyId" = $3
       LIMIT 1
     `;
@@ -335,9 +392,10 @@ export async function deleteExpense(req, res) {
       return errorResponse(res, "Expense not found or unauthorized", 404);
     }
 
-    const { bankAccountId, amount } = verifyResult.rows[0];
+    const { bankAccountId, contactId, amount, status } = verifyResult.rows[0];
 
-    // If expense was linked to a bank account, revert the balance change
+    // Revert bank account balance if bankAccountId is present
+    // This covers both direct bank payments and contact payments that were paid
     if (bankAccountId) {
       await client.query(
         `UPDATE hisab."bankAccounts" 
@@ -380,8 +438,11 @@ export async function updateExpense(req, res) {
     date,
     categoryId,
     bankAccountId,
+    contactId,
     amount,
     notes,
+    status,
+    dueDate,
     id
   } = req.body;
 
@@ -403,7 +464,7 @@ export async function updateExpense(req, res) {
 
     // First get the existing expense details
     const existingExpenseQuery = `
-      SELECT "bankAccountId", "amount", "categoryId", "date", "notes"
+      SELECT "bankAccountId", "contactId", "amount", "categoryId", "date", "notes", "status", "dueDate"
       FROM hisab."expenses"
       WHERE "id" = $1 AND "companyId" = $2
       LIMIT 1
@@ -417,18 +478,80 @@ export async function updateExpense(req, res) {
 
     const {
       bankAccountId: oldBankAccountId,
+      contactId: oldContactId,
       amount: oldAmount,
       categoryId: oldCategoryId,
       date: oldDate,
-      notes: oldNotes
+      notes: oldNotes,
+      status: oldStatus,
+      dueDate: oldDueDate
     } = existingExpense.rows[0];
 
     // Determine which fields to update based on what's provided in the request
     const finalDate = date !== undefined ? date : oldDate;
     const finalCategoryId = categoryId !== undefined ? categoryId : oldCategoryId;
-    const finalBankAccountId = bankAccountId !== undefined ? bankAccountId : oldBankAccountId;
+    let finalBankAccountId = bankAccountId !== undefined ? bankAccountId : oldBankAccountId;
+    let finalContactId = contactId !== undefined ? contactId : oldContactId;
     const finalAmount = amount !== undefined ? amount : oldAmount;
     const finalNotes = notes !== undefined ? notes : oldNotes;
+    let finalStatus = status !== undefined ? status : oldStatus;
+    let finalDueDate = dueDate !== undefined ? dueDate : oldDueDate;
+
+    // Smart payment method detection and field clearing
+    // If switching to direct bank payment (bankAccountId provided without contactId)
+    if (bankAccountId !== undefined && contactId === undefined && finalBankAccountId && oldContactId) {
+      // Clear contact-related fields when switching to direct bank payment
+      finalContactId = null;
+      finalStatus = 'paid';
+      finalDueDate = null;
+    }
+    
+    // If switching to contact payment (contactId provided without bankAccountId for pending)
+    if (contactId !== undefined && bankAccountId === undefined && finalContactId && !oldContactId) {
+      // This would be a new contact payment, should have status
+      if (!status) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Status is required when switching to contact payment", 400);
+      }
+    }
+
+    // Validate the final payment method configuration
+    if (finalBankAccountId && finalContactId) {
+      // Both can be set only for contact payments that are paid
+      if (!finalStatus || finalStatus !== 'paid') {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Both bank account and contact can only be specified for paid contact expenses", 400);
+      }
+    } else if (!finalBankAccountId && !finalContactId) {
+      await client.query("ROLLBACK");
+      return errorResponse(res, "Either bank account or contact must be specified", 400);
+    }
+
+    // Validate contact-specific fields
+    if (finalContactId) {
+      if (!finalStatus) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Status is required when contact is specified", 400);
+      }
+      if (!['pending', 'paid'].includes(finalStatus)) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Status must be either 'pending' or 'paid'", 400);
+      }
+      if (finalStatus === 'pending') {
+        if (!finalDueDate) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, "Due date is required when status is pending", 400);
+        }
+        if (finalBankAccountId) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, "Bank account should not be specified for pending contact expenses", 400);
+        }
+      }
+      if (finalStatus === 'paid' && !finalBankAccountId) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Bank account is required when contact status is paid", 400);
+      }
+    }
 
     // Verify category if it's being updated
     if (categoryId !== undefined) {
@@ -444,44 +567,55 @@ export async function updateExpense(req, res) {
     }
 
     // Verify bank account if it's being updated or changed
-    if (bankAccountId !== undefined) {
-      if (finalBankAccountId) {
-        const bankAccountCheck = await client.query(
-          `SELECT "id" FROM hisab."bankAccounts" 
-           WHERE "id" = $1 AND "companyId" = $2 AND "isActive" = TRUE AND "deletedAt" IS NULL`,
-          [finalBankAccountId, companyId]
-        );
+    if (bankAccountId !== undefined && finalBankAccountId) {
+      const bankAccountCheck = await client.query(
+        `SELECT "id" FROM hisab."bankAccounts" 
+         WHERE "id" = $1 AND "companyId" = $2 AND "isActive" = TRUE AND "deletedAt" IS NULL`,
+        [finalBankAccountId, companyId]
+      );
 
-        if (bankAccountCheck.rows.length === 0) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Bank account not found, inactive, or unauthorized", 404);
-        }
+      if (bankAccountCheck.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Bank account not found, inactive, or unauthorized", 404);
       }
     }
 
-    // If bank account was linked before or is being updated, handle balance changes
-    if (oldBankAccountId || (bankAccountId !== undefined && finalBankAccountId)) {
-      // Revert old balance if there was an old bank account
-      if (oldBankAccountId) {
-        await client.query(
-          `UPDATE hisab."bankAccounts" 
-           SET "currentBalance" = "currentBalance" + $1,
-               "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "id" = $2`,
-          [oldAmount, oldBankAccountId]
-        );
-      }
+    // Verify contact if it's being updated or changed
+    if (contactId !== undefined && finalContactId) {
+      const contactCheck = await client.query(
+        `SELECT "id" FROM hisab."contacts" 
+         WHERE "id" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
+        [finalContactId, companyId]
+      );
 
-      // Apply new balance if there's a new bank account
-      if (finalBankAccountId) {
-        await client.query(
-          `UPDATE hisab."bankAccounts" 
-           SET "currentBalance" = "currentBalance" - $1,
-               "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "id" = $2`,
-          [finalAmount, finalBankAccountId]
-        );
+      if (contactCheck.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return errorResponse(res, "Contact not found or unauthorized", 404);
       }
+    }
+
+    // Handle bank balance changes
+    
+    // Revert old balance if there was a bank account involved
+    if (oldBankAccountId) {
+      await client.query(
+        `UPDATE hisab."bankAccounts" 
+         SET "currentBalance" = "currentBalance" + $1,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $2`,
+        [oldAmount, oldBankAccountId]
+      );
+    }
+
+    // Apply new balance if there's a bank account involved
+    if (finalBankAccountId) {
+      await client.query(
+        `UPDATE hisab."bankAccounts" 
+         SET "currentBalance" = "currentBalance" - $1,
+             "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $2`,
+        [finalAmount, finalBankAccountId]
+      );
     }
 
     const updateQuery = `
@@ -490,10 +624,13 @@ export async function updateExpense(req, res) {
         "date" = $1,
         "categoryId" = $2,
         "bankAccountId" = $3,
-        "amount" = $4,
-        "notes" = $5,
+        "contactId" = $4,
+        "amount" = $5,
+        "notes" = $6,
+        "status" = $7,
+        "dueDate" = $8,
         "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $6
+      WHERE "id" = $9
       RETURNING *
     `;
 
@@ -501,8 +638,11 @@ export async function updateExpense(req, res) {
       finalDate,
       finalCategoryId,
       finalBankAccountId,
+      finalContactId,
       finalAmount,
       finalNotes,
+      finalStatus,
+      finalDueDate,
       id
     ]);
 
@@ -525,7 +665,7 @@ export async function updateExpense(req, res) {
 export async function getExpenses(req, res) {
   const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
-  const { page = 1, limit = 10, categoryId, startDate, endDate } = req.query;
+  const { page = 1, limit = 10, categoryId, status, startDate, endDate } = req.query;
 
   if (!userId || !companyId) {
     return errorResponse(res, "Unauthorized access - user or company not identified", 401);
@@ -537,15 +677,18 @@ export async function getExpenses(req, res) {
     // Base query
     let query = `
       SELECT 
-        e."id", e."date", e."amount", e."notes", e."createdAt", e."updatedAt",
+        e."id", e."date", e."amount", e."notes", e."status", e."dueDate", e."createdAt", e."updatedAt",
         ec."name" as "categoryName",ec.id as "categoryId",
         c."name" as "companyName",
         ba.id as "bankAccountId",
-        ba."accountName" as "bankAccountName"
+        ba."accountName" as "bankAccountName",
+        ct.id as "contactId",
+        ct."name" as "contactName"
       FROM hisab."expenses" e
       LEFT JOIN hisab."expenseCategories" ec ON e."categoryId" = ec."id"
       LEFT JOIN hisab."companies" c ON e."companyId" = c."id"
       LEFT JOIN hisab."bankAccounts" ba ON e."bankAccountId" = ba."id"
+      LEFT JOIN hisab."contacts" ct ON e."contactId" = ct."id"
       WHERE e."userId" = $1 AND e."companyId" = $2
     `;
 
@@ -558,6 +701,12 @@ export async function getExpenses(req, res) {
       paramCount++;
       query += ` AND e."categoryId" = $${paramCount}`;
       params.push(categoryId);
+    }
+
+    if (status) {
+      paramCount++;
+      query += ` AND e."status" = $${paramCount}`;
+      params.push(status);
     }
 
     if (startDate) {

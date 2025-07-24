@@ -3,8 +3,11 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { ToastContainer } from 'react-toastify';
 import NonAuthLayout from "../Layouts/NonAuthLayout";
 import VerticalLayout from "../Layouts/index";
+import CompanyProtected from "../Components/Common/CompanyProtected";
 
-import { authProtectedRoutes, publicRoutes } from "./allRoutes";
+// Import routes first to avoid initialization issues
+import * as routes from "./allRoutes";
+const { authProtectedRoutes, publicRoutes } = routes;
 
 const AuthProtected = ({ children }) => {
     const token = sessionStorage.getItem('authToken');
@@ -21,35 +24,33 @@ const Index = () => {
     return (
         <React.Fragment>
             <Routes>
-                <Route>
-                    {publicRoutes.map((route, idx) => (
-                        <Route
-                            path={route.path}
-                            element={
-                                <NonAuthLayout>
-                                    {route.component}
-                                </NonAuthLayout>
-                            }
-                            key={idx}
-                            exact={true}
-                        />
-                    ))}
-                </Route>
+                {publicRoutes.map((route, idx) => (
+                    <Route
+                        path={route.path}
+                        element={
+                            <NonAuthLayout>
+                                {route.component}
+                            </NonAuthLayout>
+                        }
+                        key={idx}
+                        exact={true}
+                    />
+                ))}
 
-                <Route>
-                    {authProtectedRoutes.map((route, idx) => (
-                        <Route
-                            path={route.path}
-                            element={
-                                <AuthProtected>
+                {authProtectedRoutes.map((route, idx) => (
+                    <Route
+                        path={route.path}
+                        element={
+                            <AuthProtected>
+                                <CompanyProtected>
                                     <VerticalLayout>{route.component}</VerticalLayout>
-                                </AuthProtected>
-                            }
-                            key={idx}
-                            exact={true}
-                        />
-                    ))}
-                </Route>
+                                </CompanyProtected>
+                            </AuthProtected>
+                        }
+                        key={idx}
+                        exact={true}
+                    />
+                ))}
             </Routes>
         </React.Fragment>
     );

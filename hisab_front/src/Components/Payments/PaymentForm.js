@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col, Table, Card, CardBody } from 'reactstrap';
-import { RiLoader2Line } from 'react-icons/ri';
+import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col, Table, Card, CardBody, Badge } from 'reactstrap';
+import { RiLoader2Line, RiBankLine, RiShoppingCartLine, RiMoneyDollarCircleLine, RiWalletLine, RiCalendarLine, RiStoreLine } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -29,12 +29,84 @@ const PaymentForm = ({
 
     const formatAmount = useCallback((amount) => parseAmount(amount).toFixed(2), [parseAmount]);
 
+    const getTransactionTypeDisplay = useCallback((transaction) => {
+        const type = transaction.type || 'purchase'; // Default to purchase for backward compatibility
+        
+        switch (type) {
+            case 'current-balance':
+                return {
+                    icon: <RiWalletLine className="me-1" size={14} />,
+                    label: 'Current Balance',
+                    color: 'info'
+                };
+            case 'purchase':
+                return {
+                    icon: <RiShoppingCartLine className="me-1" size={14} />,
+                    label: 'Purchase',
+                    color: 'warning'
+                };
+            case 'sale':
+                return {
+                    icon: <RiStoreLine className="me-1" size={14} />,
+                    label: 'Sale',
+                    color: 'success'
+                };
+            case 'expense':
+                return {
+                    icon: <RiMoneyDollarCircleLine className="me-1" size={14} />,
+                    label: 'Expense',
+                    color: 'danger'
+                };
+            case 'income':
+                return {
+                    icon: <RiBankLine className="me-1" size={14} />,
+                    label: 'Income',
+                    color: 'success'
+                };
+            default:
+                return {
+                    icon: <RiShoppingCartLine className="me-1" size={14} />,
+                    label: 'Transaction',
+                    color: 'secondary'
+                };
+        }
+    }, []);
+
+    const getTransactionDescription = useCallback((transaction) => {
+        const type = transaction.type || 'purchase';
+        
+        if (type === 'current-balance') {
+            return 'Current Balance';
+        }
+        
+        if (transaction.description) {
+            return transaction.description;
+        }
+        
+        // Fallback descriptions
+        switch (type) {
+            case 'purchase':
+                return transaction.invoiceNumber ? `Purchase #${transaction.invoiceNumber}` : 'Purchase';
+            case 'sale':
+                return transaction.invoiceNumber ? `Sale #${transaction.invoiceNumber}` : 'Sale';
+            case 'expense':
+                return transaction.categoryName ? `Expense: ${transaction.categoryName}` : 'Expense';
+            case 'income':
+                return transaction.categoryName ? `Income: ${transaction.categoryName}` : 'Income';
+            default:
+                return 'Transaction';
+        }
+    }, []);
+
     const extractTransactionData = useCallback((payment) => {
         if (!payment?.allocations) return { ids: [], allocations: {} };
         const ids = [];
         const allocations = {};
         payment.allocations.forEach(allocation => {
-            const transactionId = allocation.allocationType === 'current-balance' ? 'current-balance' : allocation.purchaseId || allocation.id;
+            // Use the transactionId provided by the backend, which correctly handles all allocation types
+            const transactionId = allocation.transactionId || 
+                (allocation.allocationType === 'current-balance' ? 'current-balance' : 
+                 allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id);
             ids.push(transactionId);
             allocations[transactionId] = parseAmount(allocation.paidAmount || allocation.amount);
         });
@@ -47,6 +119,10 @@ const PaymentForm = ({
         setIsLoadingTransactions(false);
     }, []);
 
+    const getMaxAmount = useCallback((transaction) => {
+        return isEditMode ? transaction.maxAmount || (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
+    }, [isEditMode]);
+
     // Check if any allocation exceeds maximum amount
     const hasOverAllocation = useCallback(() => {
         return pendingTransactions.some(transaction => {
@@ -54,15 +130,9 @@ const PaymentForm = ({
             const maxAmount = getMaxAmount(transaction);
             return allocatedAmount > maxAmount;
         });
-    }, [pendingTransactions, transactionAllocations, getMaxAmount]);
+    }, [pendingTransactions, transactionAllocations, getMaxAmount, parseAmount]);
 
-    // Check if any selected transaction has zero allocation
-    const hasZeroAllocation = useCallback(() => {
-        return validation.values.transactionIds.some(id => {
-            const allocatedAmount = parseAmount(transactionAllocations[id] || 0);
-            return allocatedAmount <= 0;
-        });
-    }, [validation.values.transactionIds, transactionAllocations]);
+
 
     const validationSchema = Yup.object({
         date: Yup.date().required("Date is required"),
@@ -99,6 +169,7 @@ const PaymentForm = ({
                 const transaction = pendingTransactions.find(t => t.id === id);
                 return {
                     transactionId: id,
+                    transactionType: transaction?.type || 'purchase', // Include transaction type
                     amount: transaction?.pendingAmount || 0,
                     paidAmount: transactionAllocations[id] || 0,
                     type: transaction?.balanceType || 'receivable'
@@ -129,6 +200,14 @@ const PaymentForm = ({
         const item = items.find(i => String(i.id) === String(value));
         return item ? formatOptions[type](item) : null;
     };
+
+    // Check if any selected transaction has zero allocation
+    const hasZeroAllocation = useCallback(() => {
+        return validation.values.transactionIds.some(id => {
+            const allocatedAmount = parseAmount(transactionAllocations[id] || 0);
+            return allocatedAmount <= 0;
+        });
+    }, [validation.values.transactionIds, transactionAllocations, parseAmount]);
 
     const calculations = {
         totalReceivable: () => {
@@ -169,24 +248,62 @@ const PaymentForm = ({
     const transformAllocationsToPendingTransactions = useCallback((allocations) => {
         return allocations.map(allocation => {
             const isCurrentBalance = allocation.allocationType === 'current-balance';
-            const transactionId = isCurrentBalance ? 'current-balance' : allocation.purchaseId;
+            
+            // Use the transactionId provided by backend or determine it based on allocation type
+            let transactionId, description, type;
+            
+            if (isCurrentBalance) {
+                transactionId = 'current-balance';
+                description = 'Current Balance';
+                type = 'current-balance';
+            } else if (allocation.allocationType === 'purchase') {
+                transactionId = allocation.transactionId || allocation.purchaseId;
+                description = allocation.description || `Purchase #${allocation.purchaseInvoiceNumber || transactionId}`;
+                type = 'purchase';
+            } else if (allocation.allocationType === 'sale') {
+                transactionId = allocation.transactionId || allocation.saleId;
+                description = allocation.description || `Sale #${allocation.saleInvoiceNumber || transactionId}`;
+                type = 'sale';
+            } else if (allocation.allocationType === 'expense') {
+                transactionId = allocation.transactionId || allocation.expenseId;
+                description = allocation.description || `Expense #${transactionId}`;
+                type = 'expense';
+            } else if (allocation.allocationType === 'income') {
+                transactionId = allocation.transactionId || allocation.incomeId;
+                description = allocation.description || `Income #${transactionId}`;
+                type = 'income';
+            } else {
+                // Fallback for unknown types
+                transactionId = allocation.transactionId || allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id;
+                description = allocation.description || `Transaction #${transactionId}`;
+                type = allocation.allocationType || 'purchase';
+            }
+
             return {
                 id: transactionId,
-                description: isCurrentBalance ? 'Opening Balance' : `Purchase #${allocation.purchaseInvoiceNumber || allocation.purchaseId}`,
-                date: allocation.createdAt,
-                amount: parseAmount(allocation.amount || 0),
+                type: type,
+                description: description,
+                date: allocation.expenseDate || allocation.incomeDate || allocation.createdAt,
+                amount: parseAmount(allocation.expenseAmount || allocation.incomeAmount || allocation.amount || 0),
                 pendingAmount: parseAmount(allocation.pendingAmount || 0),
                 paidAmount: parseAmount(allocation.paidAmount || 0),
                 balanceType: allocation.balanceType,
-                isOpeningBalance: isCurrentBalance,
-                maxAmount: parseAmount(allocation.paidAmount || 0) + parseAmount(allocation.pendingAmount || 0)
+                isCurrentBalance: isCurrentBalance,
+                maxAmount: parseAmount(allocation.paidAmount || 0) + parseAmount(allocation.pendingAmount || 0),
+                // Include additional data that might be useful
+                categoryName: allocation.expenseCategoryName || allocation.incomeCategoryName,
+                contactName: allocation.expenseContactName || allocation.incomeContactName || allocation.purchaseSupplierName,
+                invoiceNumber: allocation.purchaseInvoiceNumber || allocation.saleInvoiceNumber,
+                notes: allocation.expenseNotes || allocation.incomeNotes
             };
         });
     }, [parseAmount]);
 
     const getExistingTransactionIds = useCallback(() => {
         return selectedPayment?.allocations ? selectedPayment.allocations.map(allocation =>
-            allocation.allocationType === 'current-balance' ? 'current-balance' : allocation.purchaseId || allocation.id
+            allocation.transactionId || 
+            (allocation.allocationType === 'current-balance' ? 'current-balance' : 
+             allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id)
         ) : [];
     }, [selectedPayment]);
 
@@ -196,26 +313,57 @@ const PaymentForm = ({
         try {
             let allTransactions = [];
 
+            // Step 1: Get existing transactions from selectedPayment.allocations (if in edit mode)
             if (isEditMode && selectedPayment?.allocations) {
                 const existingTransactions = transformAllocationsToPendingTransactions(selectedPayment.allocations);
                 allTransactions = [...existingTransactions];
             }
 
+            // Step 2: Get fresh pending transactions from API
+            const response = await getPendingTransactions(contactId);
+            const freshTransactions = response.transactions || [];
+
+            // Step 3: Get IDs of existing transactions to avoid duplicates
             const existingIds = isEditMode ? getExistingTransactionIds() : [];
 
-            // Only send contactId — do not pass excludeIds to API
-            const response = await getPendingTransactions({
-                contactId
-            });
-
-            // Manually filter out already existing transaction IDs
-            const newTransactions = (response.transactions || []).filter(
+            // Step 4: Filter out transactions that already exist in selectedPayment.allocations
+            const newTransactions = freshTransactions.filter(
                 txn => !existingIds.includes(txn.id)
             );
 
+            // Step 5: Update existing transactions with fresh pending amounts from API
+            if (isEditMode && selectedPayment?.allocations) {
+                allTransactions = allTransactions.map(existingTxn => {
+                    // Find matching transaction in fresh data
+                    const freshTxn = freshTransactions.find(ft => ft.id === existingTxn.id);
+                    if (freshTxn) {
+                        // Use fresh pending amount from API
+                        return {
+                            ...existingTxn,
+                            pendingAmount: freshTxn.pendingAmount,
+                            paidAmount: freshTxn.paidAmount,
+                            amount: freshTxn.amount
+                        };
+                    }
+                    return existingTxn;
+                });
+            }
+
+            // Step 6: Combine existing (updated) and new transactions
             allTransactions = [...allTransactions, ...newTransactions];
-            console.log("allTransactions", allTransactions);
+            
+            console.log("Merged transactions:", {
+                existing: isEditMode ? getExistingTransactionIds() : [],
+                fresh: freshTransactions.map(t => ({ id: t.id, pendingAmount: t.pendingAmount })),
+                final: allTransactions.map(t => ({ id: t.id, pendingAmount: t.pendingAmount }))
+            });
+            
             setPendingTransactions(allTransactions);
+        } catch (error) {
+            console.error('Error fetching pending transactions:', error);
+            setPendingTransactions([]);
+            // Optionally show user-friendly error message
+            // You could add a toast notification here if needed
         } finally {
             setIsLoadingTransactions(false);
         }
@@ -225,8 +373,13 @@ const PaymentForm = ({
         if (selectedPayment?.allocations) {
             const initialAllocations = {};
             selectedPayment.allocations.forEach(allocation => {
-                const transactionId = allocation.allocationType === 'current-balance' ? 'current-balance' : allocation.purchaseId || allocation.id;
-                initialAllocations[transactionId] = parseAmount(allocation.paidAmount || allocation.amount);
+                const transactionId = allocation.transactionId || 
+                    (allocation.allocationType === 'current-balance' ? 'current-balance' : 
+                     allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id);
+                
+                // Use the paid amount from the allocation as the initial value
+                const paidAmount = parseAmount(allocation.paidAmount || allocation.amount);
+                initialAllocations[transactionId] = paidAmount;
             });
             setTransactionAllocations(initialAllocations);
         }
@@ -267,7 +420,8 @@ const PaymentForm = ({
             currentIds.push(transactionId);
             const transaction = pendingTransactions.find(t => t.id === transactionId);
             if (transaction) {
-                const defaultAmount = isEditMode ? transaction.paidAmount : transaction.pendingAmount;
+                // Always use the fresh pending amount from the API
+                const defaultAmount = transaction.pendingAmount;
                 setTransactionAllocations(prev => ({
                     ...prev,
                     [transactionId]: parseAmount(defaultAmount)
@@ -291,10 +445,6 @@ const PaymentForm = ({
             [transactionId]: parsedAmount
         }));
     };
-
-    const getMaxAmount = useCallback((transaction) => {
-        return isEditMode ? transaction.maxAmount || (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
-    }, [isEditMode]);
 
     // Updated form validation logic
     const isFormValid = validation.isValid &&
@@ -486,9 +636,10 @@ const PaymentForm = ({
                                         <tr>
                                             <th width="50px"></th>
                                             <th>Description</th>
+                                            <th>Transaction Type</th>
                                             <th>Date</th>
                                             <th>Pending Amount</th>
-                                            <th>Type</th>
+                                            <th>Balance Type</th>
                                             <th width="150px">Payment Amount (Max: {isEditMode ? 'Total' : 'Pending'})</th>
                                         </tr>
                                     </thead>
@@ -499,6 +650,8 @@ const PaymentForm = ({
                                             const maxAmount = getMaxAmount(transaction);
                                             const isOverAllocated = allocatedAmount > maxAmount;
                                             const isZeroAllocated = isSelected && allocatedAmount <= 0;
+                                            const typeDisplay = getTransactionTypeDisplay(transaction);
+                                            const description = getTransactionDescription(transaction);
 
                                             return (
                                                 <tr key={transaction.id} className={isSelected ? 'table-active' : ''}>
@@ -511,18 +664,37 @@ const PaymentForm = ({
                                                         />
                                                     </td>
                                                     <td>
-                                                        {transaction.isOpeningBalance ? 'Opening Balance' : transaction.description}
+                                                        <div>
+                                                            <div className="fw-medium">{description}</div>
+                                                            {transaction.notes && (
+                                                                <small className="text-muted">{transaction.notes}</small>
+                                                            )}
+                                                            {transaction.dueDate && (
+                                                                <div className="mt-1">
+                                                                    <small className="text-warning">
+                                                                        <RiCalendarLine className="me-1" size={12} />
+                                                                        Due: {new Date(transaction.dueDate).toLocaleDateString()}
+                                                                    </small>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td>
+                                                        <Badge color={typeDisplay.color} className="d-flex align-items-center w-fit">
+                                                            {typeDisplay.icon}
+                                                            {typeDisplay.label}
+                                                        </Badge>
                                                     </td>
                                                     <td>
                                                         {transaction.date ? new Date(transaction.date).toLocaleDateString() : 'N/A'}
                                                     </td>
                                                     <td>
-                                                        <strong>${formatAmount(transaction.pendingAmount)}</strong>
+                                                        <strong>₹{formatAmount(transaction.pendingAmount)}</strong>
                                                     </td>
                                                     <td>
-                                                        <span className={`badge bg-${transaction.balanceType === 'payable' ? 'warning' : 'success'}`}>
+                                                        <Badge color={transaction.balanceType === 'payable' ? 'warning' : 'success'}>
                                                             {transaction.balanceType === 'payable' ? 'Payable' : 'Receivable'}
-                                                        </span>
+                                                        </Badge>
                                                     </td>
                                                     <td>
                                                         {isSelected ? (
@@ -537,7 +709,7 @@ const PaymentForm = ({
                                                                     disabled={isLoading}
                                                                     invalid={isOverAllocated || isZeroAllocated}
                                                                 />
-                                                                <small className="text-muted">Max: ${formatAmount(maxAmount)}</small>
+                                                                <small className="text-muted">Max: ₹{formatAmount(maxAmount)}</small>
                                                                 {isOverAllocated && (
                                                                     <div className="text-danger small">Exceeds maximum amount</div>
                                                                 )}
@@ -545,7 +717,9 @@ const PaymentForm = ({
                                                                     <div className="text-danger small">Amount must be greater than 0</div>
                                                                 )}
                                                             </div>
-                                                        ) : '-'}
+                                                        ) : (
+                                                            <span className="text-muted">Select to pay</span>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             );
@@ -559,11 +733,11 @@ const PaymentForm = ({
                                             <Row>
                                                 <Col md={3} className="text-center">
                                                     <div className="text-muted small">Total Receivable</div>
-                                                    <div className="h5 text-success">${formatAmount(calculations.totalReceivable())}</div>
+                                                    <div className="h5 text-success">₹{formatAmount(calculations.totalReceivable())}</div>
                                                 </Col>
                                                 <Col md={3} className="text-center">
                                                     <div className="text-muted small">Total Payable</div>
-                                                    <div className="h5 text-warning">${formatAmount(calculations.totalPayable())}</div>
+                                                    <div className="h5 text-warning">₹{formatAmount(calculations.totalPayable())}</div>
                                                 </Col>
                                                 <Col md={3} className="text-center">
                                                     <div className="text-muted small">
@@ -572,13 +746,13 @@ const PaymentForm = ({
                                                                 validation.values.adjustmentType === 'surcharge' ? 'Surcharge' : 'Adjustment'}
                                                     </div>
                                                     <div className={`h5 ${validation.values.adjustmentType === 'discount' ? 'text-success' : 'text-danger'}`}>
-                                                        {validation.values.adjustmentType === 'discount' ? '-' : '+'}${formatAmount(calculations.adjustmentImpact())}
+                                                        {validation.values.adjustmentType === 'discount' ? '-' : '+'}₹{formatAmount(calculations.adjustmentImpact())}
                                                     </div>
                                                 </Col>
                                                 <Col md={3} className="text-center">
                                                     <div className="text-muted small">{calculations.bankImpact().label}</div>
                                                     <div className={`h5 ${calculations.bankImpact().type === 'receivable' ? 'text-success' : 'text-danger'}`}>
-                                                        ${formatAmount(calculations.bankImpact().amount)}
+                                                        ₹{formatAmount(calculations.bankImpact().amount)}
                                                     </div>
                                                 </Col>
                                             </Row>
@@ -602,24 +776,6 @@ const PaymentForm = ({
                         {hasZeroAllocation() && (
                             <div className="text-danger small mt-2">All selected transactions must have an amount greater than 0</div>
                         )}
-
-                        {/* Debug validation status - remove this in production */}
-                        {process.env.NODE_ENV === 'development' && (
-                            <div className="mt-3 p-2 bg-light border rounded">
-                                <small className="text-muted">Debug Info:</small>
-                                <div className="small">
-                                    <div>Form Valid: {validation.isValid ? '✅' : '❌'}</div>
-                                    <div>Has Transactions: {validation.values.transactionIds.length > 0 ? '✅' : '❌'}</div>
-                                    <div>No Over Allocation: {!hasOverAllocation() ? '✅' : '❌'}</div>
-                                    <div>No Zero Allocation: {!hasZeroAllocation() ? '✅' : '❌'}</div>
-                                    <div>Adjustment Type: {validation.values.adjustmentType}</div>
-                                    <div>Adjustment Value: {validation.values.adjustmentValue}</div>
-                                    <div>Adjustment Valid: {(validation.values.adjustmentType === 'none' || validation.values.adjustmentValue > 0) ? '✅' : '❌'}</div>
-                                    <div>Button Enabled: {isFormValid ? '✅' : '❌'}</div>
-                                    <div>Form Errors: {Object.keys(validation.errors).length > 0 ? Object.keys(validation.errors).join(', ') : 'None'}</div>
-                                </div>
-                            </div>
-                        )}
                     </div>
                 </Form>
             </ModalBody>
@@ -631,7 +787,7 @@ const PaymentForm = ({
                     color="primary"
                     type="submit"
                     onClick={validation.handleSubmit}
-                    disabled={isLoading}
+                    disabled={isLoading || !isFormValid}
                 >
                     {isLoading ? (
                         <>

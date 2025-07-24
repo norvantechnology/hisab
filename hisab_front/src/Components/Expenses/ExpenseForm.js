@@ -4,9 +4,10 @@ import { RiLoader2Line } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
-import { ACCOUNT_TYPES } from '../../Components/BankAccounts';
+import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
+import BankAccountDropdown from '../Common/BankAccountDropdown';
 
-const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, bankAccounts, selectedExpense, onSubmit }) => {
+const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, onSubmit }) => {
     const validation = useFormik({
         enableReinitialize: true,
         initialValues: {
@@ -14,17 +15,41 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, bankAccounts, sel
             date: selectedExpense?.date?.split('T')[0] || '',
             categoryId: selectedExpense?.categoryId || '',
             bankAccountId: selectedExpense?.bankAccountId || '',
+            contactId: selectedExpense?.contactId || '',
+            paymentMethod: selectedExpense?.bankAccountId && !selectedExpense?.contactId ? 'bank' : selectedExpense?.contactId ? 'contact' : 'bank',
             amount: selectedExpense ? parseFloat(selectedExpense.amount || 0) : 0,
-            notes: selectedExpense?.notes || ''
+            notes: selectedExpense?.notes || '',
+            status: selectedExpense?.status || 'paid',
+            dueDate: selectedExpense?.dueDate?.split('T')[0] || '',
+
         },
         validationSchema: Yup.object({
             date: Yup.date().required("Date is required"),
             categoryId: Yup.string().required("Category is required"),
-            bankAccountId: Yup.string().required("Bank account is required"),
+            bankAccountId: Yup.string().when(['paymentMethod', 'status'], {
+                is: (paymentMethod, status) => paymentMethod === 'bank' || (paymentMethod === 'contact' && status === 'paid'),
+                then: () => Yup.string().required("Bank account is required"),
+                otherwise: () => Yup.string()
+            }),
+            contactId: Yup.string().when('paymentMethod', {
+                is: 'contact',
+                then: () => Yup.string().required("Contact is required"),
+                otherwise: () => Yup.string()
+            }),
             amount: Yup.number()
                 .transform((value) => (isNaN(value) ? undefined : value))
                 .min(0, "Amount must be positive")
-                .required("Amount is required")
+                .required("Amount is required"),
+            status: Yup.string().when('paymentMethod', {
+                is: 'contact',
+                then: () => Yup.string().required("Status is required"),
+                otherwise: () => Yup.string()
+            }),
+            dueDate: Yup.date().when(['paymentMethod', 'status'], {
+                is: (paymentMethod, status) => paymentMethod === 'contact' && status === 'pending',
+                then: () => Yup.date().required("Due date is required"),
+                otherwise: () => Yup.date()
+            })
         }),
         onSubmit: async (values) => {
             await onSubmit(values);
@@ -38,16 +63,75 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, bankAccounts, sel
         return category ? { value: category.id, label: category.name } : null;
     };
 
-    const getCurrentBankAccount = () => {
-        const bankAccountId = validation.values.bankAccountId;
-        if (!bankAccountId || !bankAccounts.length) return null;
-        const account = bankAccounts.find(a => String(a.id) === String(bankAccountId));
-        return account ? {
-            value: account.id,
-            label: account.accountName,
-            account: account
-        } : null;
+    const getCurrentPaymentMethod = () => {
+        const { paymentMethod, bankAccountId, contactId } = validation.values;
+        
+        if (paymentMethod === 'bank' && bankAccountId) {
+            return `bank_${bankAccountId}`;
+        }
+        
+        if (paymentMethod === 'contact' && contactId) {
+            return `contact_${contactId}`;
+        }
+        
+        return null;
     };
+
+
+
+
+
+    const handlePaymentMethodChange = (selectedOption) => {
+        if (!selectedOption) {
+            validation.setFieldValue('paymentMethod', '');
+            validation.setFieldValue('bankAccountId', '');
+            validation.setFieldValue('contactId', '');
+            validation.setFieldValue('paidFromBankAccountId', '');
+            return;
+        }
+
+        const [type, id] = selectedOption.value.split('_');
+        validation.setFieldValue('paymentMethod', type);
+        
+        if (type === 'bank') {
+            validation.setFieldValue('bankAccountId', id);
+            validation.setFieldValue('contactId', '');
+            validation.setFieldValue('paidFromBankAccountId', '');
+            // Reset contact-specific fields
+            validation.setFieldValue('status', 'paid');
+            validation.setFieldValue('dueDate', '');
+        } else if (type === 'contact') {
+            validation.setFieldValue('contactId', id);
+            validation.setFieldValue('bankAccountId', '');
+            validation.setFieldValue('paidFromBankAccountId', '');
+            // Set default values for contact-specific fields
+            validation.setFieldValue('status', 'pending');
+            const today = new Date();
+            validation.setFieldValue('dueDate', today.toISOString().split('T')[0]);
+        }
+    };
+
+    const handleStatusChange = (e) => {
+        const newStatus = e.target.value;
+        validation.setFieldValue('status', newStatus);
+        
+        // Clear bankAccountId when switching to pending (contact payments only)
+        if (newStatus === 'pending') {
+            validation.setFieldValue('bankAccountId', '');
+            // Set due date to today if not already set
+            if (!validation.values.dueDate) {
+                const today = new Date();
+                validation.setFieldValue('dueDate', today.toISOString().split('T')[0]);
+            }
+        } else if (newStatus === 'paid') {
+            // Clear due date when switching to paid
+            validation.setFieldValue('dueDate', '');
+        }
+    };
+
+    const isContactSelected = validation.values.paymentMethod === 'contact';
+    const isContactPaid = isContactSelected && validation.values.status === 'paid';
+    const isContactPending = isContactSelected && validation.values.status === 'pending';
 
     return (
         <Modal isOpen={isOpen} toggle={toggle}>
@@ -91,41 +175,80 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, bankAccounts, sel
                     </FormGroup>
 
                     <FormGroup>
-                        <Label>Bank Account</Label>
-                        <ReactSelect
-                            options={bankAccounts.map(account => ({
-                                value: account.id,
-                                label: account.accountName,
-                                account: account
-                            }))}
-                            value={getCurrentBankAccount()}
-                            onChange={(selectedOption) => {
-                                validation.setFieldValue('bankAccountId', selectedOption?.value || '');
+                        <Label>Payment Method</Label>
+                        <BankAccountContactDropdown
+                            value={getCurrentPaymentMethod()}
+                            onChange={handlePaymentMethodChange}
+                            onBlur={() => {
+                                validation.setFieldTouched('bankAccountId', true);
+                                validation.setFieldTouched('contactId', true);
                             }}
-                            onBlur={() => validation.setFieldTouched('bankAccountId', true)}
-                            className={`react-select-container ${validation.touched.bankAccountId && validation.errors.bankAccountId ? 'is-invalid' : ''}`}
-                            classNamePrefix="react-select"
-                            placeholder="Select Bank Account"
-                            formatOptionLabel={(option) => {
-                                const account = option.account;
-                                const accountType = ACCOUNT_TYPES[account.accountType] || ACCOUNT_TYPES.bank;
-                                return (
-                                    <div className="d-flex align-items-center">
-                                        <span className={`text-${accountType.color} me-2`}>
-                                            {accountType.icon}
-                                        </span>
-                                        <span>
-                                            {account.accountName}
-                                            {!account.isActive && <span className="text-muted"> (Inactive)</span>}
-                                        </span>
-                                    </div>
-                                );
-                            }}
+                            placeholder="Select Payment Method"
+                            error={validation.errors.bankAccountId || validation.errors.contactId}
+                            touched={validation.touched.bankAccountId || validation.touched.contactId}
                         />
-                        {validation.touched.bankAccountId && validation.errors.bankAccountId && (
-                            <div className="invalid-feedback d-block">{validation.errors.bankAccountId}</div>
+                        {((validation.touched.bankAccountId && validation.errors.bankAccountId) ||
+                          (validation.touched.contactId && validation.errors.contactId)) && (
+                            <div className="invalid-feedback d-block">
+                                {validation.errors.bankAccountId || validation.errors.contactId}
+                            </div>
                         )}
                     </FormGroup>
+
+                    {isContactSelected && (
+                        <>
+                            <FormGroup>
+                                <Label>Status</Label>
+                                <Input
+                                    type="select"
+                                    name="status"
+                                    value={validation.values.status}
+                                    onChange={handleStatusChange}
+                                    onBlur={validation.handleBlur}
+                                    invalid={validation.touched.status && !!validation.errors.status}
+                                >
+                                    <option value="">Select Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="paid">Paid</option>
+                                </Input>
+                                <FormFeedback>{validation.errors.status}</FormFeedback>
+                            </FormGroup>
+
+                            {isContactPaid && (
+                                <FormGroup>
+                                    <Label>Paid From (Bank Account)</Label>
+                                    <BankAccountDropdown
+                                        value={validation.values.bankAccountId}
+                                        onChange={(selectedOption) => {
+                                            validation.setFieldValue('bankAccountId', selectedOption?.value || '');
+                                        }}
+                                        onBlur={() => validation.setFieldTouched('bankAccountId', true)}
+                                        error={validation.errors.bankAccountId}
+                                        touched={validation.touched.bankAccountId}
+                                        placeholder="Select Bank Account"
+                                    />
+                                    {validation.touched.bankAccountId && validation.errors.bankAccountId && (
+                                        <div className="invalid-feedback d-block">{validation.errors.bankAccountId}</div>
+                                    )}
+                                </FormGroup>
+                            )}
+
+                            {isContactPending && (
+                                <FormGroup>
+                                    <Label>Due Date</Label>
+                                    <Input
+                                        type="date"
+                                        name="dueDate"
+                                        value={validation.values.dueDate}
+                                        onChange={validation.handleChange}
+                                        onBlur={validation.handleBlur}
+                                        invalid={validation.touched.dueDate && !!validation.errors.dueDate}
+                                    />
+                                    <FormFeedback>{validation.errors.dueDate}</FormFeedback>
+                                </FormGroup>
+                            )}
+                        </>
+                    )}
 
                     <FormGroup>
                         <Label>Amount</Label>

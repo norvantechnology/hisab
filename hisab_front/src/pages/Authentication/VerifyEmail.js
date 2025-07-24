@@ -35,7 +35,7 @@ const VerifyEmail = () => {
                 }
 
                 setTimeout(() => {
-                    navigate('/dashboard');
+                    navigate('/bank-accounts');
                 }, 3000);
             } catch (error) {
                 setStatus('error');
@@ -99,7 +99,7 @@ const VerifyEmail = () => {
 
                                             {status === 'success' && (
                                                 <p className="text-muted">
-                                                    Redirecting to dashboard...
+                                                    Redirecting to bank accounts...
                                                 </p>
                                             )}
 

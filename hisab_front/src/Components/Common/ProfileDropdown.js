@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from 'reactstrap';
 import { Link } from 'react-router-dom';
-import avatar1 from "../../assets/images/users/avatar-1.jpg";
 
 const ProfileDropdown = () => {
     // Get user data from session storage
@@ -25,11 +24,9 @@ const ProfileDropdown = () => {
         >
             <DropdownToggle tag="button" type="button" className="btn">
                 <span className="d-flex align-items-center">
-                    <img 
-                        className="rounded-circle header-profile-user" 
-                        src={avatar1}
-                        alt="User Avatar" 
-                    />
+                    <div className="rounded-circle header-profile-user d-flex align-items-center justify-content-center bg-primary text-white">
+                        <i className="ri-user-line"></i>
+                    </div>
                     <span className="text-start ms-xl-2">
                         <span className="d-none d-xl-inline-block ms-1 fw-medium user-name-text">
                             {userData.name}
@@ -45,15 +42,6 @@ const ProfileDropdown = () => {
                 <DropdownItem tag={Link} to="/profile">
                     <i className="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
                     <span className="align-middle">Profile</span>
-                </DropdownItem>
-                <div className="dropdown-divider"></div>
-                <DropdownItem tag={Link} to="/pages-profile-settings">
-                    <i className="mdi mdi-cog-outline text-muted fs-16 align-middle me-1"></i>
-                    <span className="align-middle">Settings</span>
-                </DropdownItem>
-                <DropdownItem tag={Link} to="/auth-lockscreen-basic">
-                    <i className="mdi mdi-lock text-muted fs-16 align-middle me-1"></i>
-                    <span className="align-middle">Lock screen</span>
                 </DropdownItem>
                 <DropdownItem tag={Link} to="/logout">
                     <i className="mdi mdi-logout text-muted fs-16 align-middle me-1"></i>

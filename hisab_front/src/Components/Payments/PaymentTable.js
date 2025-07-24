@@ -1,8 +1,9 @@
-import React, { useMemo } from 'react';
-import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine } from 'react-icons/ri';
+import React, { useMemo, useState } from 'react';
+import { Card, CardBody, Badge, Alert } from 'reactstrap';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine } from 'react-icons/ri';
 import TableContainer from '../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import PaymentPDFButton from '../Common/PaymentPDFButton';
 
 const PaymentTable = ({ 
   payments, 
@@ -13,6 +14,35 @@ const PaymentTable = ({
   onEdit, 
   onDelete 
 }) => {
+    const [pdfAlert, setPdfAlert] = useState(null);
+
+    const handlePDFSuccess = (response) => {
+        const actionType = response.actionType || 'generated';
+        const message = actionType === 'cached' 
+            ? `PDF retrieved from cache! ${response.fileName}` 
+            : `PDF generated successfully! ${response.fileName}`;
+            
+        setPdfAlert({
+            type: 'success',
+            message: message,
+            icon: actionType === 'cached' ? 'ri-database-2-line' : 'ri-file-pdf-line'
+        });
+        
+        // Auto hide alert after 4 seconds for cached, 3 seconds for generated
+        const hideTimeout = actionType === 'cached' ? 4000 : 3000;
+        setTimeout(() => setPdfAlert(null), hideTimeout);
+    };
+
+    const handlePDFError = (error) => {
+        setPdfAlert({
+            type: 'danger', 
+            message: `PDF generation failed: ${error}`
+        });
+        
+        // Auto hide alert after 5 seconds
+        setTimeout(() => setPdfAlert(null), 5000);
+    };
+
     const columns = useMemo(() => [
         {
             header: "Payment #",
@@ -114,22 +144,36 @@ const PaymentTable = ({
             header: "Action",
             accessorKey: "action",
             cell: (cell) => (
-                <UncontrolledDropdown direction="start">
-                    <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
-                        <RiMoreFill />
-                    </DropdownToggle>
-                    <DropdownMenu className="dropdown-menu-end">
-                        <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                            <RiEyeLine className="me-2 align-middle text-muted" /> View
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
-                            <RiPencilLine className="me-2 align-middle text-muted" /> Edit
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
-                            <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
-                        </DropdownItem>
-                    </DropdownMenu>
-                </UncontrolledDropdown>
+                <div className="d-flex gap-2 align-items-center">
+                    {/* PDF Button */}
+                    <PaymentPDFButton
+                        paymentId={cell.row.original.id}
+                        paymentNumber={cell.row.original.paymentNumber}
+                        size="sm"
+                        variant="outline-info"
+                        onSuccess={handlePDFSuccess}
+                        onError={handlePDFError}
+                    />
+                    
+                    {/* Actions Dropdown */}
+                    <UncontrolledDropdown direction="start">
+                        <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
+                            <RiMoreFill />
+                        </DropdownToggle>
+                        <DropdownMenu className="dropdown-menu-end">
+                            <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
+                                <RiEyeLine className="me-2 align-middle text-muted" /> View
+                            </DropdownItem>
+                            <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
+                                <RiPencilLine className="me-2 align-middle text-muted" /> Edit
+                            </DropdownItem>
+                            <DropdownItem divider />
+                            <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2 text-danger">
+                                <RiDeleteBinLine className="me-2 align-middle" /> Delete
+                            </DropdownItem>
+                        </DropdownMenu>
+                    </UncontrolledDropdown>
+                </div>
             ),
             enableColumnFilter: false
         }
@@ -138,6 +182,18 @@ const PaymentTable = ({
     return (
         <Card className="shadow-sm">
             <CardBody className="p-3">
+                {pdfAlert && (
+                    <Alert 
+                        color={pdfAlert.type} 
+                        className="mb-3"
+                        isOpen={!!pdfAlert}
+                        toggle={() => setPdfAlert(null)}
+                    >
+                        {pdfAlert.icon && <i className={`${pdfAlert.icon} me-2`}></i>}
+                        {pdfAlert.message}
+                    </Alert>
+                )}
+                
                 <TableContainer
                     columns={columns}
                     data={payments || []}

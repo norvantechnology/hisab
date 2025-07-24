@@ -10,6 +10,7 @@ router.get('/getPendingTransactions', authenticateUser, paymentController.getPen
 router.get('/getPaymentDetails', authenticateUser, paymentController.getPaymentDetails);
 router.put('/updatePayment', authenticateUser, paymentController.updatePayment);
 router.get('/listPayments', authenticateUser, paymentController.listPayments);
+router.get('/generateInvoicePDF', authenticateUser, paymentController.generatePaymentInvoicePDF);
 
 
 export default router;

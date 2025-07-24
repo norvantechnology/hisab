@@ -16,25 +16,57 @@ export const listPayments = async (params) => {
     });
 };
 
-export const getPendingTransactions = async (params) => {
-    return apiCall({
-        method: 'get',
-        endpoint: '/payment/getPendingTransactions',
-        params
-    });
-};
-
-export const deletePayment = async (id) => {
-    return apiCall({
-        method: 'delete',
-        endpoint: '/payment/deletePayment',
-        params: { id }
-    });
-};
 export const updatePayment = async (data) => {
     return apiCall({
         method: 'put',
         endpoint: '/payment/updatePayment',
         data
     });
+};
+
+export const deletePayment = async (paymentId) => {
+    return apiCall({
+        method: 'delete',
+        endpoint: '/payment/deletePayment',
+        params: { id: paymentId }
+    });
+};
+
+export const getPaymentDetails = async (paymentId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/payment/getPaymentDetails',
+        params: { id: paymentId }
+    });
+};
+
+export const getPendingTransactions = async (contactId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/payment/getPendingTransactions',
+        params: { contactId }
+    });
+};
+
+export const generatePaymentInvoicePDF = async (paymentId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/payment/generateInvoicePDF',
+        params: { id: paymentId }
+    });
+};
+
+export const downloadPaymentPDF = (pdfUrl, fileName) => {
+    // Create a temporary link to download the PDF
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.download = fileName || 'payment_invoice.pdf';
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
+export const openPaymentPDFInNewTab = (pdfUrl) => {
+    window.open(pdfUrl, '_blank');
 };
