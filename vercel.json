@@ -1,0 +1,12 @@
+{
+    "buildCommand": "cd hisab_front && npm run build",
+    "outputDirectory": "hisab_front/build",
+    "installCommand": "cd hisab_front && npm install",
+    "devCommand": "cd hisab_front && npm start",
+    "rewrites": [
+      {
+        "source": "/(.*)",
+        "destination": "/index.html"
+      }
+    ]
+  }
