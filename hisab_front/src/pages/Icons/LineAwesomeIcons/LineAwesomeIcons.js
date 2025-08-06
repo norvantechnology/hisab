@@ -4,7 +4,7 @@ import { Card, Row, CardHeader, Col, Container, CardBody } from 'reactstrap';
 import BreadCrumb from '../../../Components/Common/BreadCrumb';
 
 const LineAwesomeIcons = () => {
-  document.title="Line Awesome Icons | Velzon - React Admin & Dashboard Template";
+  document.title="Line Awesome Icons | Vyavhar - Financial Management Platform";
 
     return (
         <React.Fragment>

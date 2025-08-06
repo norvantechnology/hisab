@@ -30,7 +30,7 @@ import small9 from "../../../assets/images/small/img-9.jpg";
 
 
 const Timeline = () => {
-  document.title="Timeline | Velzon - React Admin & Dashboard Template";
+  document.title="Timeline | vyavhar - React Admin & Dashboard Template";
     
     SwiperCore.use([FreeMode, Navigation, Thumbs]);
   const [thumbsSwiper] = useState(null);
@@ -108,7 +108,7 @@ const Timeline = () => {
                                         <div className="date">10 Jul 2021</div>
                                         <div className="content">
                                             <h5>Create new project buildng product</h5>
-                                            <p className="text-muted">Every team project can have a velzon. Use the velzon to share information with your team to understand and contribute to your project.</p>
+                                            <p className="text-muted">Every team project can have a vyavhar. Use the vyavhar to share information with your team to understand and contribute to your project.</p>
                                             <div className="avatar-group mb-2">
                                                 <Link to="#" className="avatar-group-item" data-bs-toggle="tooltip" data-bs-trigger="hover" data-bs-placement="top" title="" data-bs-original-title="Christi">
                                                     <img src={avatar4} alt="" className="rounded-circle avatar-xs"/>
@@ -150,7 +150,7 @@ const Timeline = () => {
                                         <i className="icon ri-user-smile-line"></i>
                                         <div className="date">10 Feb 2021</div>
                                         <div className="content">
-                                            <h5>Velzon admin dashboard templates layout upload</h5>
+                                            <h5>vyavhar admin dashboard templates layout upload</h5>
                                             <p className="text-muted">Powerful, clean & modern responsive bootstrap 5 admin template. The maximum file size for uploads in this demo :</p>
                                             <Row className="border border-dashed rounded gx-2 p-2">
                                                 <Col xs={3}>
@@ -261,7 +261,7 @@ const Timeline = () => {
                                             <Col xs={12}>
                                                 <div className="timeline-box">
                                                     <div className="timeline-text">
-                                                        <h5>Velzon - Project Discussion</h5>
+                                                        <h5>vyavhar - Project Discussion</h5>
                                                         <p className="text-muted mb-0">The purpose of the discussion is to interpret and describe the significance of your findings in light of what was already known about the research problem being investigated, and to explain any new understanding or fresh insights about the problem after you've taken the findings into consideration.</p>
                                                     </div>
                                                 </div>

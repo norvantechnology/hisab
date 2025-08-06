@@ -45,11 +45,17 @@ export async function createPurchase(req, res) {
   let bankAccountId = null;
   let contactId = null;
 
+  // Handle both billFromBank and billFromContact - they can both be present
   if (billFromBank) {
     bankAccountId = parseInt(billFromBank);
-  } else if (billFromContact) {
+  }
+  
+  if (billFromContact) {
     contactId = parseInt(billFromContact);
-  } else {
+  }
+
+  // At least one of them should be provided
+  if (!billFromBank && !billFromContact) {
     return errorResponse(res, "Either billFromBank or billFromContact is required", 400);
   }
 
@@ -285,11 +291,17 @@ export async function updatePurchase(req, res) {
   let bankAccountId = null;
   let contactId = null;
 
+  // Handle both billFromBank and billFromContact - they can both be present
   if (billFromBank) {
     bankAccountId = parseInt(billFromBank);
-  } else if (billFromContact) {
+  }
+  
+  if (billFromContact) {
     contactId = parseInt(billFromContact);
-  } else {
+  }
+
+  // At least one of them should be provided
+  if (!billFromBank && !billFromContact) {
     return errorResponse(res, "Either billFromBank or billFromContact is required", 400);
   }
 

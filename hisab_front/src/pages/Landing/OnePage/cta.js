@@ -11,12 +11,12 @@ const Cta = () => {
                     <Row className="align-items-center gy-4">
                         <Col className="col-sm">
                             <div>
-                                <h4 className="text-white mb-0 fw-semibold">Build your web App/SaaS with Velzon dashboard</h4>
+                                <h4 className="text-white mb-0 fw-semibold">Build your financial management system with Vyavhar platform</h4>
                             </div>
                         </Col>
                         <Col className="col-sm-auto">
                             <div>
-                                <Link to="//1.envato.market/velzon-admin" target="_blank" rel="noreferrer" className="btn bg-gradient btn-danger"><i className="ri-shopping-cart-2-line align-middle me-1"></i> Buy Now</Link>
+                                <Link to="//1.envato.market/vyavhar-admin" target="_blank" rel="noreferrer" className="btn bg-gradient btn-danger"><i className="ri-shopping-cart-2-line align-middle me-1"></i> Buy Now</Link>
                             </div>
                         </Col>
                     </Row>

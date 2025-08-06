@@ -14,7 +14,7 @@ import { DefaultAccordionExample, FlushAccordionExample, IconAccordionExample, W
 
 const UiAccordions = () => {
 
-    document.title="Accordian & Collapse | Velzon - React Admin & Dashboard Template";
+    document.title="Accordian & Collapse | vyavhar - React Admin & Dashboard Template";
 
     // Default Accordion
     const [col1, setcol1] = useState(true);

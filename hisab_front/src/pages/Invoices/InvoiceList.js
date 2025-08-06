@@ -37,7 +37,7 @@ import 'react-toastify/dist/ReactToastify.css';
 import { createSelector } from "reselect";
 
 const InvoiceList = () => {
-  document.title = "Invoice List  | Velzon - React Admin & Dashboard Template";
+  document.title = "Invoice List | Vyavhar - Financial Management Platform";
 
   const dispatch = useDispatch();
 

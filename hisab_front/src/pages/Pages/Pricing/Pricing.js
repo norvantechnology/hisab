@@ -7,7 +7,7 @@ import classnames from "classnames";
 import { pricing1, pricing2, pricing3 } from '../../../common/data';
 
 const Pricing = () => {
-    document.title = "Pricing | Velzon - React Admin & Dashboard Template";
+    document.title = "Pricing | vyavhar - React Admin & Dashboard Template";
 
     //Tab 
     const [activeTab, setActiveTab] = useState('1');

@@ -112,13 +112,28 @@ const IncomesPage = () => {
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
-        setState(prev => ({
-            ...prev,
-            modals: { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] }
-        }));
+        setState(prev => {
+            const newModals = { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] };
+            
+            // Clear selectedIncome when main modal closes
+            if (modalName === 'main' && !newModals[modalName]) {
+                return {
+                    ...prev,
+                    modals: newModals,
+                    selectedIncome: null,
+                    isEditMode: false
+                };
+            }
+            
+            return {
+                ...prev,
+                modals: newModals
+            };
+        });
     };
 
     const handleAddClick = () => {
+        // Clear any previous data and open modal for new income
         setState(prev => ({
             ...prev,
             isEditMode: false,
@@ -128,6 +143,7 @@ const IncomesPage = () => {
     };
 
     const handleEditClick = (income) => {
+        // Use the current income data directly - it should be fresh from the table
         setState(prev => ({
             ...prev,
             selectedIncome: income,
@@ -204,6 +220,7 @@ const IncomesPage = () => {
 
     const handleSubmitIncome = async (values) => {
         try {
+            console.log('handleSubmitIncome called with values:', values);
             setState(prev => ({ ...prev, apiLoading: true }));
             const payload = {
                 id: values.id,
@@ -218,7 +235,7 @@ const IncomesPage = () => {
                 // Direct bank payment - clear contact fields
                 payload.bankAccountId = values.bankAccountId;
                 payload.contactId = null;
-                payload.status = null;
+                payload.status = 'paid'; // Direct bank payments are always paid
                 payload.dueDate = null;
             } else if (values.paymentMethod === 'contact') {
                 // Contact payment
@@ -234,9 +251,13 @@ const IncomesPage = () => {
                 }
             }
 
+            console.log('Final payload:', payload);
+
             const response = isEditMode
                 ? await updateIncome(payload)
                 : await createIncome(payload);
+
+            console.log('API response:', response);
 
             if (response.success) {
                 toast.success(`Income ${isEditMode ? 'updated' : 'created'} successfully`);
@@ -248,6 +269,7 @@ const IncomesPage = () => {
                 fetchData();
             }
         } catch (error) {
+            console.error('Error in handleSubmitIncome:', error);
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} income`);
         }
@@ -318,10 +340,10 @@ const IncomesPage = () => {
                     <Col sm={12} className="text-end">
                         <div className="d-flex justify-content-end gap-2">
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
-                                <RiDownload2Line className="align-bottom" /> Export
+                                <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
                             <Button color="success" onClick={handleAddClick}>
-                                <RiAddLine className="align-bottom" /> Add Income
+                                <RiAddLine className="align-middle me-1" /> Add Income
                             </Button>
                         </div>
                     </Col>
@@ -342,6 +364,7 @@ const IncomesPage = () => {
                 )}
 
                 <IncomeForm
+                    key={`income-form-${selectedIncome?.id || 'new'}`}
                     isOpen={modals.main}
                     toggle={() => toggleModal('main')}
                     isEditMode={isEditMode}

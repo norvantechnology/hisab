@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, ModalBody, Row, Col, Button, Form, Input, Label } from 'reactstrap';
-import { RiPencilLine, RiAddLine, RiMoneyDollarCircleLine,RiCloseLine, RiLoader2Line, RiBankLine, RiShieldCheckLine, RiErrorWarningLine } from 'react-icons/ri';
+import { RiPencilLine, RiAddLine, RiCloseLine, RiLoader4Line, RiBankLine, RiShieldCheckLine, RiErrorWarningLine } from 'react-icons/ri';
 import { FormField, SelectField } from './FormFields';
 import { ACCOUNT_TYPES } from './index';
 
@@ -48,7 +48,7 @@ const AccountModal = ({ isOpen, toggle, isEdit, validation }) => {
                                     min="0"
                                     placeholder={`Enter ${isEdit ? 'current' : 'opening'} balance`}
                                     validation={validation}
-                                    icon={<RiMoneyDollarCircleLine />}
+                                    icon={<RiBankLine />}
                                 />
                             </Col>
                             <Col lg={12}>
@@ -75,7 +75,7 @@ const AccountModal = ({ isOpen, toggle, isEdit, validation }) => {
                             <Button type="submit" color="primary" disabled={validation.isSubmitting}>
                                 {validation.isSubmitting ? (
                                     <>
-                                        <RiLoader2Line className="me-1" />
+                                        <RiLoader4Line className="me-1" />
                                         {isEdit ? "Updating..." : "Creating..."}
                                     </>
                                 ) : (

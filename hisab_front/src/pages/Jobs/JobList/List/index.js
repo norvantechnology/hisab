@@ -9,7 +9,7 @@ import AppSummaryChart from "./AppSummary";
 import Pagination from "../../../../Components/Common/Pagination";
 
 const JobList = () => {
-  document.title = "Job Lists | Velzon -  Admin & Dashboard Template";
+  document.title = "Job Lists | vyavhar -  Admin & Dashboard Template";
 
   const [jobListData, setJobListData] = useState();
   const [currentPage, setCurrentPage] = useState(1);

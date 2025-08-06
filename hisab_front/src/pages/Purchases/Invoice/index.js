@@ -142,16 +142,11 @@ const PurchaseInvoicePage = () => {
             const transformedInvoice = {
                 ...existingInvoice,
                 date: existingInvoice.invoiceDate,
-                billFrom: existingInvoice.bankAccount
-                    ? `bank_${existingInvoice.bankAccount.id}`
-                    : existingInvoice.contact
-                        ? `contact_${existingInvoice.contact.id}`
-                        : '',
-                items: existingInvoice.items.map(item => ({
+                items: existingInvoice.items?.map(item => ({
                     id: item.id,
                     productId: item.productId,
-                    name: item.productName,  // Changed from productName to name
-                    code: item.productCode,  // Changed from productCode to code
+                    name: item.productName || item.name,
+                    code: item.productCode || item.code,
                     quantity: item.quantity,
                     rate: item.rate,
                     taxRate: item.taxRate,
@@ -162,8 +157,9 @@ const PurchaseInvoicePage = () => {
                     isSerialized: item.isSerialized,
                     serialNumbers: item.serialNumbers || [],
                     currentStock: item.currentStock
-                }))
+                })) || []
             };
+            
             setState(prev => ({
                 ...prev,
                 selectedInvoice: transformedInvoice,

@@ -9,7 +9,7 @@ import { createSelector } from 'reselect';
 
 
 const CryproOrder = () => {
-    document.title = "Orders | Velzon - React Admin & Dashboard Template";
+    document.title = "Crypto Orders | Vyavhar - Financial Management Platform";
     const dispatch = useDispatch();
 
     const cryptoorderData = createSelector(

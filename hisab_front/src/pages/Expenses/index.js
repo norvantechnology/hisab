@@ -112,13 +112,28 @@ const ExpensesPage = () => {
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
-        setState(prev => ({
-            ...prev,
-            modals: { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] }
-        }));
+        setState(prev => {
+            const newModals = { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] };
+            
+            // Clear selectedExpense when main modal closes
+            if (modalName === 'main' && !newModals[modalName]) {
+                return {
+                    ...prev,
+                    modals: newModals,
+                    selectedExpense: null,
+                    isEditMode: false
+                };
+            }
+            
+            return {
+                ...prev,
+                modals: newModals
+            };
+        });
     };
 
     const handleAddClick = () => {
+        // Clear any previous data and open modal for new expense
         setState(prev => ({
             ...prev,
             isEditMode: false,
@@ -128,6 +143,7 @@ const ExpensesPage = () => {
     };
 
     const handleEditClick = (expense) => {
+        // Use the current expense data directly - it should be fresh from the table
         setState(prev => ({
             ...prev,
             selectedExpense: expense,
@@ -204,6 +220,7 @@ const ExpensesPage = () => {
 
     const handleSubmitExpense = async (values) => {
         try {
+            console.log('handleSubmitExpense called with values:', values);
             setState(prev => ({ ...prev, apiLoading: true }));
             const payload = {
                 id: values.id,
@@ -218,7 +235,7 @@ const ExpensesPage = () => {
                 // Direct bank payment - clear contact fields
                 payload.bankAccountId = values.bankAccountId;
                 payload.contactId = null;
-                payload.status = null;
+                payload.status = 'paid'; // Direct bank payments are always paid
                 payload.dueDate = null;
             } else if (values.paymentMethod === 'contact') {
                 // Contact payment
@@ -229,14 +246,18 @@ const ExpensesPage = () => {
                     payload.dueDate = values.dueDate;
                     payload.bankAccountId = null; // Clear bank account for pending
                 } else if (values.status === 'paid') {
-                    payload.bankAccountId = values.bankAccountId; // The bank account used to pay the contact
+                    payload.bankAccountId = values.bankAccountId; // The bank account used to pay to the contact
                     payload.dueDate = null; // Clear due date for paid
                 }
             }
 
+            console.log('Final payload:', payload);
+
             const response = isEditMode
                 ? await updateExpense(payload)
                 : await createExpense(payload);
+
+            console.log('API response:', response);
 
             if (response.success) {
                 toast.success(`Expense ${isEditMode ? 'updated' : 'created'} successfully`);
@@ -248,6 +269,7 @@ const ExpensesPage = () => {
                 fetchData();
             }
         } catch (error) {
+            console.error('Error in handleSubmitExpense:', error);
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} expense`);
         }
@@ -311,10 +333,10 @@ const ExpensesPage = () => {
                     <Col sm={12} className="text-end">
                         <div className="d-flex justify-content-end gap-2">
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
-                                <RiDownload2Line className="align-bottom" /> Export
+                                <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
                             <Button color="success" onClick={handleAddClick}>
-                                <RiAddLine className="align-bottom" /> Add Expense
+                                <RiAddLine className="align-middle me-1" /> Add Expense
                             </Button>
                         </div>
                     </Col>
@@ -335,6 +357,7 @@ const ExpensesPage = () => {
                 )}
 
                 <ExpenseForm
+                    key={`expense-form-${selectedExpense?.id || 'new'}`}
                     isOpen={modals.main}
                     toggle={() => toggleModal('main')}
                     isEditMode={isEditMode}

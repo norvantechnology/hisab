@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Table, Card, CardBody, Row, Col, Alert } from 'reactstrap';
-import { RiErrorWarningLine, RiBankLine, RiShoppingCartLine, RiMoneyDollarCircleLine, RiWalletLine, RiStoreLine } from 'react-icons/ri';
+import { RiErrorWarningLine, RiBankLine, RiShoppingCartLine, RiWalletLine, RiStoreLine } from 'react-icons/ri';
 
 const PaymentViewModal = ({ isOpen, toggle, payment }) => {
     // Helper functions
@@ -31,7 +31,7 @@ const PaymentViewModal = ({ isOpen, toggle, payment }) => {
                 };
             case 'expense':
                 return {
-                    icon: <RiMoneyDollarCircleLine className="me-1" size={14} />,
+                    icon: <RiBankLine className="me-1" size={14} />,
                     label: 'Expense',
                     color: 'danger'
                 };

@@ -477,7 +477,7 @@ import zrx from "../../../assets/images/svg/crypto-icons/zrx.svg";
 
 
 const CryptoIcons = () => {
-    document.title = "Crypto Icons | Velzon - React Admin & Dashboard Template";
+    document.title = "Crypto Icons | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">

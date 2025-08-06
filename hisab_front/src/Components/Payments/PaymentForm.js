@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col, Table, Card, CardBody, Badge } from 'reactstrap';
-import { RiLoader2Line, RiBankLine, RiShoppingCartLine, RiMoneyDollarCircleLine, RiWalletLine, RiCalendarLine, RiStoreLine } from 'react-icons/ri';
+import { RiLoader4Line, RiBankLine, RiShoppingCartLine, RiWalletLine, RiCalendarLine, RiStoreLine } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -53,7 +53,7 @@ const PaymentForm = ({
                 };
             case 'expense':
                 return {
-                    icon: <RiMoneyDollarCircleLine className="me-1" size={14} />,
+                    icon: <RiBankLine className="me-1" size={14} />,
                     label: 'Expense',
                     color: 'danger'
                 };
@@ -119,18 +119,23 @@ const PaymentForm = ({
         setIsLoadingTransactions(false);
     }, []);
 
-    const getMaxAmount = useCallback((transaction) => {
-        return isEditMode ? transaction.maxAmount || (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
-    }, [isEditMode]);
-
-    // Check if any allocation exceeds maximum amount
+    // Check if any allocation exceeds pending amount
     const hasOverAllocation = useCallback(() => {
         return pendingTransactions.some(transaction => {
+            console.log("transaction",transaction)
             const allocatedAmount = parseAmount(transactionAllocations[transaction.id] || 0);
-            const maxAmount = getMaxAmount(transaction);
+            // Check if this transaction was part of the original payment
+            const isOriginalTransaction = selectedPayment?.allocations?.some(allocation => 
+                allocation.transactionId === transaction.id || 
+                allocation.purchaseId === transaction.id || 
+                allocation.saleId === transaction.id || 
+                allocation.expenseId === transaction.id || 
+                allocation.incomeId === transaction.id
+            );
+            const maxAmount = (isEditMode && isOriginalTransaction) ? (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
             return allocatedAmount > maxAmount;
         });
-    }, [pendingTransactions, transactionAllocations, getMaxAmount, parseAmount]);
+    }, [pendingTransactions, transactionAllocations, isEditMode, selectedPayment, parseAmount]);
 
 
 
@@ -289,7 +294,6 @@ const PaymentForm = ({
                 paidAmount: parseAmount(allocation.paidAmount || 0),
                 balanceType: allocation.balanceType,
                 isCurrentBalance: isCurrentBalance,
-                maxAmount: parseAmount(allocation.paidAmount || 0) + parseAmount(allocation.pendingAmount || 0),
                 // Include additional data that might be useful
                 categoryName: allocation.expenseCategoryName || allocation.incomeCategoryName,
                 contactName: allocation.expenseContactName || allocation.incomeContactName || allocation.purchaseSupplierName,
@@ -344,8 +348,14 @@ const PaymentForm = ({
                             paidAmount: freshTxn.paidAmount,
                             amount: freshTxn.amount
                         };
+                    } else {
+                        // Transaction not found in fresh data, set pendingAmount to 0
+                        return {
+                            ...existingTxn,
+                            pendingAmount: 0,
+                            // Keep the original paidAmount and amount
+                        };
                     }
-                    return existingTxn;
                 });
             }
 
@@ -626,7 +636,7 @@ const PaymentForm = ({
 
                         {isLoadingTransactions ? (
                             <div className="text-center py-3">
-                                <RiLoader2Line className="spin" />
+                                <RiLoader4Line className="spin" />
                                 <span className="ms-2">Loading transactions...</span>
                             </div>
                         ) : pendingTransactions.length > 0 ? (
@@ -640,14 +650,22 @@ const PaymentForm = ({
                                             <th>Date</th>
                                             <th>Pending Amount</th>
                                             <th>Balance Type</th>
-                                            <th width="150px">Payment Amount (Max: {isEditMode ? 'Total' : 'Pending'})</th>
+                                            <th width="150px">Payment Amount (Max: Original/New)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {pendingTransactions.map((transaction) => {
                                             const isSelected = validation.values.transactionIds.includes(transaction.id);
                                             const allocatedAmount = parseAmount(transactionAllocations[transaction.id] || 0);
-                                            const maxAmount = getMaxAmount(transaction);
+                                            // Check if this transaction was part of the original payment
+                                            const isOriginalTransaction = selectedPayment?.allocations?.some(allocation => 
+                                                allocation.transactionId === transaction.id || 
+                                                allocation.purchaseId === transaction.id || 
+                                                allocation.saleId === transaction.id || 
+                                                allocation.expenseId === transaction.id || 
+                                                allocation.incomeId === transaction.id
+                                            );
+                                            const maxAmount = (isEditMode && isOriginalTransaction) ? (transaction.paidAmount + transaction.pendingAmount) : transaction.pendingAmount;
                                             const isOverAllocated = allocatedAmount > maxAmount;
                                             const isZeroAllocated = isSelected && allocatedAmount <= 0;
                                             const typeDisplay = getTransactionTypeDisplay(transaction);
@@ -791,7 +809,7 @@ const PaymentForm = ({
                 >
                     {isLoading ? (
                         <>
-                            <RiLoader2Line className="spin me-1" />
+                            <RiLoader4Line className="spin me-1" />
                             {isEditMode ? 'Updating...' : 'Creating...'}
                         </>
                     ) : isEditMode ? 'Update Payment' : 'Create Payment'}

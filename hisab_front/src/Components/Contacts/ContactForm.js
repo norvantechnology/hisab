@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col } from 'reactstrap';
-import { RiLoader2Line } from 'react-icons/ri';
+import { RiLoader4Line } from 'react-icons/ri';
 import * as Yup from "yup";
 import { useFormik } from "formik";
+import { toast } from 'react-toastify';
+import { contactTypes, balanceTypes } from '../../data/contactData';
+import { generatePortalAccess } from '../../services/portal';
 
 const BALANCE_TYPES = {
   receivable: { label: 'Receivable', color: 'success' },
@@ -10,16 +13,15 @@ const BALANCE_TYPES = {
   none: { label: 'None', color: 'secondary' }
 };
 
-const CURRENCIES = [
-  { value: 'INR', label: 'Indian Rupee (₹)' },
-  { value: 'USD', label: 'US Dollar ($)' },
-  { value: 'EUR', label: 'Euro (€)' },
-  { value: 'GBP', label: 'British Pound (£)' }
-];
-
-const CONTACT_TYPES = [
-  { value: 'customer', label: 'Customer' },
-  { value: 'vendor', label: 'Vendor' }
+// Portal access expiry options
+const PORTAL_EXPIRY_OPTIONS = [
+  { value: 1, label: '1 Hour' },
+  { value: 6, label: '6 Hours' },
+  { value: 12, label: '12 Hours' },
+  { value: 24, label: '1 Day' },
+  { value: 72, label: '3 Days' },
+  { value: 168, label: '1 Week' },
+  { value: 720, label: '1 Month' }
 ];
 
 const ContactForm = ({
@@ -39,6 +41,9 @@ const ContactForm = ({
     return isNaN(numValue) ? defaultValue : numValue;
   };
 
+  // State for portal token generation loading
+  const [isGeneratingToken, setIsGeneratingToken] = useState(false);
+
   const validation = useFormik({
     enableReinitialize: true,
     initialValues: {
@@ -48,7 +53,6 @@ const ContactForm = ({
       mobile: selectedContact?.mobile || '',
       email: selectedContact?.email || '',
       dueDays: getNumericValue(selectedContact?.dueDays, 0),
-      currency: selectedContact?.currency || 'INR',
       contactType: selectedContact?.contactType || 'customer',
       billingAddress1: selectedContact?.billingAddress1 || '',
       billingAddress2: selectedContact?.billingAddress2 || '',
@@ -78,7 +82,6 @@ const ContactForm = ({
         .required('Mobile is required'),
       email: Yup.string().email('Invalid email format'),
       dueDays: Yup.number().min(0, 'Due days must be 0 or more'),
-      currency: Yup.string().required('Currency is required'),
       contactType: Yup.string().required('Contact type is required'),
       billingAddress1: Yup.string().required('Billing Address Line 1 is required'),
       billingCity: Yup.string().required('Billing City is required'),
@@ -145,6 +148,60 @@ const ContactForm = ({
         shippingState: validation.values.billingState,
         shippingCountry: validation.values.billingCountry
       });
+    }
+  };
+
+  const handleGeneratePortalAccess = async (expiryHours = 24) => {
+    if (!selectedContact?.id) {
+      toast.error('Contact ID not found');
+      return;
+    }
+
+    setIsGeneratingToken(true);
+
+    try {
+      const response = await generatePortalAccess(selectedContact.id, expiryHours);
+      
+      if (response.success) {
+        // Format expiry time for better display
+        const formatExpiryTime = (hours) => {
+          if (hours === 1) return '1 hour';
+          if (hours < 24) return `${hours} hours`;
+          if (hours === 24) return '1 day';
+          if (hours === 72) return '3 days';
+          if (hours === 168) return '1 week';
+          if (hours === 720) return '1 month';
+          return `${hours} hours`;
+        };
+
+        const expiryText = formatExpiryTime(expiryHours);
+        
+        toast.success(
+          `✅ Portal access token generated successfully! 
+          
+Token will expire in ${expiryText}. 
+An email has been sent to ${selectedContact.email}.`, 
+          {
+            position: "top-right",
+            autoClose: 5000,
+            hideProgressBar: false,
+            closeOnClick: true,
+            pauseOnHover: true,
+            draggable: true,
+            style: {
+              fontSize: '14px',
+              lineHeight: '1.4'
+            }
+          }
+        );
+      } else {
+        toast.error(response.message || 'Failed to generate portal access token');
+      }
+    } catch (error) {
+      console.error('Error generating portal access:', error);
+      toast.error(error.message || 'Failed to generate portal access token');
+    } finally {
+      setIsGeneratingToken(false);
     }
   };
 
@@ -241,27 +298,6 @@ const ContactForm = ({
             </Col>
             <Col md={4}>
               <FormGroup>
-                <Label>Currency <span className="text-danger">*</span></Label>
-                <Input
-                  type="select"
-                  name="currency"
-                  value={validation.values.currency}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.currency && !!validation.errors.currency}
-                  disabled={isProcessing}
-                >
-                  {CURRENCIES.map(currency => (
-                    <option key={currency.value} value={currency.value}>
-                      {currency.label}
-                    </option>
-                  ))}
-                </Input>
-                <FormFeedback>{validation.errors.currency}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={4}>
-              <FormGroup>
                 <Label>Contact Type <span className="text-danger">*</span></Label>
                 <Input
                   type="select"
@@ -272,7 +308,7 @@ const ContactForm = ({
                   invalid={validation.touched.contactType && !!validation.errors.contactType}
                   disabled={isProcessing}
                 >
-                  {CONTACT_TYPES.map(contactType => (
+                  {contactTypes.map(contactType => (
                     <option key={contactType.value} value={contactType.value}>
                       {contactType.label}
                     </option>
@@ -538,8 +574,10 @@ const ContactForm = ({
                   invalid={validation.touched.openingBalanceType && !!validation.errors.openingBalanceType}
                   disabled={isProcessing}
                 >
-                  {Object.entries(BALANCE_TYPES).map(([key, { label }]) => (
-                    <option key={key} value={key}>{label}</option>
+                  {balanceTypes.map(balanceType => (
+                    <option key={balanceType.value} value={balanceType.value}>
+                      {balanceType.label}
+                    </option>
                   ))}
                 </Input>
                 <FormFeedback>{validation.errors.openingBalanceType}</FormFeedback>
@@ -560,6 +598,62 @@ const ContactForm = ({
               Enable customer portal access
             </Label>
           </FormGroup>
+
+          {isEditMode && selectedContact?.enablePortal && (
+            <div className="mt-3 p-3 bg-light rounded">
+              <h6 className="mb-2">Portal Access</h6>
+              <p className="text-muted small mb-2">
+                Generate a portal access token to send to the customer via email.
+              </p>
+              
+              <Row>
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Token Expiry Time</Label>
+                    <Input
+                      type="select"
+                      id="tokenExpiry"
+                      defaultValue="24"
+                      disabled={isProcessing}
+                    >
+                      {PORTAL_EXPIRY_OPTIONS.map(option => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </Input>
+                  </FormGroup>
+                </Col>
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>&nbsp;</Label>
+                    <div>
+                      <Button
+                        color="outline-primary"
+                        size="sm"
+                        onClick={() => {
+                          const expirySelect = document.getElementById('tokenExpiry');
+                          const expiryHours = parseInt(expirySelect.value);
+                          handleGeneratePortalAccess(expiryHours);
+                        }}
+                        disabled={isProcessing || isGeneratingToken}
+                        style={{ width: '100%' }}
+                      >
+                        {isGeneratingToken ? (
+                          <>
+                            <RiLoader4Line className="spin me-1" />
+                            Generating...
+                          </>
+                        ) : (
+                          'Generate Portal Access Token'
+                        )}
+                      </Button>
+                    </div>
+                  </FormGroup>
+                </Col>
+              </Row>
+            </div>
+          )}
 
           <FormGroup>
             <Label>Notes</Label>
@@ -590,7 +684,7 @@ const ContactForm = ({
             >
               {isProcessing ? (
                 <>
-                  <RiLoader2Line className="spin me-1" />
+                  <RiLoader4Line className="spin me-1" />
                   {isEditMode ? 'Updating...' : 'Creating...'}
                 </>
               ) : (

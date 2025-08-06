@@ -15,9 +15,9 @@ import {
   Table
 } from 'reactstrap';
 import {
-  RiLoader2Line,
   RiCloseLine,
   RiAddLine,
+  RiLoader4Line,
 } from 'react-icons/ri';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -28,6 +28,7 @@ import { getNextInvoiceNumber } from '../../../services/salesInvoice';
 import ItemModal from './ItemModal';
 import { STATUS_OPTIONS } from './contant'
 import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
+import BankAccountDropdown from '../../Common/BankAccountDropdown';
 
 const SalesInvoiceForm = ({
   isOpen,
@@ -239,12 +240,18 @@ const SalesInvoiceForm = ({
       netReceivable
     };
 
+    // Handle both billToBank and billToContact - they can both be present
     if (billToType === 'bank') {
       payload.billToBank = billToId;
       payload.billToContact = null;
     } else if (billToType === 'contact') {
       payload.billToContact = billToId;
-      payload.billToBank = null;
+      // Only include bank account if status is 'paid'
+      if (values.status === 'paid' && values.billToBank) {
+        payload.billToBank = values.billToBank;
+      } else {
+        payload.billToBank = null; // Clear bank account for pending status
+      }
     }
 
     return payload;
@@ -255,6 +262,11 @@ const SalesInvoiceForm = ({
     date: Yup.date().required('Date is required'),
     billTo: Yup.string().required('Bill to is required'),
     status: Yup.string().required('Status is required'),
+    billToBank: Yup.string().when(['status', 'billTo'], {
+      is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
+      then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
+      otherwise: (schema) => schema
+    }),
     items: Yup.array().of(
       Yup.object().shape({
         name: Yup.string().required('Item name is required'),
@@ -291,10 +303,20 @@ const SalesInvoiceForm = ({
 
   const initialValues = useMemo(() => {
     let billToValue = '';
+    let billToBankValue = '';
+    
     if (isEditMode && selectedInvoice) {
-      if (selectedInvoice.bankAccountId) {
+      // If both contactId and bankAccountId are present, show contact in Bill To and bank in Payment Bank Account
+      if (selectedInvoice.contactId && selectedInvoice.bankAccountId) {
+        billToValue = `contact_${selectedInvoice.contactId}`;
+        billToBankValue = selectedInvoice.bankAccountId.toString();
+      }
+      // If only bankAccountId is present, show bank in Bill To
+      else if (selectedInvoice.bankAccountId) {
         billToValue = `bank_${selectedInvoice.bankAccountId}`;
-      } else if (selectedInvoice.contactId) {
+      }
+      // If only contactId is present, show contact in Bill To
+      else if (selectedInvoice.contactId) {
         billToValue = `contact_${selectedInvoice.contactId}`;
       }
     }
@@ -304,6 +326,7 @@ const SalesInvoiceForm = ({
       invoiceNumber: isEditMode && selectedInvoice ? selectedInvoice.invoiceNumber : '',
       date: isEditMode && selectedInvoice ? selectedInvoice.date : new Date().toISOString(),
       billTo: billToValue,
+      billToBank: billToBankValue,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : 'pending',
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
@@ -366,8 +389,8 @@ const SalesInvoiceForm = ({
         setSearchTerm('');
         setProducts([]);
         setPagination({ page: 1, limit: 10, total: 0, totalPages: 1 });
-        setCustomerSearchTerm('');
-        setContacts([]);
+        // Clear billToBank field
+        validation.setFieldValue('billToBank', '');
         
         // Close the modal
         toggle();
@@ -383,7 +406,37 @@ const SalesInvoiceForm = ({
   // Custom handler for billTo dropdown (ReactSelect)
   const handleBillToChange = (selectedOption) => {
     validation.setFieldValue('billTo', selectedOption?.value || '');
+    
+    // Only clear billToBank if the selected option is not a contact
+    // This allows preserving the bank account when switching between contacts
+    if (!selectedOption?.value?.startsWith('contact_')) {
+      validation.setFieldValue('billToBank', '');
+    }
   };
+
+  // Custom handler for billToBank dropdown
+  const handleBillToBankChange = (selectedOption) => {
+    validation.setFieldValue('billToBank', selectedOption?.value || '');
+  };
+
+  // Custom handler for status changes
+  const handleStatusChange = (e) => {
+    const newStatus = e.target.value;
+    validation.setFieldValue('status', newStatus);
+    
+    // Clear bank account if status changes from 'paid' to 'pending'
+    if (newStatus === 'pending' && validation.values.billToBank) {
+      validation.setFieldValue('billToBank', '');
+    }
+  };
+
+  // Check if bank account dropdown should be shown
+  const shouldShowBankAccountDropdown = useMemo(() => {
+    // Show dropdown only when status is 'paid' and a contact is selected
+    return validation.values.status === 'paid' && 
+           validation.values.billTo && 
+           validation.values.billTo.startsWith('contact_');
+  }, [validation.values.status, validation.values.billTo]);
 
   // Handle add contact action
   const handleAddContact = () => {
@@ -484,8 +537,13 @@ const SalesInvoiceForm = ({
         roundOff: calculatedTotals.roundOff,
         netReceivable: calculatedTotals.netReceivable
       }), false);
+
+      // Auto-populate invoice number if it's empty
+      if (!validation.values.invoiceNumber && suggestedInvoiceNumber && !isEditMode) {
+        validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber);
+      }
     }
-  }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netReceivable, items, isOpen]); // Use specific properties instead of objects
+  }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netReceivable, items, isOpen, suggestedInvoiceNumber, isEditMode]); // Removed validation from dependencies
 
 
 
@@ -519,7 +577,8 @@ const SalesInvoiceForm = ({
       const response = await listProducts({
         page,
         limit: 10,
-        search
+        search,
+        includeSerialNumbers: true
       });
 
       console.log(`API response received: ${response.products?.length || 0} products`);
@@ -745,12 +804,20 @@ const SalesInvoiceForm = ({
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
                     disabled={isProcessing}
-                    placeholder={suggestedInvoiceNumber || "Enter invoice number"}
+                    placeholder="Enter invoice number"
                   />
                   {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
-                    <small className="text-muted">
-                      Suggested: {suggestedInvoiceNumber}
-                    </small>
+                    <div className="mt-2">
+                      <small className="text-muted me-2">Suggested: {suggestedInvoiceNumber}</small>
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
+                        disabled={isProcessing}
+                      >
+                        Use Suggested
+                      </button>
+                    </div>
                   )}
                   {!suggestedInvoiceNumber && !isEditMode && (
                     <small className="text-muted">
@@ -758,6 +825,7 @@ const SalesInvoiceForm = ({
                         type="button" 
                         className="btn btn-link btn-sm p-0" 
                         onClick={fetchNextInvoiceNumber}
+                        disabled={isProcessing}
                       >
                         Click to generate invoice number
                       </button>
@@ -791,7 +859,7 @@ const SalesInvoiceForm = ({
                     type="select"
                     name="status"
                     value={validation.values.status}
-                    onChange={validation.handleChange}
+                    onChange={handleStatusChange}
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.status && !!validation.errors.status}
                     disabled={isProcessing}
@@ -804,6 +872,28 @@ const SalesInvoiceForm = ({
                 </FormGroup>
               </Col>
             </Row>
+
+            {shouldShowBankAccountDropdown && (
+              <Row className="mb-4">
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Payment Bank Account <span className="text-danger">*</span></Label>
+                    <BankAccountDropdown
+                      value={validation.values.billToBank}
+                      onChange={handleBillToBankChange}
+                      onBlur={() => validation.setFieldTouched('billToBank', true)}
+                      disabled={isProcessing}
+                      placeholder="Select Bank Account"
+                      error={validation.errors.billToBank}
+                      touched={validation.touched.billToBank}
+                    />
+                    {validation.touched.billToBank && validation.errors.billToBank && (
+                      <div className="invalid-feedback d-block">{validation.errors.billToBank}</div>
+                    )}
+                  </FormGroup>
+                </Col>
+              </Row>
+            )}
 
             <div className="mb-4">
               <div className="d-flex justify-content-between align-items-center mb-3">
@@ -947,7 +1037,7 @@ const SalesInvoiceForm = ({
           >
             {isProcessing ? (
               <>
-                <RiLoader2Line className="spinner-border spinner-border-sm me-2" />
+                <RiLoader4Line className="spinner-border spinner-border-sm me-2" />
                 {isEditMode ? 'Updating...' : 'Creating...'}
               </>
             ) : (

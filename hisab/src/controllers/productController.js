@@ -412,7 +412,8 @@ export async function listProducts(req, res) {
         itemCode,
         hsnCode,
         page = 1,
-        limit = 20
+        limit = 20,
+        includeSerialNumbers = false
     } = req.query;
 
     if (!companyId) {
@@ -528,6 +529,51 @@ export async function listProducts(req, res) {
 
         const result = await client.query(query, queryParams);
 
+        // If includeSerialNumbers is true, fetch available serial numbers for serialized products
+        let products = result.rows;
+        if (includeSerialNumbers === 'true') {
+            const serializedProductIds = products
+                .filter(p => p.isSerialized)
+                .map(p => p.id);
+
+            if (serializedProductIds.length > 0) {
+                const serialNumbersQuery = `
+                    SELECT 
+                        "productId",
+                        "serialNumber",
+                        status
+                    FROM hisab."serialNumbers"
+                    WHERE "companyId" = $1 
+                    AND "productId" = ANY($2)
+                    AND status = 'in_stock'
+                    ORDER BY "productId", "serialNumber"
+                `;
+                
+                const serialNumbersResult = await client.query(serialNumbersQuery, [companyId, serializedProductIds]);
+                
+                // Group serial numbers by product ID
+                const serialNumbersMap = new Map();
+                serialNumbersResult.rows.forEach(row => {
+                    if (!serialNumbersMap.has(row.productId)) {
+                        serialNumbersMap.set(row.productId, []);
+                    }
+                    serialNumbersMap.get(row.productId).push(row.serialNumber);
+                });
+
+                // Add available serial numbers to products
+                products = products.map(product => ({
+                    ...product,
+                    availableSerialNumbers: product.isSerialized ? (serialNumbersMap.get(product.id) || []) : []
+                }));
+            } else {
+                // Add empty array for non-serialized products
+                products = products.map(product => ({
+                    ...product,
+                    availableSerialNumbers: []
+                }));
+            }
+        }
+
         let countQuery = `
             SELECT COUNT(*) FROM hisab."products" p
             LEFT JOIN hisab."unitOfMeasurements" uom ON p."unitOfMeasurementId" = uom.id
@@ -622,7 +668,7 @@ export async function listProducts(req, res) {
         const total = parseInt(countResult.rows[0].count);
 
         return successResponse(res, {
-            products: result.rows,
+            products: products,
             pagination: {
                 page: parseInt(page),
                 limit: parseInt(limit),

@@ -448,7 +448,7 @@ const CrmContacts = () => {
   // Export Modal
   const [isExportCSV, setIsExportCSV] = useState(false);
 
-  document.title = "Contacts | Velzon - React Admin & Dashboard Template";
+  document.title = "Contacts | vyavhar - React Admin & Dashboard Template";
   return (
     <React.Fragment>
       <div className="page-content">
@@ -880,7 +880,7 @@ const CrmContacts = () => {
                           <td className="fw-medium">
                             Email ID
                           </td>
-                          <td>{info.email || "tonyanoble@velzon.com"}</td>
+                          <td>{info.email || "tonyanoble@vyavhar.com"}</td>
                         </tr>
                         <tr>
                           <td className="fw-medium">

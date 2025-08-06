@@ -23,7 +23,7 @@ import "nouislider/distribute/nouislider.css";
 import { expolreNow } from "../../../common/data/index";
 
 const ExploreNow = () => {
-    document.title = "Explore Now | Velzon - React Admin & Dashboard Template";
+    document.title = "Explore Now | vyavhar - React Admin & Dashboard Template";
     const [NFTList, setNFTList] = useState(expolreNow);
 
     const favouriteBtn = (ele) => {

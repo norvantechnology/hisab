@@ -4,7 +4,7 @@ import { ToastContainer, toast } from 'react-toastify';
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import {
-    RiLoader2Line,
+    RiLoader4Line,
     RiGridFill,
     RiMoreFill,
     RiListCheck,
@@ -15,7 +15,8 @@ import {
     RiDownload2Line,
     RiBankLine,
     RiCheckboxCircleLine,
-    RiMoneyDollarCircleLine
+  
+    RiFileTextLine
 } from 'react-icons/ri';
 
 // Components
@@ -29,6 +30,7 @@ import {
     AccountCard,
     AccountModal,
     AccountDetailsOffcanvas,
+    BankStatementModal,
     EmptyState,
     ACCOUNT_TYPES
 } from '../../Components/BankAccounts';
@@ -37,7 +39,7 @@ import {
 import { createBankAccount, getBankAccounts, updateBankAccount, deleteBankAccount } from '../../services/bankAccount';
 
 const BankAccounts = () => {
-    document.title = "Bank Accounts | ProfitPe - React Admin & Dashboard Template";
+    document.title = "Bank Accounts | Vyavhar - React Admin & Dashboard Template";
 
     const [bankAccounts, setBankAccounts] = useState([]);
     const [deleteModal, setDeleteModal] = useState(false);
@@ -47,6 +49,8 @@ const BankAccounts = () => {
     const [currentAccount, setCurrentAccount] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
     const [selectedAccount, setSelectedAccount] = useState(null);
+    const [statementModal, setStatementModal] = useState(false);
+    const [selectedBankForStatement, setSelectedBankForStatement] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage] = useState(6);
@@ -185,13 +189,19 @@ const BankAccounts = () => {
                             setIsOpen(true);
                             setSelectedAccount(row.original);
                         }}>
-                            <RiEyeLine className="me-2 align-bottom text-muted" />View
+                            <RiEyeLine className="me-2 align-middle text-muted" />View
+                        </DropdownItem>
+                        <DropdownItem onClick={() => {
+                            setSelectedBankForStatement(row.original);
+                            setStatementModal(true);
+                        }}>
+                            <RiFileTextLine className="me-2 align-middle text-muted" />Statement
                         </DropdownItem>
                         <DropdownItem onClick={() => handleAccountClick(row.original)}>
-                            <RiPencilLine className="me-2 align-bottom text-muted" />Edit
+                            <RiPencilLine className="me-2 align-middle text-muted" />Edit
                         </DropdownItem>
                         <DropdownItem onClick={() => handleDeleteClick(row.original)}>
-                            <RiDeleteBinLine className="me-2 align-bottom text-muted" />Delete
+                            <RiDeleteBinLine className="me-2 align-middle text-muted" />Delete
                         </DropdownItem>
                     </DropdownMenu>
                 </UncontrolledDropdown>
@@ -360,7 +370,7 @@ const BankAccounts = () => {
                         {[
                             { title: "Total Accounts", value: bankAccounts.length, icon: <RiBankLine size={24} />, color: "success" },
                             { title: "Active Accounts", value: bankAccounts.filter(acc => acc.status === 'Active').length, icon: <RiCheckboxCircleLine size={24} />, color: "primary" },
-                            { title: "Total Balance", value: bankAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0).toFixed(2), icon: <RiMoneyDollarCircleLine size={24} />, color: "info" }
+                            { title: "Total Balance", value: bankAccounts.reduce((sum, acc) => sum + parseFloat(acc.balance), 0).toFixed(2), icon: <RiBankLine size={24} />, color: "info" }
                         ].map((stat, idx) => (
                             <Col md={4} key={idx}>
                                 <Card className="card-animate">
@@ -399,6 +409,10 @@ const BankAccounts = () => {
                                                 setIsOpen(true);
                                                 setSelectedAccount(account);
                                             }}
+                                            onStatement={() => {
+                                                setSelectedBankForStatement(account);
+                                                setStatementModal(true);
+                                            }}
                                             onEdit={() => handleAccountClick(account)}
                                             onDelete={() => handleDeleteClick(account)}
                                         />
@@ -420,6 +434,14 @@ const BankAccounts = () => {
 
             <AccountModal isOpen={modal} toggle={toggleModal} isEdit={isEdit} validation={validation} />
             <AccountDetailsOffcanvas isOpen={isOpen} toggle={() => setIsOpen(!isOpen)} account={selectedAccount} />
+            <BankStatementModal 
+                show={statementModal} 
+                onCloseClick={() => {
+                    setStatementModal(false);
+                    setSelectedBankForStatement(null);
+                }} 
+                bankAccount={selectedBankForStatement}
+            />
         </React.Fragment>
     );
 };

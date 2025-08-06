@@ -7,7 +7,7 @@ import ParticlesAuth from "../ParticlesAuth";
 import error from "../../../assets/images/error.svg";
 
 const Basic404 = () => {
-    document.title="404 Error Basic | Velzon - React Admin & Dashboard Template";
+    document.title = "404 Error | Vyavhar - Financial Management Platform";
     return (
         <React.Fragment>
             

@@ -8,7 +8,7 @@ import VisitorGraph from "./VisitorGraph";
 import Widgets from "./Widgets";
 
 const Statistics = () => {
-  document.title = "Statistics | Velzon -  Admin & Dashboard Template";
+  document.title = "Statistics | vyavhar -  Admin & Dashboard Template";
 
   return (
     <React.Fragment>

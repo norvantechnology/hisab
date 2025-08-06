@@ -17,7 +17,7 @@ import avatar4 from "../../../assets/images/users/avatar-4.jpg";
 
 import { DefaultListExample, ActiveItemExample, DisabledItemExample, ListlinkExample, ListButtonExample, FlushListExample, HorizontalListExample, ContextualClassExample, ContextualLinkExample, ColoredListExample, CustomContentExample, ListBadgeExample, ListCheckboxExample, ListRadioExample, ListIconExample, ListNumberedExample, CustomListExample } from './UiListCode';
 const UiList = () => {
-    document.title="Lists | Velzon - React Admin & Dashboard Template";
+    document.title="Lists | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <UiContent />

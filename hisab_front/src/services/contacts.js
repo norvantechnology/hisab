@@ -16,6 +16,14 @@ export const createContact = async (data) => {
     });
 };
 
+export const bulkImportContacts = async (data) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/contact/bulkImportContacts',
+        data
+    });
+};
+
 export const deleteContact = async (id) => {
     return apiCall({
         method: 'delete',

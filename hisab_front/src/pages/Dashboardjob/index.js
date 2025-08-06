@@ -10,7 +10,7 @@ import SalesByLocations from './SalesByLocations';
 import Widgets from './Widgets';
 
 const index = () => {
-  document.title = "Jobs Dashboard | Velzon - React Admin & Dashboard Template";
+  document.title = "Job Dashboard | Vyavhar - Financial Management Platform";
 
   return (
     <React.Fragment>

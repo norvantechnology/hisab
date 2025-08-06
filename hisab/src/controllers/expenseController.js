@@ -202,7 +202,6 @@ export async function createExpense(req, res) {
     contactId,
     amount,
     notes,
-    status,
     dueDate
   } = req.body;
 
@@ -223,34 +222,35 @@ export async function createExpense(req, res) {
     return errorResponse(res, "Either bank account or contact must be specified", 400);
   }
 
-  // For direct bank payments: bankAccountId set, contactId null
-  // For contact payments: contactId set, and if paid then bankAccountId also set
-  if (bankAccountId && contactId) {
-    // Both can be set only for contact payments that are paid
-    if (!status || status !== 'paid') {
-      return errorResponse(res, "Both bank account and contact can only be specified for paid contact expenses", 400);
-    }
+  // Determine status based on payment method
+  let status = 'paid';
+  let remainingAmount = 0;
+  let paidAmount = parseFloat(amount);
+
+  // For contact payments without bank account, set as pending
+  if (contactId && !bankAccountId) {
+    status = 'pending';
+    remainingAmount = parseFloat(amount);
+    paidAmount = 0;
+  }
+
+  // For direct bank payments, always set as paid
+  if (bankAccountId && !contactId) {
+    status = 'paid';
+    remainingAmount = 0;
+    paidAmount = parseFloat(amount);
+  }
+
+  // For contact payments with bank account (paid through contact)
+  if (contactId && bankAccountId) {
+    status = 'paid';
+    remainingAmount = 0;
+    paidAmount = parseFloat(amount);
   }
 
   // Validate contact-specific fields
-  if (contactId) {
-    if (!status) {
-      return errorResponse(res, "Status is required when contact is specified", 400);
-    }
-    if (!['pending', 'paid'].includes(status)) {
-      return errorResponse(res, "Status must be either 'pending' or 'paid'", 400);
-    }
-    if (status === 'pending') {
-      if (!dueDate) {
-        return errorResponse(res, "Due date is required when status is pending", 400);
-      }
-      if (bankAccountId) {
-        return errorResponse(res, "Bank account should not be specified for pending contact expenses", 400);
-      }
-    }
-    if (status === 'paid' && !bankAccountId) {
-      return errorResponse(res, "Bank account is required when contact status is paid", 400);
-    }
+  if (contactId && status === 'pending' && !dueDate) {
+    return errorResponse(res, "Due date is required when contact status is pending", 400);
   }
 
   const client = await pool.connect();
@@ -309,13 +309,14 @@ export async function createExpense(req, res) {
     }
 
     const insertQuery = `
-      INSERT INTO hisab."expenses" (
+      INSERT INTO hisab."expenses"
+      (
         "userId", "companyId", "date", "categoryId", 
         "bankAccountId", "contactId", "amount", "notes", 
-        "status", "dueDate", "createdBy",
+        "status", "dueDate", "remaining_amount", "paid_amount", "createdBy",
         "createdAt", "updatedAt"
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
       RETURNING *
     `;
 
@@ -328,8 +329,10 @@ export async function createExpense(req, res) {
       contactId || null,
       amount,
       notes,
-      status || 'paid', // Default to 'paid' for bank account payments
+      status,
       dueDate || null,
+      remainingAmount,
+      paidAmount,
       userId  // createdBy
     ]);
 
@@ -437,13 +440,13 @@ export async function updateExpense(req, res) {
   const {
     date,
     categoryId,
-    bankAccountId,
-    contactId,
     amount,
     notes,
-    status,
     dueDate,
-    id
+    id,
+    bankAccountId,
+    contactId,
+    status
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -464,7 +467,7 @@ export async function updateExpense(req, res) {
 
     // First get the existing expense details
     const existingExpenseQuery = `
-      SELECT "bankAccountId", "contactId", "amount", "categoryId", "date", "notes", "status", "dueDate"
+      SELECT "bankAccountId", "contactId", "amount", "categoryId", "date", "notes", "status", "dueDate", "remaining_amount", "paid_amount"
       FROM hisab."expenses"
       WHERE "id" = $1 AND "companyId" = $2
       LIMIT 1
@@ -484,73 +487,50 @@ export async function updateExpense(req, res) {
       date: oldDate,
       notes: oldNotes,
       status: oldStatus,
-      dueDate: oldDueDate
+      dueDate: oldDueDate,
+      remaining_amount: oldRemainingAmount,
+      paid_amount: oldPaidAmount
     } = existingExpense.rows[0];
 
-    // Determine which fields to update based on what's provided in the request
-    const finalDate = date !== undefined ? date : oldDate;
+    // Determine final values
+    const finalDate = date !== undefined ? new Date(date).toISOString().split('T')[0] : oldDate;
     const finalCategoryId = categoryId !== undefined ? categoryId : oldCategoryId;
-    let finalBankAccountId = bankAccountId !== undefined ? bankAccountId : oldBankAccountId;
-    let finalContactId = contactId !== undefined ? contactId : oldContactId;
     const finalAmount = amount !== undefined ? amount : oldAmount;
     const finalNotes = notes !== undefined ? notes : oldNotes;
-    let finalStatus = status !== undefined ? status : oldStatus;
-    let finalDueDate = dueDate !== undefined ? dueDate : oldDueDate;
-
-    // Smart payment method detection and field clearing
-    // If switching to direct bank payment (bankAccountId provided without contactId)
-    if (bankAccountId !== undefined && contactId === undefined && finalBankAccountId && oldContactId) {
-      // Clear contact-related fields when switching to direct bank payment
-      finalContactId = null;
-      finalStatus = 'paid';
-      finalDueDate = null;
-    }
+    const finalDueDate = dueDate !== undefined ? new Date(dueDate).toISOString().split('T')[0] : oldDueDate;
     
-    // If switching to contact payment (contactId provided without bankAccountId for pending)
-    if (contactId !== undefined && bankAccountId === undefined && finalContactId && !oldContactId) {
-      // This would be a new contact payment, should have status
-      if (!status) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Status is required when switching to contact payment", 400);
+    // Allow updating payment method fields
+    const finalBankAccountId = bankAccountId !== undefined ? bankAccountId : oldBankAccountId;
+    const finalContactId = contactId !== undefined ? contactId : oldContactId;
+    
+    // Determine status based on payment method combination
+    let finalStatus = oldStatus;
+    if (status !== undefined) {
+      finalStatus = status;
+    } else {
+      // Auto-determine status based on payment method
+      if (finalBankAccountId && !finalContactId) {
+        // Direct bank payment
+        finalStatus = 'paid';
+      } else if (finalContactId && !finalBankAccountId) {
+        // Contact payment without bank account
+        finalStatus = 'pending';
+      } else if (finalContactId && finalBankAccountId) {
+        // Contact payment with bank account (paid through contact)
+        finalStatus = 'paid';
       }
     }
 
-    // Validate the final payment method configuration
-    if (finalBankAccountId && finalContactId) {
-      // Both can be set only for contact payments that are paid
-      if (!finalStatus || finalStatus !== 'paid') {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Both bank account and contact can only be specified for paid contact expenses", 400);
-      }
-    } else if (!finalBankAccountId && !finalContactId) {
-      await client.query("ROLLBACK");
-      return errorResponse(res, "Either bank account or contact must be specified", 400);
-    }
+    // Calculate new payment amounts based on status
+    let finalRemainingAmount = oldRemainingAmount;
+    let finalPaidAmount = oldPaidAmount;
 
-    // Validate contact-specific fields
-    if (finalContactId) {
-      if (!finalStatus) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Status is required when contact is specified", 400);
-      }
-      if (!['pending', 'paid'].includes(finalStatus)) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Status must be either 'pending' or 'paid'", 400);
-      }
-      if (finalStatus === 'pending') {
-        if (!finalDueDate) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Due date is required when status is pending", 400);
-        }
-        if (finalBankAccountId) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, "Bank account should not be specified for pending contact expenses", 400);
-        }
-      }
-      if (finalStatus === 'paid' && !finalBankAccountId) {
-        await client.query("ROLLBACK");
-        return errorResponse(res, "Bank account is required when contact status is paid", 400);
-      }
+    if (finalStatus === 'paid') {
+      finalRemainingAmount = 0;
+      finalPaidAmount = parseFloat(finalAmount);
+    } else if (finalStatus === 'pending') {
+      finalRemainingAmount = parseFloat(finalAmount);
+      finalPaidAmount = 0;
     }
 
     // Verify category if it's being updated
@@ -566,11 +546,11 @@ export async function updateExpense(req, res) {
       }
     }
 
-    // Verify bank account if it's being updated or changed
-    if (bankAccountId !== undefined && finalBankAccountId) {
+    // Verify bank account if provided
+    if (finalBankAccountId) {
       const bankAccountCheck = await client.query(
-        `SELECT "id" FROM hisab."bankAccounts" 
-         WHERE "id" = $1 AND "companyId" = $2 AND "isActive" = TRUE AND "deletedAt" IS NULL`,
+        `SELECT id FROM hisab."bankAccounts" 
+         WHERE id = $1 AND "companyId" = $2 AND "isActive" = TRUE AND "deletedAt" IS NULL`,
         [finalBankAccountId, companyId]
       );
 
@@ -580,11 +560,11 @@ export async function updateExpense(req, res) {
       }
     }
 
-    // Verify contact if it's being updated or changed
-    if (contactId !== undefined && finalContactId) {
+    // Verify contact if provided
+    if (finalContactId) {
       const contactCheck = await client.query(
-        `SELECT "id" FROM hisab."contacts" 
-         WHERE "id" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
+        `SELECT id FROM hisab."contacts" 
+         WHERE id = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
         [finalContactId, companyId]
       );
 
@@ -594,26 +574,25 @@ export async function updateExpense(req, res) {
       }
     }
 
-    // Handle bank balance changes
-    
-    // Revert old balance if there was a bank account involved
-    if (oldBankAccountId) {
+    // Handle bank account balance updates
+    // First, reverse the old bank account balance if it existed and was paid
+    if (oldBankAccountId && oldStatus === 'paid') {
       await client.query(
         `UPDATE hisab."bankAccounts" 
          SET "currentBalance" = "currentBalance" + $1,
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $2`,
+         WHERE id = $2`,
         [oldAmount, oldBankAccountId]
       );
     }
 
-    // Apply new balance if there's a bank account involved
-    if (finalBankAccountId) {
+    // Then, subtract from the new bank account balance if it's a paid transaction
+    if (finalBankAccountId && finalStatus === 'paid') {
       await client.query(
         `UPDATE hisab."bankAccounts" 
          SET "currentBalance" = "currentBalance" - $1,
              "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $2`,
+         WHERE id = $2`,
         [finalAmount, finalBankAccountId]
       );
     }
@@ -623,26 +602,30 @@ export async function updateExpense(req, res) {
       SET 
         "date" = $1,
         "categoryId" = $2,
-        "bankAccountId" = $3,
-        "contactId" = $4,
-        "amount" = $5,
-        "notes" = $6,
-        "status" = $7,
-        "dueDate" = $8,
+        "amount" = $3,
+        "notes" = $4,
+        "dueDate" = $5,
+        "bankAccountId" = $6,
+        "contactId" = $7,
+        "status" = $8,
+        "remaining_amount" = $9,
+        "paid_amount" = $10,
         "updatedAt" = CURRENT_TIMESTAMP
-      WHERE "id" = $9
+      WHERE "id" = $11
       RETURNING *
     `;
 
     const result = await client.query(updateQuery, [
       finalDate,
       finalCategoryId,
-      finalBankAccountId,
-      finalContactId,
       finalAmount,
       finalNotes,
-      finalStatus,
       finalDueDate,
+      finalBankAccountId,
+      finalContactId,
+      finalStatus,
+      finalRemainingAmount,
+      finalPaidAmount,
       id
     ]);
 
@@ -678,6 +661,7 @@ export async function getExpenses(req, res) {
     let query = `
       SELECT 
         e."id", e."date", e."amount", e."notes", e."status", e."dueDate", e."createdAt", e."updatedAt",
+        e."remaining_amount", e."paid_amount",
         ec."name" as "categoryName",ec.id as "categoryId",
         c."name" as "companyName",
         ba.id as "bankAccountId",

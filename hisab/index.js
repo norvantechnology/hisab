@@ -19,7 +19,8 @@ import {
   salesRoute,
   stockCategoryRoute,
   taxCategoryRoutes,
-  unitOfMeasurementsRoutes
+  unitOfMeasurementsRoutes,
+  portalRoutes
 } from "./src/routes/index.js";
 
 dotenv.config();
@@ -51,6 +52,7 @@ app.use("/api/sales", salesRoute);
 app.use("/api/stockCategory", stockCategoryRoute);
 app.use("/api/taxCategory", taxCategoryRoutes);
 app.use("/api/unitOfMeasurements", unitOfMeasurementsRoutes);
+app.use("/api/portal", portalRoutes);
 
 
 

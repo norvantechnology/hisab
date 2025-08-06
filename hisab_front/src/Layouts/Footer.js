@@ -8,7 +8,7 @@ const Footer = () => {
                 <Container fluid>
                     <Row>
                         <Col sm={6}>
-                            {new Date().getFullYear()} © Velzon.
+                            {new Date().getFullYear()} © Vyavhar - Financial Management Platform.
                         </Col>
                     </Row>
                 </Container>

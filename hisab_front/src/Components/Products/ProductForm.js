@@ -14,7 +14,7 @@ import {
     Col,
     Alert
 } from 'reactstrap';
-import { RiLoader2Line } from 'react-icons/ri';
+import { RiLoader4Line } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -1013,7 +1013,7 @@ const ProductForm = ({
                         >
                             {isProcessing ? (
                                 <>
-                                    <RiLoader2Line className="spin me-1" />
+                                    <RiLoader4Line className="spin me-1" />
                                     {isEditMode ? 'Updating...' : 'Creating...'}
                                 </>
                             ) : (

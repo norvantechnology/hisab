@@ -8,7 +8,7 @@ import { SketchPicker } from "react-color";
 import Flatpickr from "react-flatpickr";
 
 const FormPickers = () => {
-  document.title = "Pickers | Velzon - React Admin & Dashboard Template";
+  document.title = "Pickers | vyavhar - React Admin & Dashboard Template";
 
   const [color, setcolor] = useState("rgba(3, 142, 220, 1)");
   const [colorCust, setcolorCust] = useState("rgba(95, 208, 243, 1)");

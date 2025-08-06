@@ -4,7 +4,7 @@ import BreadCrumb from '../../../../Components/Common/BreadCrumb';
 import {SimpleRadar,MultipleRadar,PolygonRadar} from './RadarCharts';
 
 const RadarCharts = () => {
-    document.title="Radar Charts | Velzon - React Admin & Dashboard Template";
+    document.title="Radar Charts | vyavhar - React Admin & Dashboard Template";
     return (
         <div className="page-content">
             <Container fluid>                

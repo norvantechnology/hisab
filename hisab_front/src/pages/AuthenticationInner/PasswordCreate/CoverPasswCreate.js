@@ -9,7 +9,7 @@ import { useFormik } from 'formik';
 import * as Yup from 'yup';
 
 const CoverPasswCreate = () => {
-    document.title = "Create New Password | Velzon - React Admin & Dashboard Template";
+    document.title = "Create Password | Vyavhar - Financial Management Platform";
 
     const [passwordShow, setPasswordShow] = useState(false);
     const [confrimPasswordShow, setConfrimPasswordShow] = useState(false);   
@@ -140,7 +140,7 @@ const CoverPasswCreate = () => {
                         <Row>
                             <Col lg={12}>
                                 <div className="text-center">
-                                    <p className="mb-0">&copy; {new Date().getFullYear()} Velzon. Crafted with <i className="mdi mdi-heart text-danger"></i> by Themesbrand</p>
+                                    <p className="mb-0">&copy; {new Date().getFullYear()} vyavhar. Crafted with <i className="mdi mdi-heart text-danger"></i> by Themesbrand</p>
                                 </div>
                             </Col>
                         </Row>

@@ -9,7 +9,7 @@ const [toast1, setToast1] = useState(true);
 <Toast isOpen={toast1}>
     <ToastHeader toggle={() => setToast1(!toast1)}>
         <img src={logosm} className="rounded me-2" alt="..." height="20" />
-        <span className="fw-semibold me-auto">Velzon</span>
+        <span className="fw-semibold me-auto">Vyavhar</span>
         <small style={{marginLeft:"140px"}}>06 mins ago</small>
     </ToastHeader>
     <ToastBody>
@@ -23,7 +23,7 @@ const [toast2, setToast2] = useState(true);
 <Toast isOpen={toast2}>
     <ToastHeader toggle={() => setToast2(!toast2)}>
         <img src={logosm} className="rounded me-2" alt="..." height="20" />
-    <span className="fw-semibold me-auto">Velzon</span>
+    <span className="fw-semibold me-auto">Vyavhar</span>
     <small style={{marginLeft:"150px"}}>11 mins ago</small>
     </ToastHeader>
     <ToastBody>
@@ -37,7 +37,7 @@ const [toast3, setToast3] = useState(true);
 <Toast isOpen={toast3}>
     <ToastHeader toggle={() => setToast3(!toast3)}>
         <img src={logosm} className="rounded me-2" alt="..." height="20" />
-        <span className="fw-semibold me-auto">Velzon</span>
+        <span className="fw-semibold me-auto">Vyavhar</span>
         <small style={{marginLeft:"165px"}}>Just now</small>
     </ToastHeader>
     <ToastBody>
@@ -52,7 +52,7 @@ const [toast5, setToast5] = useState(true);
     <Toast isOpen={toast5} style={{ position: "absolute", top: "16px", right: "16px" }}>
         <ToastHeader toggle={() => setToast5(!toast5)}>
             <img src={logosm} className="rounded me-2" alt="..." height="20" />
-            <span className="fw-semibold me-auto">Velzon</span>
+            <span className="fw-semibold me-auto">Vyavhar</span>
             <small style={{marginLeft:"140px"}}>06 mins ago</small>
         </ToastHeader>
         <ToastBody>
@@ -68,7 +68,7 @@ const [toast6, setToast6] = useState(true);
     <Toast isOpen={toast6}>
         <ToastHeader toggle={() => setToast6(!toast6)}>
              <img src={logosm} className="rounded me-2" alt="..." height="20" />
-             <span className="fw-semibold me-auto">Velzon</span>
+             <span className="fw-semibold me-auto">Vyavhar</span>
              <small style={{marginLeft:"150px"}}>11 mins ago</small>
         </ToastHeader>
         <ToastBody>
@@ -116,7 +116,7 @@ const [position, setPosition] = useState();
             <ToastHeader toggle={() => setToast11(!toast11)}>
                 <img src={logosm} className="rounded me-2"
                     alt="..." height="20" />
-                <strong className="me-auto">Velzon</strong>
+                <strong className="me-auto">Vyavhar</strong>
                 <small style={{ marginLeft: "150px" }}>11 mins ago</small>
             </ToastHeader>
             <ToastBody>

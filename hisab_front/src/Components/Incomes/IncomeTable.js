@@ -41,6 +41,26 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
             enableColumnFilter: false
         },
         {
+            header: "Pending Amount",
+            accessorKey: "remaining_amount",
+            cell: (cell) => {
+                const { remaining_amount, status, contactName } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
+                
+                // Only show pending amount for contact payments with remaining amounts
+                if (contactName && pendingAmount > 0) {
+                    return (
+                        <span className="fw-semibold text-warning">
+                            ₹{pendingAmount.toFixed(2)}
+                        </span>
+                    );
+                }
+                
+                return <span className="text-muted">—</span>;
+            },
+            enableColumnFilter: false
+        },
+        {
             header: "Payment Details",
             accessorKey: "paymentDetails",
             cell: (cell) => {
@@ -104,7 +124,9 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
             header: "Status",
             accessorKey: "status",
             cell: (cell) => {
-                const { bankAccountName, contactName, status } = cell.row.original;
+                const { bankAccountName, contactName, status, remaining_amount, paid_amount } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
+                const paidAmount = parseFloat(paid_amount || 0);
                 
                 // For direct bank payments, always show "Paid"
                 if (bankAccountName && !contactName) {
@@ -115,14 +137,21 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
                     );
                 }
                 
-                // For contact payments, show actual status
+                // For contact payments, show status based on remaining amount
                 if (contactName) {
-                    const badgeColor = status === 'paid' ? 'success' : 'warning';
-                    return (
-                        <Badge color={badgeColor} className={`badge-soft-${badgeColor}`}>
-                            {status === 'paid' ? 'Paid' : 'Pending'}
-                        </Badge>
-                    );
+                    if (pendingAmount > 0) {
+                        return (
+                            <Badge color="warning" className="badge-soft-warning">
+                                Pending
+                            </Badge>
+                        );
+                    } else {
+                        return (
+                            <Badge color="success" className="badge-soft-success">
+                                Paid
+                            </Badge>
+                        );
+                    }
                 }
                 
                 return <span className="text-muted">N/A</span>;
@@ -133,10 +162,11 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
             header: "Due Date",
             accessorKey: "dueDate",
             cell: (cell) => {
-                const { contactName, status, dueDate } = cell.row.original;
+                const { contactName, status, dueDate, remaining_amount } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
                 
                 // Only show due date for pending contact payments
-                if (contactName && status === 'pending' && dueDate) {
+                if (contactName && pendingAmount > 0 && dueDate) {
                     const dueDateObj = new Date(dueDate);
                     const today = new Date();
                     const isOverdue = dueDateObj < today;

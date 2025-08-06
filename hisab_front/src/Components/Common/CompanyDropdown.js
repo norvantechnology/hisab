@@ -333,6 +333,13 @@ const CompanyDropdown = ({ layoutMode }) => {
 
                 await fetchCompanies();
 
+                // If this is the currently selected company, update the stored data
+                if (isEditMode && selectedCompany?.id === currentCompanyId && response?.company) {
+                    const updatedCompany = response.company;
+                    setSelectedCompanyToStorage(currentCompanyId, updatedCompany);
+                    updateState({ selectedCompany: updatedCompany });
+                }
+
                 // Auto-select the newly created company if it's the first company
                 if (!isEditMode && response?.company) {
                     const updatedCompanies = await getAllCompanies();
@@ -363,7 +370,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 isLoading: false
             });
         }
-    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies, setSelectedCompanyToStorage]);
+    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies, setSelectedCompanyToStorage, selectedCompany]);
 
     const handleDeleteCompany = useCallback((company) => {
         updateState({
@@ -446,15 +453,20 @@ const CompanyDropdown = ({ layoutMode }) => {
 
     const getCompanyLogo = useCallback((company) => {
         if (company?.logoUrl) {
+            // Add cache-busting parameter to ensure logo updates
+            const logoUrl = company.logoUrl.includes('?') 
+                ? `${company.logoUrl}&t=${Date.now()}` 
+                : `${company.logoUrl}?t=${Date.now()}`;
+                
             return (
                 <img
-                    src={company.logoUrl}
+                    src={logoUrl}
                     alt={company.name}
                     className="rounded-circle"
                     style={{
                         width: '100%',
                         height: '100%',
-                        objectFit: 'cover'
+                        objectFit: 'contain'
                     }}
                 />
             );
@@ -467,7 +479,7 @@ const CompanyDropdown = ({ layoutMode }) => {
             : name.charAt(0).toUpperCase();
 
         return (
-            <span className="fw-bold d-flex align-items-center justify-content-center">
+            <span className="fw-bold d-flex align-items-center justify-content-center text-dark">
                 {initials}
             </span>
         );
@@ -493,6 +505,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                                     fontSize: '14px',
                                     width: '40px',
                                     height: '40px',
+                                    backgroundColor: 'transparent'
                                 }}
                             >
                                 {getCompanyLogo(company)}
@@ -548,7 +561,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                                 style={{
                                     width: '100px',
                                     height: '100px',
-                                    objectFit: 'cover',
+                                    objectFit: 'contain',
                                     transition: 'all 0.3s ease'
                                 }}
                             />
@@ -647,12 +660,14 @@ const CompanyDropdown = ({ layoutMode }) => {
                         <>
                             <div className="me-2">
                                 <span
-                                    className="avatar-title text-white rounded fw-bold d-flex align-items-center justify-content-center"
+                                    key={`logo-${selectedCompany?.id}-${selectedCompany?.logoUrl}`}
+                                    className="avatar-title rounded fw-bold d-flex align-items-center justify-content-center"
                                     style={{
                                         fontSize: '12px',
                                         width: '28px',
                                         height: '28px',
                                         minWidth: '28px',
+                                        backgroundColor: 'transparent'
                                     }}
                                 >
                                     {getCompanyLogo(selectedCompany)}

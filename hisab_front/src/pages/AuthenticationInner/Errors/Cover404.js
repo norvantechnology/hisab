@@ -6,7 +6,7 @@ import { Col, Container, Row } from 'reactstrap';
 import error400cover from "../../../assets/images/error400-cover.png";
 
 const Cover404 = () => {
-    document.title="404 Error Cover | Velzon - React Admin & Dashboard Template";
+    document.title="404 Error Cover | Vyavhar - Financial Management Platform";
     return (
         <React.Fragment>
             <div className="auth-page-content">

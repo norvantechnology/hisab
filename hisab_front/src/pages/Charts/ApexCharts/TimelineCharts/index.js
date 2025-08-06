@@ -12,7 +12,7 @@ import {
 } from "./TimelineCharts";
 
 const TimelineCharts = () => {
-    document.title="TimeLine Charts | Velzon - React Admin & Dashboard Template";
+    document.title="TimeLine Charts | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">                

@@ -274,10 +274,10 @@ const PaymentsPage = () => {
                     <Col sm={12} className="text-end">
                         <div className="d-flex justify-content-end gap-2">
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
-                                <RiDownload2Line className="align-bottom" /> Export
+                                <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
                             <Button color="success" onClick={handleAddClick}>
-                                <RiAddLine className="align-bottom" /> Add Payment
+                                <RiAddLine className="align-middle me-1" /> Add Payment
                             </Button>
                         </div>
                     </Col>

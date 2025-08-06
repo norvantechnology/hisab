@@ -38,11 +38,26 @@ const ProfileDropdown = () => {
                 </span>
             </DropdownToggle>
             <DropdownMenu className="dropdown-menu-end">
-                <h6 className="dropdown-header">Welcome {userData.name}!</h6>
+                
                 <DropdownItem tag={Link} to="/profile">
                     <i className="mdi mdi-account-circle text-muted fs-16 align-middle me-1"></i>
                     <span className="align-middle">Profile</span>
                 </DropdownItem>
+                
+                <DropdownItem divider />
+                
+                <DropdownItem tag={Link} to="/pages-privacy-policy">
+                    <i className="mdi mdi-shield-check text-muted fs-16 align-middle me-1"></i>
+                    <span className="align-middle">Privacy Policy</span>
+                </DropdownItem>
+                
+                <DropdownItem tag={Link} to="/pages-terms-condition">
+                    <i className="mdi mdi-file-document text-muted fs-16 align-middle me-1"></i>
+                    <span className="align-middle">Terms & Conditions</span>
+                </DropdownItem>
+                
+                <DropdownItem divider />
+                
                 <DropdownItem tag={Link} to="/logout">
                     <i className="mdi mdi-logout text-muted fs-16 align-middle me-1"></i>
                     <span className="align-middle">Logout</span>

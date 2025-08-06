@@ -329,7 +329,7 @@ const MonthGrid = () => {
   };
 
   document.title =
-    "Month Grid Calendar | Velzon - React Admin & Dashboard Template";
+    "Month Grid Calendar | vyavhar - React Admin & Dashboard Template";
   return (
     <React.Fragment>
       <DeleteModal

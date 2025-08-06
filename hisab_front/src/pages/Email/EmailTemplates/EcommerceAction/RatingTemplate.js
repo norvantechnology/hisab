@@ -103,7 +103,7 @@ const RatingTemplate = () => {
                                                 </tbody>
                                             </table>
                                             <div style={{textAlign: "center", margin: "28px auto 0px auto"}}>
-                                                <p style={{fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px"}}>2022 Velzon. Design & Develop by Themesbrand</p>
+                                                <p style={{fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px"}}>2022 vyavhar. Design & Develop by Themesbrand</p>
                                             </div>
                                         </div>
                                     </td>

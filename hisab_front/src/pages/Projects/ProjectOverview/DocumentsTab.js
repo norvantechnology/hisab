@@ -183,7 +183,7 @@ const DocumentsTab = () => {
                                                         </div>
                                                     </div>
                                                     <div className="ms-3 flex-grow-1">
-                                                        <h5 className="fs-14 mb-0"><Link to="#" className="text-body">Velzon-logo.png</Link></h5>
+                                                        <h5 className="fs-14 mb-0"><Link to="#" className="text-body">vyavhar-logo.png</Link></h5>
                                                     </div>
                                                 </div>
                                             </td>

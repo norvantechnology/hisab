@@ -10,7 +10,7 @@ import Navbar from "./Navbar";
 import Process from "./Process";
 
 const JobLanding = () => {
-  document.title = "Job Landing | Velzon - React Admin & Dashboard Template";
+  document.title = "Job Landing | Vyavhar - Financial Management Platform";
 
   window.onscroll = function () {
     scrollFunction();

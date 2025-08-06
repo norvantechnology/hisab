@@ -16,7 +16,7 @@ import avatar3 from "../../../assets/images/users/avatar-3.jpg";
 import avatar4 from "../../../assets/images/users/avatar-4.jpg";
 
 const CreateProject = () => {
-  document.title="Create Project | Velzon - React Admin & Dashboard Template";
+  document.title="Create Project | vyavhar - React Admin & Dashboard Template";
 
     const SingleOptions = [
         { value: 'Watches', label: 'Watches' },

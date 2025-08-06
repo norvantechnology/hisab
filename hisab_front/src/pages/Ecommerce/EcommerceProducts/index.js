@@ -314,7 +314,7 @@ const products = useSelector(selectecomproductData);
   ],
     []
   );
-  document.title = "Products | Velzon - React Admin & Dashboard Template";
+  document.title = "Products | vyavhar - React Admin & Dashboard Template";
 
   return (
     <div className="page-content">

@@ -7,7 +7,7 @@ import ParticlesAuth from "../../../pages/AuthenticationInner/ParticlesAuth";
 import maintenanceImg from '../../../assets/images/maintenance.png';
 
 const Maintenance = () => {
-  document.title="Maintenance | Velzon - React Admin & Dashboard Template";
+  document.title="Maintenance | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>            
             <ParticlesAuth>

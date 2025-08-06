@@ -24,7 +24,7 @@ import { useFormik } from "formik";
 import ReactValidation from "./ReactValidation";
 
 const FormValidations = () => {
-  document.title = "Validation | Velzon - React Admin & Dashboard Template";
+  document.title = "Validation | vyavhar - React Admin & Dashboard Template";
 
   // Form validation
   const validation = useFormik({

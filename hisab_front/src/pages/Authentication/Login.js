@@ -48,7 +48,7 @@ const Login = () => {
         }
     });
 
-    document.title = "Login | ProfitPe";
+    document.title = "Login | Vyavhar";
 
     return (
         <React.Fragment>
@@ -61,7 +61,7 @@ const Login = () => {
                                 <div className="text-center mt-sm-5 mb-4 text-white-50">
                                     <div>
                                         <Link to="/" className="d-inline-block auth-logo">
-                                            <img src={logoLight} alt="ProfitPe" height="30" />
+                                            <img src={logoLight} alt="Vyavhar" height="30" />
                                         </Link>
                                     </div>
                                     <p className="mt-3 fs-15 fw-medium">Smart Trading Analytics Platform</p>
@@ -74,7 +74,7 @@ const Login = () => {
                                 <Card className="mt-4">
                                     <CardBody className="p-4">
                                         <div className="text-center mt-2">
-                                            <h5 className="text-primary">Welcome to ProfitPe</h5>
+                                            <h5 className="text-primary">Welcome to Vyavhar</h5>
                                             <p className="text-muted">Sign in to access your dashboard</p>
                                         </div>
                                         <div className="p-2 mt-4">

@@ -72,10 +72,10 @@ const Trending = () => {
                                                 <Row className="g-1 mb-3">
                                                     <Col lg={6}>
                                                         <img src={Img06} alt="" className="img-fluid rounded" />
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-2.gif"} alt="" className="img-fluid rounded mt-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-2.gif"} alt="" className="img-fluid rounded mt-1" />
                                                     </Col>
                                                     <Col lg={6}>
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-5.gif"} alt="" className="img-fluid rounded mb-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-5.gif"} alt="" className="img-fluid rounded mb-1" />
                                                         <img src={Img03} alt="" className="img-fluid rounded" />
                                                     </Col>
                                                 </Row>
@@ -90,10 +90,10 @@ const Trending = () => {
                                                 <Row className="g-1 mb-3">
                                                     <Col lg={6}>
                                                         <img src={Img05} alt="" className="img-fluid rounded" />
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-1.gif"} alt="" className="img-fluid rounded mt-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-1.gif"} alt="" className="img-fluid rounded mt-1" />
                                                     </Col>
                                                     <Col lg={6}>
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-4.gif"} alt="" className="img-fluid rounded mb-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-4.gif"} alt="" className="img-fluid rounded mb-1" />
                                                         <img src={Img04} alt="" className="img-fluid rounded" />
                                                     </Col>
                                                 </Row>
@@ -108,10 +108,10 @@ const Trending = () => {
                                                 <Row className="g-1 mb-3">
                                                     <Col lg={6}>
                                                         <img src={Img02} alt="" className="img-fluid rounded" />
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-3.gif"} alt="" className="img-fluid rounded mt-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-3.gif"} alt="" className="img-fluid rounded mt-1" />
                                                     </Col>
                                                     <Col lg={6}>
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-1.gif"} alt="" className="img-fluid rounded mb-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-1.gif"} alt="" className="img-fluid rounded mb-1" />
                                                         <img src={Img01} alt="" className="img-fluid rounded" />
                                                     </Col>
                                                 </Row>
@@ -126,10 +126,10 @@ const Trending = () => {
                                                 <Row className="g-1 mb-3">
                                                     <Col lg={6}>
                                                         <img src={Img03} alt="" className="img-fluid rounded" />
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-5.gif"} alt="" className="img-fluid rounded mt-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-5.gif"} alt="" className="img-fluid rounded mt-1" />
                                                     </Col>
                                                     <Col lg={6}>
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-2.gif"} alt="" className="img-fluid rounded mb-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-2.gif"} alt="" className="img-fluid rounded mb-1" />
                                                         <img src={Img05} alt="" className="img-fluid rounded" />
                                                     </Col>
                                                 </Row>
@@ -144,10 +144,10 @@ const Trending = () => {
                                                 <Row className="g-1 mb-3">
                                                     <Col lg={6}>
                                                         <img src={Img02} alt="" className="img-fluid rounded" />
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-3.gif"} alt="" className="img-fluid rounded mt-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-3.gif"} alt="" className="img-fluid rounded mt-1" />
                                                     </Col>
                                                     <Col lg={6}>
-                                                        <img src={"https://img.themesbrand.com/velzon/images/img-1.gif"} alt="" className="img-fluid rounded mb-1" />
+                                                        <img src={"https://img.themesbrand.com/vyavhar/images/img-1.gif"} alt="" className="img-fluid rounded mb-1" />
                                                         <img src={Img01} alt="" className="img-fluid rounded" />
                                                     </Col>
                                                 </Row>

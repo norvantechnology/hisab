@@ -9,7 +9,7 @@ import metaMask from "../../../assets/images/nft/wallet/metamask.png";
 import { walletConnectData } from "../../../common/data/index";
 
 const WalletConnect = () => {
-    document.title = "Wallet Connect | Velzon - React Admin & Dashboard Template";
+    document.title = "Wallet Connect | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">

@@ -56,7 +56,7 @@ const EmailVerifyAction = () => {
                                                                 <tr style={{fontFamily: "Roboto, sans-serif", boxSizing: "border-box", fontSize: "14px", margin: 0}}>
                                                                     <td className="content-block" style={{color: "#878a99", textAlign: "center", fontFamily: "Roboto, sans-serif", boxSizing: "border-box", fontSize: "14px", verticalAlign: "top", margin: 0, padding: 0, paddingTop: "5px"}} valign="top">
                                                                         <p style={{marginBottom: "10px"}}>Or verify using this link: </p>
-                                                                        <Link to="https://themesbrand.com/velzon/" target="_blank">https://themesbrand.com/velzon/</Link>
+                                                                        <Link to="https://themesbrand.com/vyavhar/" target="_blank">https://themesbrand.com/vyavhar/</Link>
                                                                     </td>
                                                                 </tr>
                                                             </tbody>
@@ -67,8 +67,8 @@ const EmailVerifyAction = () => {
                                         </table>
                                         <div style={{textAlign: "center", margin: "25px auto 0px auto", fontFamily: "Roboto sans-serif"}}>
                                             <h4 style={{fontWeight: 500, lineHeight: "1.5", fontFamily: "Roboto sans-serif"}}>Need Help ?</h4>
-                                            <p style={{color: "#878a99", lineHeight: 1.5}}>Please send and feedback or bug info to <Link to="" style={{fontWeight: 500}}>info@velzon.com</Link></p>
-                                            <p style={{fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px"}}>2022 Velzon. Design & Develop by Themesbrand</p>
+                                            <p style={{color: "#878a99", lineHeight: 1.5}}>Please send and feedback or bug info to <Link to="" style={{fontWeight: 500}}>info@vyavhar.com</Link></p>
+                                            <p style={{fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px"}}>2022 vyavhar. Design & Develop by Themesbrand</p>
                                         </div>
                                     </div>
                                 </td>

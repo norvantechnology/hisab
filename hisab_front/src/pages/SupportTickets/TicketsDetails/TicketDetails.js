@@ -28,7 +28,7 @@ const TicketDetails = () => {
                                     </tr>
                                     <tr>
                                         <td className="fw-medium">Project</td>
-                                        <td>Velzon - Admin Dashboard</td>
+                                        <td>vyavhar - Admin Dashboard</td>
                                     </tr>
                                     <tr>
                                         <td className="fw-medium">Assigned To:</td>
@@ -109,7 +109,7 @@ const TicketDetails = () => {
                                 </div>
                             </div>
                             <div className="flex-grow-1 ms-3">
-                                <h6 className="mb-1"><Link to="#">Velzon-admin.zip</Link></h6>
+                                <h6 className="mb-1"><Link to="#">vyavhar-admin.zip</Link></h6>
                                 <small className="text-muted">3.2 MB</small>
                             </div>
                             <div className="hstack gap-3 fs-16">
@@ -124,7 +124,7 @@ const TicketDetails = () => {
                                 </div>
                             </div>
                             <div className="flex-grow-1 ms-3">
-                                <h6 className="mb-1"><Link to="#">Velzon-admin.ppt</Link></h6>
+                                <h6 className="mb-1"><Link to="#">vyavhar-admin.ppt</Link></h6>
                                 <small className="text-muted">4.5 MB</small>
                             </div>
                             <div className="hstack gap-3 fs-16">

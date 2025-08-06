@@ -51,7 +51,7 @@ import "react-perfect-scrollbar/dist/css/styles.css";
 import { createSelector } from "reselect";
 
 const Chat = () => {
-  document.title = "Chat | Velzon - React Admin & Dashboard Template";
+  document.title = "Chat | Vyavhar - Financial Management Platform";
 
   const [customActiveTab, setcustomActiveTab] = useState("1");
   const toggleCustom = (tab) => {

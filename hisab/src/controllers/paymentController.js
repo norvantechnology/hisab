@@ -152,7 +152,11 @@ export async function createPayment(req, res) {
 
     // Calculate net amount for bank impact
     const netAmount = receivableAmount - payableAmount;
-    const paymentType = netAmount > 0 ? 'receipt' : 'payment';
+    
+    // Fix: Correct payment type logic
+    // If we have more payable (we owe them) -> we pay -> outflow -> 'payment'
+    // If we have more receivable (they owe us) -> we receive -> inflow -> 'receipt'
+    const paymentType = payableAmount > receivableAmount ? 'payment' : 'receipt';
     const absoluteNetAmount = Math.abs(netAmount);
 
     // Apply adjustments to the net amount
@@ -182,6 +186,9 @@ export async function createPayment(req, res) {
     } else if (adjustmentType === 'extra_receipt' || adjustmentType === 'surcharge') {
       bankImpact = paymentType === 'payment' ? -originalAmount : originalAmount;
     } else {
+      // Fix: Correct bank impact calculation
+      // payment = money goes out (negative impact on bank)
+      // receipt = money comes in (positive impact on bank)
       bankImpact = paymentType === 'payment' ? -absoluteNetAmount : absoluteNetAmount;
     }
 
@@ -254,6 +261,16 @@ export async function createPayment(req, res) {
       );
     }
 
+    // Update contact balance if current-balance payment is made
+    if (currentBalanceAmount > 0) {
+      await client.query(
+        `UPDATE hisab."contacts" 
+         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $3 AND "companyId" = $4`,
+        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
+      );
+    }
+
     // OPTIMIZATION 5: Prepare batch operations for allocations and transaction updates
     const allocationQueries = [];
     const transactionUpdateQueries = [];
@@ -293,9 +310,9 @@ export async function createPayment(req, res) {
 
           transactionUpdateQueries.push({
             query: `UPDATE hisab."purchases" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $4`,
-            params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, allocation.transactionId]
+             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+             WHERE id = $5`,
+            params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
           });
 
           allocationQueries.push({
@@ -328,9 +345,9 @@ export async function createPayment(req, res) {
 
           transactionUpdateQueries.push({
             query: `UPDATE hisab."sales" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $4`,
-            params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, allocation.transactionId]
+             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+             WHERE id = $5`,
+            params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
           });
 
           allocationQueries.push({
@@ -365,7 +382,7 @@ export async function createPayment(req, res) {
             query: `UPDATE hisab."expenses" 
              SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
              WHERE id = $5`,
-            params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, bankAccountId, allocation.transactionId]
+            params: [isFullyPaid ? 'paid' : 'pending', Math.max(0, newRemainingAmount), newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
           });
 
                   allocationQueries.push({
@@ -739,96 +756,12 @@ export async function updatePayment(req, res) {
       }
     }
 
-    // Reverse old purchase allocations
-    for (const allocation of existingAllocations) {
-      const transactionType = allocation.allocationType || 'purchase'; // Default to purchase for backward compatibility
-      if (transactionType === 'purchase' && allocation.purchaseId) {
-        const purchaseQuery = await client.query(
-          `SELECT "netPayable", "remaining_amount", "paid_amount" FROM hisab."purchases" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.purchaseId, companyId]
-        );
+    // Reverse transaction impacts using the centralized function
+    const reversalQueries = await reverseTransactionAllocations(client, existingAllocations, companyId, existingPayment);
 
-        if (purchaseQuery.rows.length) {
-          const purchase = purchaseQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentPaidAmount = parseFloat(purchase.paid_amount || 0);
-          const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-          const newRemainingAmount = parseFloat(purchase.netPayable) - newPaidAmount;
-          const isPending = newRemainingAmount > 0;
-
-          await client.query(
-            `UPDATE hisab."purchases" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $4`,
-            [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.purchaseId]
-          );
-        }
-      } else if (transactionType === 'expense' && allocation.expenseId) {
-        const expenseQuery = await client.query(
-          `SELECT "amount", "remaining_amount", "paid_amount" FROM hisab."expenses" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.expenseId, companyId]
-        );
-
-        if (expenseQuery.rows.length) {
-          const expense = expenseQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentPaidAmount = parseFloat(expense.paid_amount || 0);
-          const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-          const expenseAmount = parseFloat(expense.amount || 0);
-          const newRemainingAmount = expenseAmount - newPaidAmount;
-          const isPending = newRemainingAmount > 0;
-
-          await client.query(
-            `UPDATE hisab."expenses" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $4`,
-            [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.expenseId]
-          );
-        }
-      } else if (transactionType === 'income' && allocation.incomeId) {
-        const incomeQuery = await client.query(
-          `SELECT "amount", "remaining_amount", "paid_amount" FROM hisab."incomes" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.incomeId, companyId]
-        );
-
-        if (incomeQuery.rows.length) {
-          const income = incomeQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentPaidAmount = parseFloat(income.paid_amount || 0);
-          const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-          const incomeAmount = parseFloat(income.amount || 0);
-          const newRemainingAmount = incomeAmount - newPaidAmount;
-          const isPending = newRemainingAmount > 0;
-
-          // Check if this income has a contactId to determine proper bankAccountId value
-          const incomeContactQuery = await client.query(
-            `SELECT "contactId" FROM hisab."incomes" WHERE id = $1`,
-            [allocation.incomeId]
-          );
-          
-          const hasContactId = incomeContactQuery.rows.length > 0 && incomeContactQuery.rows[0].contactId;
-          
-          // According to incomes_payment_method_check constraint:
-          // - If contactId exists and status is 'pending': bankAccountId must be NULL
-          // - If contactId exists and status is 'paid': bankAccountId can be set
-          // - If contactId is NULL: bankAccountId must be set (direct bank payment)
-          let bankAccountIdToSet;
-          if (hasContactId) {
-            // Contact-based income
-            bankAccountIdToSet = isPending ? null : existingPayment.bankId;
-          } else {
-            // Direct bank payment - always keep bankAccountId
-            bankAccountIdToSet = existingPayment.bankId;
-          }
-
-          await client.query(
-            `UPDATE hisab."incomes" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $5`,
-            [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, bankAccountIdToSet, allocation.incomeId]
-          );
-        }
-      }
+    // Execute all reversal queries
+    for (const query of reversalQueries) {
+      await client.query(query.query, query.params);
     }
 
     // Delete old allocations
@@ -836,34 +769,44 @@ export async function updatePayment(req, res) {
 
     // Apply new contact balance impact
     if (newCurrentBalanceAmount > 0) {
-      const newCurrentBalanceAllocation = transactionAllocations.find(
+      let newCurrentBalance = currentBalanceValue;
+      let newCurrentBalanceType = currentBalanceType;
+
+      // Calculate new contact balance based on current-balance allocation
+      const currentBalanceAllocation = transactionAllocations.find(
         allocation => allocation.transactionId === 'current-balance'
       );
-      const newCurrentBalanceType_allocation = newCurrentBalanceAllocation?.type ||
-        (newPaymentType === 'receipt' ? 'receivable' : 'payable');
+      const currentBalanceType_allocation = currentBalanceAllocation?.type || 'payable';
 
-      if (newCurrentBalanceType_allocation === 'receivable') {
-        if (newCurrentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, newCurrentBalance - newCurrentBalanceAmount);
-        } else if (newCurrentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, newCurrentBalance - newCurrentBalanceAmount);
+      if (currentBalanceType_allocation === 'receivable') {
+        if (currentBalanceType === 'receivable') {
+          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
+        } else if (currentBalanceType === 'payable') {
+          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
         }
-      } else if (newCurrentBalanceType_allocation === 'payable') {
-        if (newCurrentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, newCurrentBalance - newCurrentBalanceAmount);
-        } else if (newCurrentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, newCurrentBalance - newCurrentBalanceAmount);
+      } else if (currentBalanceType_allocation === 'payable') {
+        if (currentBalanceType === 'payable') {
+          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
+        } else if (currentBalanceType === 'receivable') {
+          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
         }
       }
 
       if (newCurrentBalance < 0) {
         newCurrentBalance = Math.abs(newCurrentBalance);
-        newCurrentBalanceType = newCurrentBalanceType === 'receivable' ? 'payable' : 'receivable';
+        newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
       }
 
       if (newCurrentBalance === 0) {
         newCurrentBalanceType = 'payable';
       }
+
+      await client.query(
+        `UPDATE hisab."contacts" 
+         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $3 AND "companyId" = $4`,
+        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
+      );
     }
 
     // Calculate new bank impact - FIXED LOGIC
@@ -884,202 +827,17 @@ export async function updatePayment(req, res) {
       );
     }
 
-    // Contact balance is automatically updated by the underlying transaction changes
-    // Payments should not directly modify contact balance
+    // Process new transaction allocations using the centralized function
+    const { allocationQueries, transactionUpdateQueries } = await processNewTransactionAllocations(client, transactionAllocations, id, companyId, bankAccountId);
 
-    // Create new allocations
-    for (const allocation of transactionAllocations) {
-      const balanceType = allocation.type || 'payable';
-      const transactionType = allocation.transactionType || 'purchase'; // Default to purchase for backward compatibility
+    // Execute all transaction update queries
+    for (const query of transactionUpdateQueries) {
+      await client.query(query.query, query.params);
+    }
 
-      if (allocation.transactionId === 'current-balance') {
-        await client.query(
-          `INSERT INTO hisab."payment_allocations" (
-            "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-          [
-            id,
-            null,
-            null,
-            null,
-            null,
-            'current-balance',
-            parseFloat(allocation.amount || 0),
-            parseFloat(allocation.paidAmount || 0),
-            balanceType
-          ]
-        );
-      } else if (transactionType === 'purchase') {
-        const purchaseQuery = await client.query(
-          `SELECT "netPayable", "remaining_amount", "paid_amount" FROM hisab."purchases" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.transactionId, companyId]
-        );
-
-        if (purchaseQuery.rows.length) {
-          const purchase = purchaseQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentRemaining = parseFloat(purchase.remaining_amount || purchase.netPayable);
-          const newRemainingAmount = currentRemaining - paidAmount;
-          const isFullyPaid = newRemainingAmount <= 0;
-
-          await client.query(
-            `UPDATE hisab."purchases" SET "status" = $1, "remaining_amount" = GREATEST(0, $2) WHERE id = $3`,
-            [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, allocation.transactionId]
-          );
-
-                    await client.query(
-            `INSERT INTO hisab."payment_allocations" (
-              "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-            [
-              id,
-              allocation.transactionId,
-              null,
-              null,
-              null,
-              'purchase',
-              parseFloat(allocation.amount || 0),
-              paidAmount,
-              balanceType
-            ]
-          );
-        }
-      } else if (transactionType === 'sale') {
-        const saleQuery = await client.query(
-          `SELECT "netReceivable", "remaining_amount", "paid_amount" FROM hisab."sales" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.transactionId, companyId]
-        );
-
-        if (saleQuery.rows.length) {
-          const sale = saleQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentRemaining = parseFloat(sale.remaining_amount || sale.netReceivable);
-          const newRemainingAmount = currentRemaining - paidAmount;
-          const isFullyPaid = newRemainingAmount <= 0;
-
-          await client.query(
-            `UPDATE hisab."sales" SET "status" = $1, "remaining_amount" = GREATEST(0, $2) WHERE id = $3`,
-            [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, allocation.transactionId]
-          );
-
-          await client.query(
-            `INSERT INTO hisab."payment_allocations" (
-              "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-            [
-              id,
-              null,
-              allocation.transactionId,
-              null,
-              null,
-              'sale',
-              parseFloat(allocation.amount || 0),
-              paidAmount,
-              balanceType
-            ]
-          );
-        }
-      } else if (transactionType === 'expense') {
-          const expenseQuery = await client.query(
-            `SELECT "amount", "remaining_amount", "paid_amount", "status", "bankAccountId" FROM hisab."expenses" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-            [allocation.transactionId, companyId]
-          );
-
-          if (expenseQuery.rows.length) {
-            const expense = expenseQuery.rows[0];
-            const paidAmount = parseFloat(allocation.paidAmount || 0);
-            const currentPaidAmount = parseFloat(expense.paid_amount || 0);
-            const newPaidAmount = currentPaidAmount + paidAmount;
-            const expenseAmount = parseFloat(expense.amount || 0);
-            const newRemainingAmount = Math.max(0, expenseAmount - newPaidAmount);
-            const isFullyPaid = newRemainingAmount <= 0;
-
-            // Update expense with new payment tracking
-            await client.query(
-              `UPDATE hisab."expenses" 
-               SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
-               WHERE id = $5`,
-              [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, bankAccountId, allocation.transactionId]
-            );
-
-            await client.query(
-              `INSERT INTO hisab."payment_allocations" (
-                "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
-              ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-              [
-                id,
-                null,
-                null,
-                allocation.transactionId,
-                null,
-                'expense',
-                parseFloat(allocation.amount || 0),
-                paidAmount,
-                balanceType
-              ]
-            );
-          }
-      } else if (transactionType === 'income') {
-        const incomeQuery = await client.query(
-          `SELECT "amount", "remaining_amount", "paid_amount" FROM hisab."incomes" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.transactionId, companyId]
-        );
-
-        if (incomeQuery.rows.length) {
-          const income = incomeQuery.rows[0];
-          const paidAmount = parseFloat(allocation.paidAmount || 0);
-          const currentPaidAmount = parseFloat(income.paid_amount || 0);
-          const newPaidAmount = currentPaidAmount + paidAmount;
-          const incomeAmount = parseFloat(income.amount || 0);
-          const newRemainingAmount = Math.max(0, incomeAmount - newPaidAmount);
-          const isFullyPaid = newRemainingAmount <= 0;
-
-          // Check if this income has a contactId to determine proper bankAccountId value
-          const incomeContactQuery = await client.query(
-            `SELECT "contactId" FROM hisab."incomes" WHERE id = $1`,
-            [allocation.transactionId]
-          );
-          
-          const hasContactId = incomeContactQuery.rows.length > 0 && incomeContactQuery.rows[0].contactId;
-          
-          // According to incomes_payment_method_check constraint:
-          // - If contactId exists and status is 'pending': bankAccountId must be NULL
-          // - If contactId exists and status is 'paid': bankAccountId can be set
-          // - If contactId is NULL: bankAccountId must be set (direct bank payment)
-          let bankAccountIdToSet;
-          if (hasContactId) {
-            // Contact-based income
-            bankAccountIdToSet = isFullyPaid ? bankAccountId : null;
-          } else {
-            // Direct bank payment - always keep bankAccountId
-            bankAccountIdToSet = bankAccountId;
-          }
-
-          await client.query(
-            `UPDATE hisab."incomes" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $5`,
-            [isFullyPaid ? 'paid' : 'pending', Math.max(0, newRemainingAmount), newPaidAmount, bankAccountIdToSet, allocation.transactionId]
-          );
-
-          await client.query(
-            `INSERT INTO hisab."payment_allocations" (
-              "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
-            [
-              id,
-              null,
-              null,
-              null,
-              allocation.transactionId,
-              'income',
-              parseFloat(allocation.amount || 0),
-              paidAmount,
-              balanceType
-            ]
-          );
-        }
-      }
+    // Execute all allocation queries
+    for (const query of allocationQueries) {
+      await client.query(query.query, query.params);
     }
 
     // Update payment record
@@ -1494,163 +1252,12 @@ export async function deletePayment(req, res) {
       adjustedAmount = absoluteNetAmount;
     }
 
-    // Reverse transaction impacts
-    for (const allocation of allocations) {
-      const transactionType = allocation.allocationType || 'purchase';
-      const paidAmount = parseFloat(allocation.paidAmount || 0);
+    // Reverse transaction impacts using the centralized function
+    const reversalQueries = await reverseTransactionAllocations(client, allocations, companyId, payment);
 
-      if (transactionType === 'purchase' && allocation.purchaseId) {
-        const purchaseQuery = await client.query(
-          `SELECT "netPayable", "remaining_amount", "paid_amount" FROM hisab."purchases" 
-           WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-          [allocation.purchaseId, companyId]
-        );
-
-        if (purchaseQuery.rows.length) {
-          const purchase = purchaseQuery.rows[0];
-          const currentPaidAmount = parseFloat(purchase.paid_amount || 0);
-          const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-          const netPayable = parseFloat(purchase.netPayable || 0);
-          const newRemainingAmount = netPayable - newPaidAmount;
-          const isPending = newRemainingAmount > 0;
-
-          await client.query(
-            `UPDATE hisab."purchases" 
-             SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-             WHERE id = $4`,
-            [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.purchaseId]
-          );
-        }
-      } else if (transactionType === 'expense') {
-        // Determine which ID field to use based on schema version
-        const expenseId = hasNewColumns ? allocation.expenseId : allocation.purchaseId;
-        
-        if (expenseId) {
-          // Check if expense has tracking fields
-          let expenseQuery;
-          let hasTrackingFields = false;
-          
-          try {
-            const trackingCheck = await client.query(`
-              SELECT column_name 
-              FROM information_schema.columns 
-              WHERE table_schema = 'hisab' 
-                AND table_name = 'expenses' 
-                AND column_name IN ('remaining_amount', 'paid_amount')
-            `);
-            hasTrackingFields = trackingCheck.rows.length === 2;
-          } catch (error) {
-            hasTrackingFields = false;
-          }
-          if (hasTrackingFields) {
-            // Use new tracking logic
-            const expenseQuery = await client.query(
-              `SELECT "amount", "remaining_amount", "paid_amount" FROM hisab."expenses" 
-               WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-              [expenseId, companyId]
-            );
-
-            if (expenseQuery.rows.length) {
-              const expense = expenseQuery.rows[0];
-              const currentPaidAmount = parseFloat(expense.paid_amount || 0);
-              const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-              const expenseAmount = parseFloat(expense.amount || 0);
-              const newRemainingAmount = expenseAmount - newPaidAmount;
-              const isPending = newRemainingAmount > 0;
-
-              await client.query(
-                `UPDATE hisab."expenses" 
-                 SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-                 WHERE id = $4`,
-                [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, expenseId]
-              );
-            }
-          } else {
-            // Use old simple logic - just mark as pending if there was a payment
-            await client.query(
-              `UPDATE hisab."expenses" 
-               SET "status" = 'pending', "bankAccountId" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-               WHERE id = $1 AND "companyId" = $2`,
-              [expenseId, companyId]
-            );
-          }
-        }
-      } else if (transactionType === 'income') {
-        // Determine which ID field to use based on schema version
-        const incomeId = hasNewColumns ? allocation.incomeId : allocation.purchaseId;
-        
-        if (incomeId) {
-          // Check if income has tracking fields
-          let hasTrackingFields = false;
-          
-          try {
-            const trackingCheck = await client.query(`
-              SELECT column_name 
-              FROM information_schema.columns 
-              WHERE table_schema = 'hisab' 
-                AND table_name = 'incomes' 
-                AND column_name IN ('remaining_amount', 'paid_amount')
-            `);
-            hasTrackingFields = trackingCheck.rows.length === 2;
-          } catch (error) {
-            hasTrackingFields = false;
-          }
-
-          if (hasTrackingFields) {                                                                                                                                                                                                                              
-            // Use new tracking logic
-            const incomeQuery = await client.query(
-              `SELECT "amount", "remaining_amount", "paid_amount" FROM hisab."incomes" 
-               WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-              [incomeId, companyId]
-            );
-
-            if (incomeQuery.rows.length) {
-              const income = incomeQuery.rows[0];
-              const currentPaidAmount = parseFloat(income.paid_amount || 0);
-              const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
-              const incomeAmount = parseFloat(income.amount || 0);
-              const newRemainingAmount = incomeAmount - newPaidAmount;
-              const isPending = newRemainingAmount > 0;
-
-              // Check if this income has a contactId to determine proper bankAccountId value                                                                                                                                                                       
-              const incomeContactQuery = await client.query(
-                `SELECT "contactId" FROM hisab."incomes" WHERE id = $1`,
-                [allocation.incomeId]
-              );
-                                                                                
-              const hasContactId = incomeContactQuery.rows.length > 0 && incomeContactQuery.rows[0].contactId;
-              
-              // According to incomes_payment_method_check constraint:
-              // - If contactId exists and status is 'pending': bankAccountId must be NULL
-              // - If contactId exists and status is 'paid': bankAccountId can be set
-              // - If contactId is NULL: bankAccountId must be set (direct bank payment)
-              let bankAccountIdToSet;
-              if (hasContactId) {
-                // Contact-based income
-                bankAccountIdToSet = isPending ? null : payment.bankId;
-              } else {
-                // Direct bank payment - always keep bankAccountId
-                bankAccountIdToSet = payment.bankId;
-              }
-
-              await client.query(
-                `UPDATE hisab."incomes" 
-                 SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
-                 WHERE id = $5`,
-                [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, bankAccountIdToSet, allocation.incomeId]
-              );
-            }
-          } else {
-            // Use old simple logic - just mark as pending if there was a payment
-            await client.query(
-              `UPDATE hisab."incomes" 
-               SET "status" = 'pending', "bankAccountId" = NULL, "updatedAt" = CURRENT_TIMESTAMP
-               WHERE id = $1 AND "companyId" = $2`,
-              [allocation.incomeId, companyId]
-            );
-          }
-        }
-      }
+    // Execute all reversal queries
+    for (const query of reversalQueries) {
+      await client.query(query.query, query.params);
     }
 
     // Delete payment allocations
@@ -1688,8 +1295,58 @@ export async function deletePayment(req, res) {
       }
     }
 
-    // Contact balance is automatically updated by the underlying transaction changes
-    // Payments should not directly modify contact balance
+    // Reverse contact balance impact if current-balance payment was made
+    if (currentBalanceAmount > 0) {
+      const currentBalanceAllocation = allocations.find(
+        allocation => allocation.allocationType === 'current-balance'
+      );
+      const currentBalanceType_allocation = currentBalanceAllocation?.balanceType || 'payable';
+
+      // Get current contact balance
+      const contactQuery = await client.query(
+        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts" 
+         WHERE "id" = $1 AND "companyId" = $2 FOR UPDATE`,
+        [payment.contactId, companyId]
+      );
+
+      if (contactQuery.rows.length > 0) {
+        const { currentBalance, currentBalanceType } = contactQuery.rows[0];
+        const currentBalanceValue = parseFloat(currentBalance || 0);
+        let newCurrentBalance = currentBalanceValue;
+        let newCurrentBalanceType = currentBalanceType;
+
+        // Reverse the current balance impact
+        if (currentBalanceType_allocation === 'receivable') {
+          if (currentBalanceType === 'receivable') {
+            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
+          } else if (currentBalanceType === 'payable') {
+            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
+          }
+        } else if (currentBalanceType_allocation === 'payable') {
+          if (currentBalanceType === 'payable') {
+            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
+          } else if (currentBalanceType === 'receivable') {
+            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
+          }
+        }
+
+        if (newCurrentBalance < 0) {
+          newCurrentBalance = Math.abs(newCurrentBalance);
+          newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
+        }
+
+        if (newCurrentBalance === 0) {
+          newCurrentBalanceType = 'payable';
+        }
+
+        await client.query(
+          `UPDATE hisab."contacts" 
+           SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $3 AND "companyId" = $4`,
+          [newCurrentBalance, newCurrentBalanceType, payment.contactId, companyId]
+        );
+      }
+    }
 
     // Mark payment as deleted
     const deleteResult = await client.query(
@@ -1954,13 +1611,25 @@ export async function getPendingTransactions(req, res) {
     const netPendingAmount = totalPendingPayable - totalPendingReceivable;
     const netBalanceType = netPendingAmount >= 0 ? 'payable' : 'receivable';
 
+    // Debug logging
+    console.log('=== Pending Transactions Debug ===');
+    console.log('Current Balance:', currentBalance, 'Type:', contact.currentBalanceType);
+    console.log('Total Pending Payable:', totalPendingPayable);
+    console.log('Total Pending Receivable:', totalPendingReceivable);
+    console.log('Net Pending Amount:', netPendingAmount);
+    console.log('Net Balance Type:', netBalanceType);
+    console.log('Transactions count:', transactions.length);
+    transactions.forEach((t, i) => {
+      console.log(`Transaction ${i + 1}:`, t.description, 'Amount:', t.pendingAmount, 'Type:', t.balanceType);
+    });
+
     // 8. Calculate summary by transaction type
     const summary = {
-      totalPending: Math.abs(netPendingAmount),
+      totalPending: Math.abs(netPendingAmount), // This now includes current balance since it's in transactions
       netBalanceType: netBalanceType,
       totalPendingPayable: totalPendingPayable,
       totalPendingReceivable: totalPendingReceivable,
-      payableStatus: contact.currentBalanceType,
+      payableStatus: netBalanceType, // Use calculated net balance type instead of stored current balance type
       suggestedPayment: netBalanceType === 'payable' ? Math.abs(netPendingAmount) : 0,
       breakdown: {
         currentBalance: Math.abs(currentBalance),
@@ -2728,9 +2397,9 @@ async function reverseTransactionAllocations(client, existingAllocations, compan
 
         reversalQueries.push({
           query: `UPDATE hisab."purchases" 
-           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $4`,
-          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.purchaseId]
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, isPending ? null : existingPayment.bankId, allocation.purchaseId]
         });
       }
     } else if (transactionType === 'sale' && allocation.saleId) {
@@ -2743,9 +2412,9 @@ async function reverseTransactionAllocations(client, existingAllocations, compan
 
         reversalQueries.push({
           query: `UPDATE hisab."sales" 
-           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $4`,
-          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.saleId]
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, isPending ? null : existingPayment.bankId, allocation.saleId]
         });
       }
     } else if (transactionType === 'expense' && allocation.expenseId) {
@@ -2759,9 +2428,9 @@ async function reverseTransactionAllocations(client, existingAllocations, compan
 
         reversalQueries.push({
           query: `UPDATE hisab."expenses" 
-           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $4`,
-          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, allocation.expenseId]
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          params: [isPending ? 'pending' : 'paid', Math.max(0, newRemainingAmount), newPaidAmount, isPending ? null : existingPayment.bankId, allocation.expenseId]
         });
       }
     } else if (transactionType === 'income' && allocation.incomeId) {
@@ -2865,9 +2534,9 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
 
         transactionUpdateQueries.push({
           query: `UPDATE hisab."purchases" 
-           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $4`,
-          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, allocation.transactionId]
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
         });
 
         allocationQueries.push({
@@ -2900,9 +2569,9 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
 
         transactionUpdateQueries.push({
           query: `UPDATE hisab."sales" 
-           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE id = $4`,
-          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, allocation.transactionId]
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $5`,
+          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
         });
 
         allocationQueries.push({
@@ -2937,7 +2606,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
           query: `UPDATE hisab."expenses" 
            SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
            WHERE id = $5`,
-          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, bankAccountId, allocation.transactionId]
+          params: [isFullyPaid ? 'paid' : 'pending', Math.max(0, newRemainingAmount), newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
         });
 
         allocationQueries.push({

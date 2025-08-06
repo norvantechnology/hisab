@@ -17,7 +17,7 @@ import avatar8 from "../../../assets/images/users/avatar-8.jpg";
 import { DefultExample, NestingExample, MediaExample } from './UiMediaobjectCode';
 
 const UiMediaobject = () => {
-    document.title="Media object | Velzon - React Admin & Dashboard Template";
+    document.title="Media object | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <UiContent />

@@ -14,6 +14,8 @@ const getSelectedCompanyId = () => {
   }
 };
 
+const pendingRequests = new Map();
+
 const apiClient = axios.create({
   baseURL: process.env.REACT_APP_API_BASE_URL || '',
   timeout: 10000,
@@ -26,6 +28,7 @@ export const apiCall = async ({
   data = null,
   headers = {},
   params = {},
+  responseType = 'json'
 }) => {
   try {
     const companyId = getSelectedCompanyId();
@@ -47,17 +50,48 @@ export const apiCall = async ({
       url: endpoint,
       headers: requestHeaders,
       params,
+      responseType
     };
 
     if (method.toLowerCase() !== 'get' && data) {
       config.data = data;
     }
+
+    // Generate request key for pending requests check
+    const key = `${method}:${endpoint}:${JSON.stringify(params)}:${JSON.stringify(data)}`;
     
-    console.log("config>>", config);
-    console.log("data type>>", data instanceof FormData ? 'FormData' : typeof data);
+    // Check if request is already pending
+    if (pendingRequests.has(key)) {
+      console.log('Request already pending, waiting for response...');
+      return await pendingRequests.get(key);
+    }
+
+    // Create promise for this request
+    const requestPromise = (async () => {
+      try {
+        console.log("API Request:", { method, endpoint, params });
+        
+        const response = await apiClient.request(config);
+        
+        // For blob responses, return the blob directly
+        if (responseType === 'blob') {
+          return response.data;
+        }
+        
+        const result = response.data;
+        
+        return result;
+      } finally {
+        // Remove from pending requests
+        pendingRequests.delete(key);
+      }
+    })();
+
+    // Store the promise
+    pendingRequests.set(key, requestPromise);
     
-    const response = await apiClient.request(config);
-    return response.data;
+    return await requestPromise;
+    
   } catch (error) {
     if (error.response) {
       throw {
@@ -81,7 +115,14 @@ export const apiCall = async ({
 
 apiClient.interceptors.request.use(
   (config) => {
-    const token = sessionStorage.getItem('authToken');
+    // Check for regular user token first
+    let token = sessionStorage.getItem('authToken');
+    
+    // If no regular token, check for portal token
+    if (!token) {
+      token = localStorage.getItem('portalToken');
+    }
+    
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

@@ -21,7 +21,7 @@ import bell from "../../../assets/images/svg/bell.svg";
 import { SingleButtonDropdownExample, ColorDropdownExample, SplitButtonDropdownExample, SizingDropdownExample, DarkDropdownExample, AlignDropdownExample, OptionDropdownExample, AutoCloseDropdownExample, MenuItemDropdownExample, MenuContentDropdownExample, NotificationDropdownExample } from './UiDropdownsCode';
 
 const UiDropdowns = () => {
-    document.title = "Dropdowns | Velzon - React Admin & Dashboard Template";
+    document.title = "Dropdowns | vyavhar - React Admin & Dashboard Template";
 
     // Default Tabs
     const [activeTab, setactiveTab] = useState("1");

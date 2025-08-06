@@ -7,7 +7,7 @@ import BreadCrumb from '../../../Components/Common/BreadCrumb';
 import { HtmlHighlightExample, CssHighlightExample, JavaScriptExample } from './UiHighlightCode';
 
 const UiHighlight = () => {
-    document.title="Highlight | Velzon - React Admin & Dashboard Template";
+    document.title="Highlight | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">                

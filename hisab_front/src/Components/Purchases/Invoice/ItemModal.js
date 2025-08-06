@@ -17,7 +17,7 @@ import {
   Badge,
   Alert
 } from 'reactstrap';
-import { RiLoader2Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
+import { RiLoader4Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
 
 const ItemModal = ({
   isOpen,
@@ -156,11 +156,23 @@ const ItemModal = ({
     setSerialNumbers(updatedSerialNumbers);
     setNewSerialNumber('');
     setErrors(prev => ({ ...prev, newSerial: '', serialNumbers: '' }));
+    
+    // Update local current item with new serial numbers
+    setLocalCurrentItem(prev => ({
+      ...prev,
+      serialNumbers: updatedSerialNumbers
+    }));
   }, [newSerialNumber, serialNumbers, localCurrentItem?.currentStock]);
 
   const handleRemoveSerialNumber = useCallback((index) => {
     const updatedSerialNumbers = serialNumbers.filter((_, i) => i !== index);
     setSerialNumbers(updatedSerialNumbers);
+
+    // Update local current item with updated serial numbers
+    setLocalCurrentItem(prev => ({
+      ...prev,
+      serialNumbers: updatedSerialNumbers
+    }));
 
     if (updatedSerialNumbers.length === 0) {
       setErrors(prev => ({ ...prev, serialNumbers: 'Please add at least one serial number for this serialized product' }));
@@ -168,6 +180,32 @@ const ItemModal = ({
       setErrors(prev => ({ ...prev, serialNumbers: '' }));
     }
   }, [serialNumbers]);
+
+  // Handle clicking on available serial numbers
+  const handleSelectSerialNumber = useCallback((serialNumber) => {
+    console.log('Selecting serial number:', serialNumber);
+    if (serialNumbers.includes(serialNumber)) {
+      console.log('Serial number already selected:', serialNumber);
+      return;
+    }
+
+    if (localCurrentItem?.currentStock && serialNumbers.length >= localCurrentItem.currentStock) {
+      console.log('Cannot add more serial numbers, stock limit reached.');
+      setErrors(prev => ({ ...prev, newSerial: `Cannot add more than ${localCurrentItem.currentStock} serial numbers` }));
+      return;
+    }
+
+    const updatedSerialNumbers = [...serialNumbers, serialNumber];
+    setSerialNumbers(updatedSerialNumbers);
+    setNewSerialNumber(''); // Clear the input field
+    setErrors(prev => ({ ...prev, newSerial: '' }));
+
+    // Update local current item with new serial numbers
+    setLocalCurrentItem(prev => ({
+      ...prev,
+      serialNumbers: updatedSerialNumbers
+    }));
+  }, [serialNumbers, localCurrentItem?.currentStock]);
 
   const handleKeyPress = useCallback((e) => {
     if (e.key === 'Enter') {
@@ -207,44 +245,44 @@ const ItemModal = ({
       subtotal: subtotal,
       discount: discount,
       taxAmount: taxAmount,
-      total: afterDiscount + taxAmount
+      total: afterDiscount + taxAmount,
+      // Preserve existing serial numbers if switching to a serialized product
+      serialNumbers: product.isSerialized ? (localCurrentItem?.serialNumbers || serialNumbers) : []
     };
 
     setLocalCurrentItem(updatedItem);
     
-    // Update parent component state
-    if (typeof updateCurrentItem === 'function') {
-      updateCurrentItem('productId', product.id);
-      updateCurrentItem('name', product.name);
-      updateCurrentItem('code', product.itemCode);
-      updateCurrentItem('itemCode', product.itemCode);
-      updateCurrentItem('taxRate', productTaxRate);
-      updateCurrentItem('isSerialized', product.isSerialized);
-      updateCurrentItem('currentStock', product.currentStock ? parseFloat(product.currentStock) : 0);
-      updateCurrentItem('rate', existingRate);
-      updateCurrentItem('quantity', existingQuantity);
-      updateCurrentItem('discountRate', existingDiscountRate);
+    // Update serial numbers state if switching to serialized product
+    if (product.isSerialized && localCurrentItem?.serialNumbers) {
+      setSerialNumbers(localCurrentItem.serialNumbers);
     }
-  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, updateCurrentItem]);
+    
+    // Don't call updateCurrentItem here - let the parent get the updated item only when save is called
+    // This prevents the circular update issue that was causing the selection to reset
+  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput]);
 
   // Enhanced local state update function
   const updateLocalItem = useCallback((field, value) => {
-    setLocalCurrentItem(prev => ({
-      ...prev,
-      [field]: value
-    }));
+    setLocalCurrentItem(prev => {
+      const updatedItem = { ...prev, [field]: value };
+      
+      // Always preserve serial numbers for serialized products
+      if (prev?.isSerialized) {
+        updatedItem.serialNumbers = serialNumbers;
+      }
+      
+      return updatedItem;
+    });
     
-    // Also update parent component
-    if (typeof updateCurrentItem === 'function') {
-      updateCurrentItem(field, value);
-    }
-  }, [updateCurrentItem]);
+    // Don't call updateCurrentItem here to avoid circular updates
+    // The parent will get the updated item when save is called
+  }, [serialNumbers]);
 
   const renderProductList = useMemo(() => {
     if (loadingProducts) {
       return (
         <div className="text-center p-3">
-          <RiLoader2Line className="spin" />
+          <RiLoader4Line className="spin" />
           <div className="text-muted">Loading products...</div>
         </div>
       );
@@ -268,6 +306,34 @@ const ItemModal = ({
                     {product.isSerialized && (
                       <Badge color="info" pill className="mt-1">Serialized</Badge>
                     )}
+                    {product.isSerialized && product.availableSerialNumbers && product.availableSerialNumbers.length > 0 && (
+                      <div className="mt-2">
+                        <small className="text-success d-block mb-1">
+                          Available Serial Numbers ({product.availableSerialNumbers.length}):
+                        </small>
+                        <div className="d-flex flex-wrap gap-1">
+                          {product.availableSerialNumbers.slice(0, 5).map((serial, index) => (
+                            <Badge
+                              key={index}
+                              color="success"
+                              className="cursor-pointer"
+                              style={{ fontSize: '0.75rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectSerialNumber(serial);
+                              }}
+                            >
+                              {serial}
+                            </Badge>
+                          ))}
+                          {product.availableSerialNumbers.length > 5 && (
+                            <Badge color="secondary" style={{ fontSize: '0.75rem' }}>
+                              +{product.availableSerialNumbers.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td className="text-end">
                     <div className="small">Stock: {product.currentStock}</div>
@@ -279,7 +345,7 @@ const ItemModal = ({
           </Table>
           {isFetchingMore && (
             <div className="text-center p-2">
-              <RiLoader2Line className="spin" />
+              <RiLoader4Line className="spin" />
             </div>
           )}
         </>
@@ -325,7 +391,7 @@ const ItemModal = ({
       {/* Product Selection Status */}
       {localCurrentItem?.productId ? (
         <div className="alert alert-success py-2 mb-3">
-          <strong>Selected:</strong> {localCurrentItem.name} ({localCurrentItem.itemCode})
+          <strong>Selected:</strong> {localCurrentItem.name} ({localCurrentItem.code || localCurrentItem.itemCode || localCurrentItem.productCode || 'N/A'})
           {localCurrentItem.isSerialized && (
             <Badge color="info" pill className="ms-2">Serialized</Badge>
           )}

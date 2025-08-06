@@ -16,7 +16,7 @@ const third = { lat: 8.7832, lng: 34.5085 }
 const fourth = { lat: 19.0760, lng: 72.8777 }
 
 const GoogleMaps = (props) => {
-  document.title="Google Maps | Velzon - React Admin & Dashboard Template";
+  document.title="Google Maps | vyavhar - React Admin & Dashboard Template";
 
   const selectedPlace = {}
 

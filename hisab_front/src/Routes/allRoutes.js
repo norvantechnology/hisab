@@ -14,6 +14,10 @@ import SalesInvoice from "../pages/Sales/Invoice";
 import Payments from "../pages/Payments";
 import WelcomePage from "../pages/Welcome/WelcomePage";
 
+// Portal Pages
+import PortalLogin from "../pages/Portal/PortalLogin";
+import PortalPage from "../pages/Portal";
+
 
 import DashboardJobs from '../pages/Dashboardjob';
 
@@ -461,7 +465,7 @@ const authProtectedRoutes = [
   { path: "/pages-pricing", component: <Pricing /> },
   { path: "/pages-sitemap", component: <SiteMap /> },
   { path: "/pages-search-results", component: <SearchResults /> },
-  { path: "/pages-privecy-policy", component: <PrivecyPolicy /> },
+  { path: "/pages-privacy-policy", component: <PrivecyPolicy /> },
   { path: "/pages-terms-condition", component: <TermsCondition /> },
   { path: "/pages-blog-list", component: <BlogListView /> },
   { path: "/pages-blog-grid", component: <BlogGridView /> },
@@ -529,6 +533,10 @@ const publicRoutes = [
   { path: "/auth-pass-change-basic", component: <BasicPasswCreate /> },
   { path: "/auth-pass-change-cover", component: <CoverPasswCreate /> },
   { path: "/auth-offline", component: <Offlinepage /> },
+
+  // Portal Routes
+  { path: "/portal/login", component: <PortalLogin /> },
+  { path: "/portal", component: <PortalPage /> },
 
 ];
 

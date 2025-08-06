@@ -3,7 +3,7 @@ import { Card, CardBody, CardHeader, Col, Container, Row } from 'reactstrap'
 import { DefaultTable, PaginationTable, SearchTable, SortingTable, LoadingStateTable, HiddenColumns } from './ReactTable'
 
 const ReactTable = () => {
-  document.title = "React Tables | Velzon - React Admin & Dashboard Template";
+  document.title = "React Tables | vyavhar - React Admin & Dashboard Template";
   return (
     <React.Fragment>
       <div className="page-content">

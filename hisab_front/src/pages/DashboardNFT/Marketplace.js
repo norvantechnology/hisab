@@ -127,7 +127,7 @@ const Marketplace = () => {
 
                                         <div className="w-100">
                                             <div className="d-flex align-items-center">
-                                                <img src={"https://img.themesbrand.com/velzon/images/img-2.gif"} className="img-fluid avatar-xs rounded-circle object-fit-cover" alt="" />
+                                                <img src={"https://img.themesbrand.com/vyavhar/images/img-2.gif"} className="img-fluid avatar-xs rounded-circle object-fit-cover" alt="" />
                                                 <div className="ms-3 flex-grow-1">
                                                     <h5 className="fs-16 mb-1">Trendy Fashion Portraits</h5>
                                                     <p className="text-muted mb-0">Artwork</p>

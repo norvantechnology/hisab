@@ -28,7 +28,7 @@ import { defineElement } from "lord-icon-element";
 defineElement(loadAnimation);
 
 const FormWizard = () => {
-  document.title = "Wizard | Velzon - React Admin & Dashboard Template";
+  document.title = "Wizard | vyavhar - React Admin & Dashboard Template";
 
   const [activeTab, setactiveTab] = useState(1);
   const [activeArrowTab, setactiveArrowTab] = useState(4);

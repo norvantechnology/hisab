@@ -7,7 +7,7 @@ import Countdown from "react-countdown"
 import comingsoon from '../../../assets/images/comingsoon.png';
 
 const ComingSoon = () => {
-    document.title = "Coming Soon | Velzon - React Admin & Dashboard Template";
+    document.title = "Coming Soon | vyavhar - React Admin & Dashboard Template";
 
     const renderer = ({ days, hours, minutes, seconds, completed }) => {
         if (completed) {

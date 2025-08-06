@@ -10,7 +10,7 @@ import PreviewCardHeader from '../../../Components/Common/PreviewCardHeader';
 import { DefaultProgressExample, BackgroundColorExample, LabelExample, MultipleBarsExample, HeightExample, StripedExample, AnimatedStripedExample, GradientExample, AnimatedExample, CustomExample, CustomProgressExample, ContentExample, ProgressWithStepExample, StepProgressArrowExample } from './UiProgressCode';
 
 const UiProgress = () => {
-    document.title="Progress | Velzon - React Admin & Dashboard Template";
+    document.title="Progress | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <UiContent />

@@ -7,7 +7,7 @@ import Pagination from "../../../../Components/Common/Pagination";
 
 const CandidateGrid = () => {
   document.title =
-    "Candidates Grid View | Velzon -  Admin & Dashboard Template";
+    "Candidates Grid View | vyavhar -  Admin & Dashboard Template";
 
   const [calendarGrid, setCalendarGrid] = useState();
   const [currentPage, setCurrentPage] = useState(1);

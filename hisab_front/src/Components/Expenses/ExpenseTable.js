@@ -41,6 +41,26 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
             enableColumnFilter: false
         },
         {
+            header: "Pending Amount",
+            accessorKey: "remaining_amount",
+            cell: (cell) => {
+                const { remaining_amount, status, contactName } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
+                
+                // Only show pending amount for contact payments with remaining amounts
+                if (contactName && pendingAmount > 0) {
+                    return (
+                        <span className="fw-semibold text-warning">
+                            ₹{pendingAmount.toFixed(2)}
+                        </span>
+                    );
+                }
+                
+                return <span className="text-muted">—</span>;
+            },
+            enableColumnFilter: false
+        },
+        {
             header: "Payment Details",
             accessorKey: "paymentDetails",
             cell: (cell) => {
@@ -93,7 +113,9 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
             header: "Status",
             accessorKey: "status",
             cell: (cell) => {
-                const { status, bankAccountName, contactName } = cell.row.original;
+                const { status, bankAccountName, contactName, remaining_amount, paid_amount } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
+                const paidAmount = parseFloat(paid_amount || 0);
                 
                 // Direct bank payment - always paid
                 if (bankAccountName && !contactName) {
@@ -104,15 +126,15 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
                     );
                 }
                 
-                // Contact payments - show actual status
+                // Contact payments - show status based on remaining amount
                 if (contactName) {
-                    if (status === 'pending') {
+                    if (pendingAmount > 0) {
                         return (
                             <Badge color="warning" className="badge-soft-warning">
                                 Pending
                             </Badge>
                         );
-                    } else if (status === 'paid') {
+                    } else {
                         return (
                             <Badge color="success" className="badge-soft-success">
                                 Paid
@@ -129,10 +151,11 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
             header: "Due Date",
             accessorKey: "dueDate",
             cell: (cell) => {
-                const { dueDate, contactName, status } = cell.row.original;
+                const { dueDate, contactName, status, remaining_amount } = cell.row.original;
+                const pendingAmount = parseFloat(remaining_amount || 0);
                 
                 // Only show due date for pending contact payments
-                if (contactName && status === 'pending' && dueDate) {
+                if (contactName && pendingAmount > 0 && dueDate) {
                     const dueDateObj = new Date(dueDate);
                     const today = new Date();
                     const isOverdue = dueDateObj < today;

@@ -5,7 +5,7 @@ import { RangeAreaBasicChartCode, RangeAreaChartCode } from './RangeAreaCharts';
 
 
 const RangeArea = () => {
-  document.title = "Apex Range Area Charts | Velzon - React Admin & Dashboard Template";
+  document.title = "Apex Range Area Charts | vyavhar - React Admin & Dashboard Template";
   return (
       <React.Fragment>
           <div className="page-content">

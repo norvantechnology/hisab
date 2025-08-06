@@ -36,7 +36,7 @@ import avatar8 from "../../../assets/images/users/avatar-8.jpg";
 import spinner1 from "../../../assets/images/logo-sm.png";
 
 const UiCards = () => {
-    document.title = "Cards | Velzon - React Admin & Dashboard Template";
+    document.title = "Cards | vyavhar - React Admin & Dashboard Template";
 
     const breakpointColumnsObj = {
         default: 3,

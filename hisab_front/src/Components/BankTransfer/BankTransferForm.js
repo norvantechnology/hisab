@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col } from 'reactstrap';
-import { RiLoader2Line } from 'react-icons/ri';
+import { RiLoader4Line } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -235,7 +235,7 @@ const BankTransferForm = ({
                         >
                             {isProcessing ? (
                                 <>
-                                    <RiLoader2Line className="spin me-1" />
+                                    <RiLoader4Line className="spin me-1" />
                                     {isEditMode ? 'Updating...' : 'Creating...'}
                                 </>
                             ) : (

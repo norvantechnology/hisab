@@ -10,7 +10,7 @@ import StoreVisits from "./StoreVisits";
 import TopSellers from "./TopSellers";
 
 const DashboardEcommerce = () => {
-  document.title = "Dashboard | Velzon - React Admin & Dashboard Template";
+  document.title = "Ecommerce Dashboard | Vyavhar - Financial Management Platform";
 
   const [rightColumn, setRightColumn] = useState(true);
   const toggleRightColumn = () => {

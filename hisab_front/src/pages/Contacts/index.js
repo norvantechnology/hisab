@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast } from 'react-toastify';
-import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
+import { RiDownload2Line, RiAddLine, RiUpload2Line } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ContactsFilter from '../../Components/Contacts/ContactsFilter';
 import ContactsTable from '../../Components/Contacts/ContactsTable';
@@ -9,14 +9,13 @@ import ContactForm from '../../Components/Contacts/ContactForm';
 import ContactViewModal from '../../Components/Contacts/ContactViewModal';
 import DeleteModal from "../../Components/Common/DeleteModal";
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
+import ImportCSVModal from '../../Components/Common/ImportCSVModal';
 import Loader from '../../Components/Common/Loader';
-import { getCurrentMonthRange } from '../../utils/dateUtils';
-import { getContacts, createContact, deleteContact, updateContact } from '../../services/contacts';
+import { getContacts, createContact, deleteContact, updateContact, bulkImportContacts } from '../../services/contacts';
 import { getBankAccounts } from '../../services/bankAccount';
+import { sampleContactData, contactFields } from '../../data/contactData';
 
 const ContactsPage = () => {
-    const currentMonthRange = getCurrentMonthRange();
-
     // State management
     const [state, setState] = useState({
         contacts: [],
@@ -33,15 +32,14 @@ const ContactsPage = () => {
         filters: {
             contactType: '',
             balanceType: '',
-            search: '',
-            startDate: currentMonthRange.startDate,
-            endDate: currentMonthRange.endDate
+            search: ''
         },
         modals: {
             delete: false,
             main: false,
             view: false,
-            export: false
+            export: false,
+            import: false
         },
         selectedContact: null,
         isEditMode: false,
@@ -64,9 +62,7 @@ const ContactsPage = () => {
                 limit: pagination.limit,
                 contactType: filters.contactType,
                 balanceType: filters.balanceType,
-                search: filters.search,
-                startDate: filters.startDate,
-                endDate: filters.endDate
+                search: filters.search
             });
 
             setState(prev => ({
@@ -107,7 +103,7 @@ const ContactsPage = () => {
 
     useEffect(() => {
         fetchData();
-    }, [pagination.page, filters.contactType, filters.balanceType, filters.search, filters.startDate, filters.endDate]);
+    }, [pagination.page, filters.contactType, filters.balanceType, filters.search]);
 
     useEffect(() => {
         fetchBankAccounts();
@@ -191,7 +187,6 @@ const ContactsPage = () => {
                 mobile: values.mobile,
                 email: values.email,
                 dueDays: values.dueDays,
-                currency: values.currency,
                 contactType: values.contactType,
                 billingAddress1: values.billingAddress1,
                 billingAddress2: values.billingAddress2,
@@ -216,18 +211,54 @@ const ContactsPage = () => {
                 ? await updateContact(payload)
                 : await createContact(payload);
 
-            if (response.success) {
-                toast.success(`Contact ${isEditMode ? 'updated' : 'created'} successfully`);
-                setState(prev => ({
-                    ...prev,
-                    modals: { ...prev.modals, main: false },
-                    apiLoading: false
-                }));
+            if (response?.success) {
+                toast.success(`Contact ${isEditMode ? 'updated' : 'created'} successfully!`);
+                toggleModal('main', false);
                 fetchData();
+            } else {
+                toast.error(response?.message || `Failed to ${isEditMode ? 'update' : 'create'} contact`);
             }
         } catch (error) {
+            console.error('Error submitting contact:', error);
+            toast.error(`Failed to ${isEditMode ? 'update' : 'create'} contact`);
+        } finally {
             setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.message || `Failed to ${isEditMode ? 'update' : 'create'} contact`);
+        }
+    };
+
+    const handleBulkImport = async (contacts, onComplete) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+            
+            const response = await bulkImportContacts({ contacts });
+            
+            if (response?.success) {
+                const { results } = response;
+                const successCount = results.success.length;
+                const errorCount = results.errors.length;
+                
+                if (successCount > 0) {
+                    toast.success(`Successfully imported ${successCount} contacts!`);
+                }
+                
+                if (errorCount > 0) {
+                    toast.warning(`${errorCount} contacts had errors. Check the import results.`);
+                }
+                
+                // Refresh the contacts list
+                fetchData();
+                
+                if (onComplete) {
+                    onComplete();
+                }
+            } else {
+                toast.error(response?.message || 'Failed to import contacts');
+            }
+        } catch (error) {
+            console.error('Error importing contacts:', error);
+            toast.error('Failed to import contacts');
+        } finally {
+            setState(prev => ({ ...prev, apiLoading: false }));
         }
     };
 
@@ -289,17 +320,19 @@ const ContactsPage = () => {
                 <ContactsFilter
                     filters={filters}
                     onFilterChange={handleFilterChange}
-                    currentMonthRange={currentMonthRange}
                 />
 
                 <Row className="mb-3">
                     <Col sm={12} className="text-end">
                         <div className="d-flex justify-content-end gap-2">
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
-                                <RiDownload2Line className="align-bottom" /> Export
+                                <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
                             <Button color="success" onClick={handleAddClick}>
-                                <RiAddLine className="align-bottom" /> Add Contact
+                                <RiAddLine className="align-middle me-1" /> Add Contact
+                            </Button>
+                            <Button color="info" onClick={() => toggleModal('import', true)}>
+                                <RiUpload2Line className="align-middle me-1" /> Import
                             </Button>
                         </div>
                     </Col>
@@ -348,6 +381,19 @@ const ContactsPage = () => {
                     onCloseClick={() => toggleModal('export', false)}
                     data={prepareExportData()}
                     filename="contacts"
+                />
+
+                <ImportCSVModal
+                    show={modals.import}
+                    onCloseClick={() => toggleModal('import', false)}
+                    onImport={handleBulkImport}
+                    sampleData={sampleContactData}
+                    requiredFields={contactFields.required}
+                    optionalFields={contactFields.optional}
+                    maxFileSize={10}
+                    isLoading={apiLoading}
+                    title="Import Contacts"
+                    description="Upload a CSV file to import multiple contacts at once. Download the sample file to see the required format."
                 />
             </Container>
         </div>

@@ -105,7 +105,7 @@ const Home = () => {
                       </div>
                     </div>
                     <h5 className="fs-15 lh-base mb-0">
-                      Work Inquiry from velzon
+                      Work Inquiry from vyavhar
                     </h5>
                   </div>
                 </div>

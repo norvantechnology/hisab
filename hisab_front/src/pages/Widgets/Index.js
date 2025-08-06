@@ -11,14 +11,14 @@ import ChartMapWidgets from './Chart&MapWidgets';
 import EcommerceWidgets from './EcommerceWidgets';
 
 const Widgets = () => {
-    document.title = "Widgets | Velzon - React Admin & Dashboard Template";
+    document.title = "Widgets | Vyavhar - Financial Management Platform";
 
     return (
         <React.Fragment>
             <div className="page-content">
 
                 <Container fluid>
-                    <BreadCrumb title="Widgets" pageTitle="Velzon" />
+                    <BreadCrumb title="Widgets" pageTitle="Vyavhar" />
                     {/* Tile Boxs Widgets */}
                     <TileBoxs />
 

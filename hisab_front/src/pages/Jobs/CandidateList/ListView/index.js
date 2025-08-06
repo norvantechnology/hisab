@@ -39,7 +39,7 @@ const CandidateList = () => {
     }
   }
 
-  document.title = "Candidate List View | Velzon -  Admin & Dashboard Template";
+  document.title = "Candidate List View | vyavhar -  Admin & Dashboard Template";
   return (
     <React.Fragment>
       <div className="page-content">

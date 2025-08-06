@@ -7,7 +7,7 @@ import {
 } from './BubbleChart';
 
 const BubbleChart = () => {
-    document.title="Bubble Charts | Velzon - React Admin & Dashboard Template";
+    document.title="Bubble Charts | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment> 
             <div className="page-content">                

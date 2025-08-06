@@ -1,6 +1,7 @@
 export { default as AccountCard } from './AccountCard';
 export { default as AccountModal } from './AccountModal';
 export { default as AccountDetailsOffcanvas } from './AccountDetailsOffcanvas';
+export { default as BankStatementModal } from './BankStatementModal';
 export { default as EmptyState } from './EmptyState';
 export { FormField, SelectField } from './FormFields';
 import { 

@@ -37,7 +37,7 @@ import {
 import MultiUser from "../../../assets/images/users/multi-user.jpg";
 import { createSelector } from "reselect";
 const Application = () => {
-  document.title = "Application | Velzon - React Admin & Dashboard Template";
+  document.title = "Application | vyavhar - React Admin & Dashboard Template";
 
   const option = [
     {

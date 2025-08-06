@@ -28,7 +28,8 @@ CREATE TABLE hisab.purchases (
 	remaining_amount numeric(15, 2) DEFAULT 0.00 NULL,
 	paid_amount numeric(15, 2) DEFAULT 0.00 NULL,
 	"deletedBy" int4 NULL,
-	CONSTRAINT purchases_check CHECK (((("bankAccountId" IS NOT NULL) AND ("contactId" IS NULL)) OR (("bankAccountId" IS NULL) AND ("contactId" IS NOT NULL)))),
+	"pdfUrl" text NULL,
+	CONSTRAINT purchases_check CHECK (((("bankAccountId" IS NOT NULL) AND ("contactId" IS NULL)) OR (("bankAccountId" IS NULL) AND ("contactId" IS NOT NULL)) OR (("bankAccountId" IS NOT NULL) AND ("contactId" IS NOT NULL)))),
 	CONSTRAINT purchases_pkey PRIMARY KEY (id),
 	CONSTRAINT purchases_status_check CHECK ((status = ANY (ARRAY['paid'::text, 'pending'::text])))
 );

@@ -1,4 +1,4 @@
-import { sendCSVEmail, sendOtpEmail } from "./emailUtils.js";
+import { sendCSVEmail, sendOtpEmail, sendEmail } from "./emailUtils.js";
 import { generateToken } from "./jwtUtils.js";
 import { errorResponse, successResponse } from "./responseUtil.js";
 import { uploadFileToS3 } from "./uploadS3.js";
@@ -9,6 +9,7 @@ import { generatePaymentPDFFromHTML, generatePaymentPDFFileName, createPaymentIn
 export {
   sendCSVEmail,
   sendOtpEmail,
+  sendEmail,
   generateToken,
   errorResponse,
   successResponse,

@@ -31,7 +31,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { createSelector } from "reselect";
 
 const CrmDeals = () => {
-  document.title="Deals | Velzon - React Admin & Dashboard Template";
+  document.title="Deals | vyavhar - React Admin & Dashboard Template";
 
   const dispatch = useDispatch();
   const crmdealsData = createSelector(

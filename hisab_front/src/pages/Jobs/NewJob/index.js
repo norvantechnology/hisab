@@ -14,7 +14,7 @@ import BreadCrumb from "../../../Components/Common/BreadCrumb";
 import Flatpickr from "react-flatpickr";
 
 const NewJobs = () => {
-  document.title = "New Job | Velzon -  Admin & Dashboard Template";
+  document.title = "New Job | vyavhar -  Admin & Dashboard Template";
 
   return (
     <React.Fragment>

@@ -17,7 +17,7 @@ import SwiperCore from "swiper";
 
 
 const SearchResults = () => {
-  document.title="Search Results | Velzon - React Admin & Dashboard Template";
+  document.title="Search Results | vyavhar - React Admin & Dashboard Template";
 
     SwiperCore.use([Autoplay]);
 
@@ -148,9 +148,9 @@ const SearchResults = () => {
                                     <TabContent activeTab={activeTab} className="text-muted">
                                         <TabPane tabId="1">
                                             <div className="pb-3">
-                                                <h5 className="mb-1 fs-16"><Link to="#">Velzon - Responsive Bootstrap 5 Admin Dashboard</Link></h5>
-                                                <p className="text-success mb-2">https://themesbrand.com/velzon/index.html</p>
-                                                <p className="text-muted mb-2">Velzon admin is super flexible, powerful, clean, modern & responsive admin template based on <span className="fw-semibold">bootstrap 5</span> stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using Velzon it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.</p>
+                                                <h5 className="mb-1 fs-16"><Link to="#">vyavhar - Responsive Bootstrap 5 Admin Dashboard</Link></h5>
+                                                <p className="text-success mb-2">https://themesbrand.com/vyavhar/index.html</p>
+                                                <p className="text-muted mb-2">vyavhar admin is super flexible, powerful, clean, modern & responsive admin template based on <span className="fw-semibold">bootstrap 5</span> stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using vyavhar it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.</p>
                                                 <ul className="list-inline d-flex align-items-center g-3 text-muted fs-14 mb-0">
                                                     <li className="list-inline-item me-3"><i className="ri-thumb-up-line align-middle me-1"></i>10</li>
                                                     <li className="list-inline-item me-3"><i className="ri-question-answer-line align-middle me-1"></i>8</li>

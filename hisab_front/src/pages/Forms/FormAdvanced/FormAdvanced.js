@@ -23,7 +23,7 @@ import SimpleBar from "simplebar-react";
 import { country } from "../../../common/data";
 
 const FormAdvanced = () => {
-  document.title = "File Advanced | Velzon - React Admin & Dashboard Template";
+  document.title = "File Advanced | vyavhar - React Admin & Dashboard Template";
 
   const [defaultCounter, setdefaultCounter] = useState(5);
   const [lightCounter, setlightCounter] = useState(5);

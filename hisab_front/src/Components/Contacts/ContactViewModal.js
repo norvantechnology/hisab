@@ -104,7 +104,30 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
     };
 
     const calculateTotalPayment = () => {
-        return Object.values(paymentAmounts).reduce((sum, amount) => sum + (parseFloat(amount) || 0), 0);
+        let totalPayable = 0;
+        let totalReceivable = 0;
+
+        selectedTransactions.forEach(transactionId => {
+            const transaction = pendingTransactions.find(t => t.id === transactionId);
+            const paymentAmount = paymentAmounts[transactionId] || 0;
+            
+            if (transaction) {
+                if (transaction.balanceType === 'payable') {
+                    // We owe them money (payable) - this increases what we pay
+                    totalPayable += paymentAmount;
+                } else if (transaction.balanceType === 'receivable') {
+                    // They owe us money (receivable) - this reduces what they owe us
+                    totalReceivable += paymentAmount;
+                }
+            }
+        });
+
+        return {
+            totalPayable,
+            totalReceivable,
+            netAmount: totalPayable - totalReceivable,
+            type: totalPayable > totalReceivable ? 'payable' : 'receivable'
+        };
     };
 
     const handleStartPayment = () => {
@@ -133,8 +156,19 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
         }
 
         const totalAmount = calculateTotalPayment();
-        if (totalAmount <= 0) {
-            setPaymentError('Payment amount must be greater than 0');
+        if (totalAmount.netAmount === 0) {
+            setPaymentError('Please adjust payment amounts - net payment cannot be zero');
+            return;
+        }
+
+        // Check if any payment amounts are entered
+        const hasPaymentAmounts = selectedTransactions.some(transactionId => {
+            const amount = paymentAmounts[transactionId] || 0;
+            return amount > 0;
+        });
+
+        if (!hasPaymentAmounts) {
+            setPaymentError('Please enter payment amounts for selected transactions');
             return;
         }
 
@@ -373,10 +407,11 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                             <Row>
                                                 <Col md={6}>
                                                     <div className="text-center">
-                                                        <h6 className="text-muted mb-2">Total Pending</h6>
+                                                        <h6 className="text-muted mb-2">Net Balance</h6>
                                                         <h4 className="mb-0 text-warning">
                                                             ₹{transactionsSummary?.totalPending?.toFixed(2) || '0.00'}
                                                         </h4>
+                                                        <small className="text-muted">Including current balance & pending transactions</small>
                                                     </div>
                                                 </Col>
                                                 <Col md={6}>
@@ -397,7 +432,7 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                     {/* Pending Purchases Table */}
                                     <Card>
                                         <div className="card-header d-flex justify-content-between align-items-center">
-                                            <h6 className="mb-0">Pending Transactions</h6>
+                                            <h6 className="mb-0">All Pending Transactions (Including Current Balance)</h6>
                                             {pendingTransactions.length > 0 && !showPaymentForm && (
                                                 <Button 
                                                     color="primary" 
@@ -475,17 +510,37 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                         {selectedTransactions.length > 0 && (
                                                             <div className="mt-3">
                                                                 <div className="bg-light p-3 rounded">
-                                                                    <h6 className="mb-2">Payment Summary</h6>
+                                                                    <h6 className="mb-3">Payment Summary</h6>
                                                                     <Row>
                                                                         <Col md={6}>
-                                                                            <small className="text-muted">Selected Transactions:</small>
-                                                                            <div className="fw-bold">{selectedTransactions.length}</div>
+                                                                            <div className="text-center">
+                                                                                <small className="text-muted d-block">Selected Transactions</small>
+                                                                                <div className="fw-bold fs-5">{selectedTransactions.length}</div>
+                                                                            </div>
                                                                         </Col>
                                                                         <Col md={6}>
-                                                                            <small className="text-muted">Total Payment Amount:</small>
-                                                                            <div className="fw-bold text-primary">₹{calculateTotalPayment().toFixed(2)}</div>
+                                                                            <div className="text-center">
+                                                                                <small className="text-muted d-block">Net Payment</small>
+                                                                                <div className={`fw-bold fs-5 ${calculateTotalPayment().type === 'payable' ? 'text-danger' : 'text-success'}`}>
+                                                                                    ₹{Math.abs(calculateTotalPayment().netAmount).toFixed(2)}
+                                                                                </div>
+                                                                                <Badge 
+                                                                                    color={calculateTotalPayment().type === 'payable' ? 'danger' : 'success'}
+                                                                                    className="mt-1"
+                                                                                >
+                                                                                    {calculateTotalPayment().type === 'payable' ? 'We Pay' : 'We Receive'}
+                                                                                </Badge>
+                                                                            </div>
                                                                         </Col>
                                                                     </Row>
+                                                                    <div className="text-center mt-2">
+                                                                        <small className="text-muted">
+                                                                            {calculateTotalPayment().type === 'payable' 
+                                                                                ? 'This is the amount you will pay to settle the selected transactions'
+                                                                                : 'This is the amount you will receive from the selected transactions'
+                                                                            }
+                                                                        </small>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                         )}

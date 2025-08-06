@@ -69,7 +69,7 @@ const discoverItemsData = [
         cardImg: avatar10,
         author: "Diana Kohler",
         title: "Owners",
-        img: "https://img.themesbrand.com/velzon/images/img-1.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-1.gif",
         likes: "8.34k",
         price: "701.38 ETH",
         category: "Long-tailed macaque",
@@ -124,7 +124,7 @@ const productData = [
     },
     {
         id: 3,
-        img: "https://img.themesbrand.com/velzon/images/img-4.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-4.gif",
         likes: "15.93k",
         title: "Evolved Reality",
         category: "Video",

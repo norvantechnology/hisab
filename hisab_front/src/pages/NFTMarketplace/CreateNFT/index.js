@@ -15,7 +15,7 @@ import 'filepond-plugin-image-preview/dist/filepond-plugin-image-preview.css';
 registerPlugin(FilePondPluginImageExifOrientation, FilePondPluginImagePreview);
 
 const CreateNFT = () => {
-    document.title = "Create NFT | Velzon - React Admin & Dashboard Template";
+    document.title = "Create NFT | vyavhar - React Admin & Dashboard Template";
 
     const [files, setFiles] = useState([]);
 

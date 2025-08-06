@@ -36,7 +36,7 @@ const Section = () => {
                                             </div>
                                             <div className="col-md">
                                                 <div>
-                                                    <h4 className="fw-bold">Velzon - Admin & Dashboard</h4>
+                                                    <h4 className="fw-bold">vyavhar - Admin & Dashboard</h4>
                                                     <div className="hstack gap-3 flex-wrap">
                                                         <div><i className="ri-building-line align-bottom me-1"></i> Themesbrand</div>
                                                         <div className="vr"></div>

@@ -19,7 +19,7 @@ const Footer = () => {
                                 </div>
                                 <div className="mt-4 fs-13">
                                     <p>Premium Multipurpose Admin & Dashboard Template</p>
-                                    <p>You can build any type of web application like eCommerce, CRM, CMS, Project management apps, Admin Panels, etc using Velzon.</p>
+                                    <p>You can build any type of web application like eCommerce, CRM, CMS, Project management apps, Admin Panels, etc using vyavhar.</p>
                                 </div>
                             </div>
                         </Col>
@@ -66,9 +66,9 @@ const Footer = () => {
                         <Col sm={6}>
 
                             <div>
-                                <p className="copy-rights mb-0">
-                                    {new Date().getFullYear()} © Velzon - Themesbrand
-                                </p>
+                                                <p className="copy-rights mb-0">
+                  {new Date().getFullYear()} © Vyavhar - Financial Management Platform
+                </p>
                             </div>
                         </Col>
                         <Col sm={6}>

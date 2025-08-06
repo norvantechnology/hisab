@@ -157,7 +157,7 @@ function InvoiceAction() {
                                             <Link to="#" itemProp="url" style={{ fontFamily: "Roboto, sans-serif", boxSizing: "border-box", fontSize: ".8125rem", color: "#FFF", textDecoration: "none", fontWeight: 400, textAlign: "center", cursor: "pointer", display: "inline-block", borderRadius: ".25rem", textTransform: "capitalize", backgroundColor: "#0ab39c", margin: 0, borderColor: "#0ab39c", borderStyle: "solid", borderWidth: "1px", padding: ".5rem .9rem" }}>Back to Shop</Link>
                                         </div>
                                         <div style={{ textAlign: "center", margin: "28px auto 0px auto" }}>
-                                            <p style={{ fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px" }}>2022 Velzon. Design & Develop by Themesbrand</p>
+                                            <p style={{ fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px" }}>2022 vyavhar. Design & Develop by Themesbrand</p>
                                         </div>
                                     </div>
                                 </td>

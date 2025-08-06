@@ -24,10 +24,19 @@ CREATE TABLE hisab.payments (
 	"adjustmentValue" numeric(15, 2) NULL,
 	"openingBalancePayment" numeric(15, 2) DEFAULT 0.00 NULL,
 	"deletedBy" int4 NULL,
+	"pdfUrl" text NULL, -- S3 URL of the generated payment PDF invoice
+	"pdfGeneratedAt" timestamp NULL, -- Timestamp when the PDF was last generated
 	CONSTRAINT "payments_adjustmentType_check" CHECK (("adjustmentType" = ANY (ARRAY['none'::text, 'discount'::text, 'extra_receipt'::text, 'surcharge'::text]))),
 	CONSTRAINT "payments_paymentType_check" CHECK (("paymentType" = ANY (ARRAY['payment'::text, 'receipt'::text]))),
 	CONSTRAINT payments_pkey PRIMARY KEY (id)
 );
+CREATE INDEX idx_payments_pdf_generated_at ON hisab.payments USING btree ("pdfGeneratedAt") WHERE ("pdfGeneratedAt" IS NOT NULL);
+CREATE INDEX idx_payments_pdf_url ON hisab.payments USING btree ("pdfUrl") WHERE ("pdfUrl" IS NOT NULL);
+
+-- Column comments
+
+COMMENT ON COLUMN hisab.payments."pdfUrl" IS 'S3 URL of the generated payment PDF invoice';
+COMMENT ON COLUMN hisab.payments."pdfGeneratedAt" IS 'Timestamp when the PDF was last generated';
 
 -- Permissions
 

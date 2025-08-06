@@ -115,7 +115,7 @@ const OverviewTab = () => {
                                                         </div>
                                                     </div>
                                                     <div className="flex-grow-1 overflow-hidden">
-                                                        <h5 className="fs-14 mb-1"><Link to="#" className="text-body text-truncate d-block">Velzon admin.ppt</Link></h5>
+                                                        <h5 className="fs-14 mb-1"><Link to="#" className="text-body text-truncate d-block">vyavhar admin.ppt</Link></h5>
                                                         <div>2.4MB</div>
                                                     </div>
                                                     <div className="flex-shrink-0 ms-2">
@@ -472,7 +472,7 @@ const OverviewTab = () => {
                                             </div>
                                         </div>
                                         <div className="flex-grow-1 overflow-hidden">
-                                            <h5 className="fs-15 mb-1"><Link to="#" className="text-body text-truncate d-block">Velzon-admin.ppt</Link></h5>
+                                            <h5 className="fs-15 mb-1"><Link to="#" className="text-body text-truncate d-block">vyavhar-admin.ppt</Link></h5>
                                             <div>2.4MB</div>
                                         </div>
                                         <div className="flex-shrink-0 ms-2">

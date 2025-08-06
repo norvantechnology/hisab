@@ -1,3 +1,9 @@
+-- hisab."bankAccounts" definition
+
+-- Drop table
+
+-- DROP TABLE hisab."bankAccounts";
+
 CREATE TABLE hisab."bankAccounts" (
 	id serial4 NOT NULL,
 	"userId" int4 NOT NULL,

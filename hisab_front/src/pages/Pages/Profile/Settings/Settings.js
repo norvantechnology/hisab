@@ -9,7 +9,7 @@ import progileBg from '../../../../assets/images/profile-bg.jpg';
 import avatar1 from '../../../../assets/images/users/avatar-1.jpg';
 
 const Settings = () => {
-    document.title = "Profile Settings | Velzon - React Admin & Dashboard Template";
+    document.title = "Profile Settings | vyavhar - React Admin & Dashboard Template";
 
     const [activeTab, setActiveTab] = useState("1");
     const [jobdescription, setJobdescription] = useState("You always want to make sure that your fonts work well together and try to limit the number of fonts you use to three or less. Experiment and play around with the fonts that you already have in the software you're working with reputable font websites.")
@@ -115,7 +115,7 @@ const Settings = () => {
                                             </span>
                                         </div>
                                         <Input type="text" className="form-control" id="websiteInput"
-                                            placeholder="www.example.com" defaultValue="www.velzon.com" />
+                                            placeholder="www.example.com" defaultValue="www.vyavhar.com" />
                                     </div>
                                     <div className="mb-3 d-flex">
                                         <div className="avatar-xs d-block flex-shrink-0 me-3">
@@ -226,7 +226,7 @@ const Settings = () => {
                                                                 Address</Label>
                                                             <Input type="email" className="form-control" id="emailInput"
                                                                 placeholder="Enter your email"
-                                                                defaultValue="daveadame@velzon.com" />
+                                                                defaultValue="daveadame@vyavhar.com" />
                                                         </div>
                                                     </Col>
                                                     <Col lg={12}>
@@ -268,7 +268,7 @@ const Settings = () => {
                                                             <Label htmlFor="websiteInput1"
                                                                 className="form-label">Website</Label>
                                                             <Input type="text" className="form-control" id="websiteInput1"
-                                                                placeholder="www.example.com" defaultValue="www.velzon.com" />
+                                                                placeholder="www.example.com" defaultValue="www.vyavhar.com" />
                                                         </div>
                                                     </Col>
                                                     <Col lg={4}>

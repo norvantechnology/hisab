@@ -4,7 +4,6 @@ import {
     RiCheckboxCircleLine, 
     RiCloseLine, 
     RiInformationLine, 
-    RiMoneyDollarCircleLine, 
     RiCalendarLine, 
     RiFundsLine, 
     RiShieldCheckLine, 
@@ -49,7 +48,7 @@ const AccountDetailsOffcanvas = ({ isOpen, toggle, account }) => {
                                     <tbody>
                                         <tr>
                                             <td className="ps-0">
-                                                <RiMoneyDollarCircleLine className="text-primary me-2" />
+                                                <RiFundsLine className="text-primary me-2" />
                                                 Current Balance
                                             </td>
                                             <td className="text-end pe-0">

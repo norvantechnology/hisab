@@ -1,12 +1,19 @@
-CREATE TABLE IF NOT EXISTS hisab."permissionTypes" (
-  "id" SERIAL PRIMARY KEY,
-  "name" VARCHAR(50) NOT NULL,
-  "description" TEXT,
-  "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+-- hisab."permissionTypes" definition
+
+-- Drop table
+
+-- DROP TABLE hisab."permissionTypes";
+
+CREATE TABLE hisab."permissionTypes" (
+	id serial4 NOT NULL,
+	"name" varchar(50) NOT NULL,
+	description text NULL,
+	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"updatedAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	CONSTRAINT "permissionTypes_pkey" PRIMARY KEY (id)
 );
 
-INSERT INTO hisab."permissionTypes" ("name", "description") VALUES
-('VIEWER', 'Can view company data'),
-('EDITOR', 'Can view and edit company data'),
-('ADMIN', 'Full access including user management');
+-- Permissions
+
+ALTER TABLE hisab."permissionTypes" OWNER TO avnadmin;
+GRANT ALL ON TABLE hisab."permissionTypes" TO avnadmin;

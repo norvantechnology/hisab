@@ -31,7 +31,7 @@ import img11 from "../../../assets/images/small/img-11.jpg";
 import img12 from "../../../assets/images/small/img-12.jpg";
 
 const UiSwiperSlider = () => {
-    document.title="Scrollbar | Velzon - React Admin & Dashboard Template";
+    document.title="Scrollbar | vyavhar - React Admin & Dashboard Template";
 
     const pagination = {
         clickable: true,

@@ -36,7 +36,7 @@ import { Link } from "react-router-dom";
 import { createSelector } from "reselect";
 
 const EcommerceSellerDetail = () => {
-  document.title = "Sellers Details | Velzon - React Admin & Dashboard Template";
+  document.title = "Sellers Details | vyavhar - React Admin & Dashboard Template";
 
   const dispatch = useDispatch();
 

@@ -293,22 +293,34 @@ const TableContainer = ({
           </thead>
 
           <tbody>
-            {getRowModel().rows.map((row) => {
-              return (
-                <tr key={row.id}>
-                  {row.getVisibleCells().map((cell) => {
-                    return (
-                      <td key={cell.id}>
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              );
-            })}
+            {getRowModel().rows.length > 0 ? (
+              getRowModel().rows.map((row) => {
+                return (
+                  <tr key={row.id}>
+                    {row.getVisibleCells().map((cell) => {
+                      return (
+                        <td key={cell.id}>
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext()
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={getHeaderGroups()[0]?.headers?.length || 1} className="text-center py-4">
+                  <div className="d-flex flex-column align-items-center">
+                    <i className="bx bx-inbox bx-lg text-muted mb-2"></i>
+                    <h6 className="text-muted mb-1">No Data Available</h6>
+                    <p className="text-muted mb-0 small">There are no records to display at the moment.</p>
+                  </div>
+                </td>
+              </tr>
+            )}
           </tbody>
         </Table>
       </div>

@@ -17,7 +17,7 @@ import {
 import { Link } from 'react-router-dom';
 
 const AreaCharts = () => {
-    document.title="Area Charts | Velzon - React Admin & Dashboard Template";
+    document.title="Area Charts | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">                

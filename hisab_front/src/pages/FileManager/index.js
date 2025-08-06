@@ -26,7 +26,7 @@ import { createSelector } from 'reselect';
 
 
 const FileManager = () => {
-    document.title = "File Manager | Velzon - React Admin & Dashboard Template";
+    document.title = "File Manager | Vyavhar - Financial Management Platform";
 
     const dispatch = useDispatch();
 
@@ -707,7 +707,7 @@ const FileManager = () => {
                                                             </tr>
                                                             <tr>
                                                                 <th scope="row">Share Path :</th>
-                                                                <td className="share-path">velzon:\Documents\</td>
+                                                                <td className="share-path">vyavhar:\Documents\</td>
                                                             </tr>
                                                         </tbody>
                                                     </table>

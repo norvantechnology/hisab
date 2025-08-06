@@ -21,7 +21,7 @@ const jobProcess = [
   {
     id: 3,
     lable: "Find Job",
-    desc: "Search for your dream jobs from velzon.",
+    desc: "Search for your dream jobs from vyavhar.",
   },
   {
     id: 4,

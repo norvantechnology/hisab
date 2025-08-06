@@ -18,6 +18,7 @@ CREATE TABLE hisab.companies (
 	state text NULL,
 	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
 	"updatedAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
+	"logoUrl" text NULL,
 	CONSTRAINT companies_pkey PRIMARY KEY (id)
 );
 

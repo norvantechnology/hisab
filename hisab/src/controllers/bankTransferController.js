@@ -189,7 +189,7 @@ export async function updateBankTransfer(req, res) {
 
     if (changingBanks) {
       // Verify new bank accounts exist and are active
-      var banksQuery = await client.query(
+      const banksQuery = await client.query(
         `SELECT id, "currentBalance" FROM hisab."bankAccounts" 
          WHERE id IN ($1, $2) AND "companyId" = $3 AND "isActive" = TRUE
          FOR UPDATE`,

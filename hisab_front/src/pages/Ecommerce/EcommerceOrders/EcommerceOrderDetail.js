@@ -17,7 +17,7 @@ import EcommerceOrderProduct from "./EcommerceOrderProduct";
 import avatar3 from "../../../assets/images/users/avatar-3.jpg";
 
 const EcommerceOrderDetail = (props) => {
-  document.title = "Order Details | Velzon - React Admin & Dashboard Template";
+  document.title = "Order Details | Vyavhar - Financial Management Platform";
 
   const [col1, setcol1] = useState(true);
   const [col2, setcol2] = useState(true);
@@ -87,7 +87,7 @@ const EcommerceOrderDetail = (props) => {
                               <tr>
                                 <td>
                                   Discount{" "}
-                                  <span className="text-muted">(VELZON15)</span>{" "}
+                                  <span className="text-muted">(VYAVHAR15)</span>{" "}
                                   : :
                                 </td>
                                 <td className="text-end">-$53.99</td>

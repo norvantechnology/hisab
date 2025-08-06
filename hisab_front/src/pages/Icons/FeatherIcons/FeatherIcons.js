@@ -5,7 +5,7 @@ import BreadCrumb from '../../../Components/Common/BreadCrumb';
 
 
 const FeatherIcons = () => {
-  document.title="Feather Icons | Velzon - React Admin & Dashboard Template";
+  document.title="Feather Icons | vyavhar - React Admin & Dashboard Template";
 
     return (
         <React.Fragment>

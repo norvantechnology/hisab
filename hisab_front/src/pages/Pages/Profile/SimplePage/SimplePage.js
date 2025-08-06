@@ -47,7 +47,7 @@ const SimplePage = () => {
         }
     };
 
-    document.title = "Profile | Velzon - React Admin & Dashboard Template";
+    document.title = "Profile | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">
@@ -180,7 +180,7 @@ const SimplePage = () => {
                                                                     </tr>
                                                                     <tr>
                                                                         <th className="ps-0" scope="row">E-mail :</th>
-                                                                        <td className="text-muted">daveadame@velzon.com</td>
+                                                                        <td className="text-muted">daveadame@vyavhar.com</td>
                                                                     </tr>
                                                                     <tr>
                                                                         <th className="ps-0" scope="row">Location :</th>
@@ -447,7 +447,7 @@ const SimplePage = () => {
                                                                     </div>
                                                                     <div className="flex-grow-1 overflow-hidden">
                                                                         <p className="mb-1">Website :</p>
-                                                                        <Link to="#" className="fw-semibold">www.velzon.com</Link>
+                                                                        <Link to="#" className="fw-semibold">www.vyavhar.com</Link>
                                                                     </div>
                                                                 </div>
                                                             </Col>
@@ -723,8 +723,8 @@ const SimplePage = () => {
                                                                                             className="accordion-body ms-2 ps-5">
                                                                                             <p className="text-muted mb-2">
                                                                                                 Every team project can
-                                                                                                have a velzon. Use the
-                                                                                                velzon to share
+                                                                                                have a vyavhar. Use the
+                                                                                                vyavhar to share
                                                                                                 information with your
                                                                                                 team to understand and
                                                                                                 contribute to your
@@ -888,7 +888,7 @@ const SimplePage = () => {
                                                                                                     className="flex-grow-1 ms-3">
                                                                                                     <h6
                                                                                                         className="fs-14 mb-1">
-                                                                                                        Velzon admin
+                                                                                                        vyavhar admin
                                                                                                         dashboard
                                                                                                         templates layout
                                                                                                         upload</h6>
@@ -1286,8 +1286,8 @@ const SimplePage = () => {
                                                                                             className="accordion-body ms-2 ps-5">
                                                                                             <p className="text-muted mb-2">
                                                                                                 Every team project can
-                                                                                                have a velzon. Use the
-                                                                                                velzon to share
+                                                                                                have a vyavhar. Use the
+                                                                                                vyavhar to share
                                                                                                 information with your
                                                                                                 team to understand and
                                                                                                 contribute to your
@@ -1782,7 +1782,7 @@ const SimplePage = () => {
                                                         </div>
                                                         <div className="flex-grow-1 ms-3">
                                                             <h6 className="mb-1">Bethany Johnson</h6>
-                                                            <p className="text-muted mb-2">added a new member to velzon
+                                                            <p className="text-muted mb-2">added a new member to vyavhar
                                                                 dashboard</p>
                                                             <small className="mb-0 text-muted">19 Nov</small>
                                                         </div>

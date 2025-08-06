@@ -27,7 +27,7 @@ import img8 from "../../../assets/images/small/img-8.jpg";
 
 
 const UiTabs = () => {
-    document.title="Tabs | Velzon - React Admin & Dashboard Template";
+    document.title="Tabs | vyavhar - React Admin & Dashboard Template";
 
     // Default Tabs
     const [activeTab, setactiveTab] = useState("1");

@@ -203,7 +203,7 @@ const Candidates = () => {
                                 </div>
                             </div>
                             <div className="flex-grow-1 ms-3">
-                                <h6 className="fs-16">Invite your friends to Velzon</h6>
+                                <h6 className="fs-16">Invite your friends to vyavhar</h6>
                                 <p className="text-muted mb-0">
                                     Nor again is there anyone who loves or pursues or desires to
                                     obtain pain of itself, because it is pain, but because

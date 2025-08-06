@@ -8,7 +8,7 @@ import RecentArticleTable from './RecentArticleTable'
 
 const DashboardBlog = () => {
 
-  document.title="Blog | Velzon - React Admin & Dashboard Template";
+  document.title="Blog | vyavhar - React Admin & Dashboard Template";
 
   return (
     <React.Fragment>

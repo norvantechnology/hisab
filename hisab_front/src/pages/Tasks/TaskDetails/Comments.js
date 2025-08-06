@@ -186,7 +186,7 @@ const Comments = () => {
                                                         </div>
                                                     </div>
                                                     <div className="ms-3 flex-grow-1">
-                                                        <h6 className="fs-15 mb-0"><Link to="#">Velzon admin.ppt</Link></h6>
+                                                        <h6 className="fs-15 mb-0"><Link to="#">vyavhar admin.ppt</Link></h6>
                                                     </div>
                                                 </div>
                                             </td>

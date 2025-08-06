@@ -1,9 +1,9 @@
 import React from 'react';
 import { Card, CardBody, Row, Col, Badge, UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-import { RiEyeLine, RiPencilLine, RiDeleteBinLine, RiMoreFill, RiCheckboxCircleLine, RiCloseLine } from 'react-icons/ri';
+import { RiEyeLine, RiPencilLine, RiDeleteBinLine, RiMoreFill, RiCheckboxCircleLine, RiCloseLine, RiFileTextLine } from 'react-icons/ri';
 import { ACCOUNT_TYPES } from './index';
 
-const AccountCard = ({ account, onView, onEdit, onDelete }) => {
+const AccountCard = ({ account, onView, onEdit, onDelete, onStatement }) => {
     const accountTypeConfig = ACCOUNT_TYPES[account.accountType] || ACCOUNT_TYPES.bank;
 
     return (
@@ -30,14 +30,17 @@ const AccountCard = ({ account, onView, onEdit, onDelete }) => {
                             </DropdownToggle>
                             <DropdownMenu>
                                 <DropdownItem onClick={onView}>
-                                    <RiEyeLine className="me-2 align-bottom text-muted" />View
+                                    <RiEyeLine className="me-2 align-middle text-muted" />View
                                 </DropdownItem>
-                                <DropdownItem onClick={onEdit}>
-                                    <RiPencilLine className="me-2 align-bottom text-muted" />Edit
+                                <DropdownItem onClick={() => onStatement(account)}>
+                                    <RiFileTextLine className="me-2 align-middle text-muted" />Statement
+                                </DropdownItem>
+                                <DropdownItem onClick={() => onEdit(account)}>
+                                    <RiPencilLine className="me-2 align-middle text-muted" />Edit
                                 </DropdownItem>
                                 <DropdownItem divider />
-                                <DropdownItem onClick={onDelete} className="text-danger">
-                                    <RiDeleteBinLine className="me-2 align-bottom" />Delete
+                                <DropdownItem onClick={() => onDelete(account)}>
+                                    <RiDeleteBinLine className="me-2 align-middle" />Delete
                                 </DropdownItem>
                             </DropdownMenu>
                         </UncontrolledDropdown>

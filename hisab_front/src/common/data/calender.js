@@ -209,7 +209,7 @@ const events = [
   },
   {
     id: 456,
-    title: "Velzon Project Discussion with Team",
+    title: "vyavhar Project Discussion with Team",
     start: new Date(y, m, d + 23, 20, 0),
     end: new Date(y, m, d + 24, 16, 0),
     allDay: false,

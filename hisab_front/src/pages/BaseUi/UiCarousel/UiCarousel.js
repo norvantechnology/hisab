@@ -17,7 +17,7 @@ import SlideDark from './CarouselTypes/slideDark';
 import { SlideOnlyExample, WithControlExample, WithIndicatorExample, WithCaptionExample, CrossFadeExample, InduvidualIntervalExample, DisableTouchExample, DarkVariantExample } from './UiCarouselCode';
 
 const UiCarousel = () => {
-    document.title="Carousel | Velzon - React Admin & Dashboard Template";
+    document.title="Carousel | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <UiContent />

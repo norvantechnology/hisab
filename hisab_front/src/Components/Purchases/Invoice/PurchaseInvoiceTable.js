@@ -30,17 +30,88 @@ const PurchaseInvoiceTable = ({
         {
             header: "Vendor",
             accessorKey: "vendor",
-            cell: (cell) => (
-                <div>
-                    <h6 className="mb-0">
-                        {cell.row.original.bankAccount?.name
-                            || (cell.row.original.contact?.name ? cell.row.original.contact?.name : '')}
-                    </h6>
-                    {cell.row.original.contact?.gstin && (
-                        <small className="text-muted">{cell.row.original.contact.gstin}</small>
-                    )}
-                </div>
-            ),
+            cell: (cell) => {
+                const hasContact = cell.row.original.contact?.name || cell.row.original.contactId;
+                const hasBank = cell.row.original.bankAccount?.name || cell.row.original.bankAccountId;
+                
+                return (
+                    <div>
+                        <h6 className="mb-0">
+                            {/* Always show contact name if available, otherwise show bank name */}
+                            {cell.row.original.contact?.name || cell.row.original.bankAccount?.name || 'N/A'}
+                        </h6>
+                        {cell.row.original.contact?.gstin && (
+                            <small className="text-muted">{cell.row.original.contact.gstin}</small>
+                        )}
+                        {/* Show payment bank info when both contact and bank are present */}
+                        {hasContact && hasBank && (
+                            <small className="text-info d-block">
+                                <i className="ri-arrow-right-line me-1"></i>
+                                Amount paid from {cell.row.original.bankAccount.name}
+                            </small>
+                        )}
+                        {/* Show bank-only info when only bank is present */}
+                        {!hasContact && hasBank && (
+                            <small className="text-info d-block">
+                                <i className="ri-bank-line me-1"></i>
+                                Direct Bank Purchase
+                            </small>
+                        )}
+                    </div>
+                );
+            },
+            enableColumnFilter: false
+        },
+        {
+            header: "Payment Method",
+            accessorKey: "paymentMethod",
+            cell: (cell) => {
+                const hasContact = cell.row.original.contact?.name || cell.row.original.contactId;
+                const hasBank = cell.row.original.bankAccount?.name || cell.row.original.bankAccountId;
+                
+                if (hasContact && hasBank) {
+                    return (
+                        <div>
+                            <span className="badge bg-primary-subtle text-primary">
+                                <i className="ri-user-line me-1"></i>
+                                Contact
+                            </span>
+                            <br />
+                            <small className="text-muted">
+                                <i className="ri-arrow-right-line me-1"></i>
+                                via {cell.row.original.bankAccount.name}
+                            </small>
+                        </div>
+                    );
+                } else if (hasBank && !hasContact) {
+                    return (
+                        <div>
+                            <span className="badge bg-success-subtle text-success">
+                                <i className="ri-bank-line me-1"></i>
+                                Bank
+                            </span>
+                        </div>
+                    );
+                } else if (hasContact && !hasBank) {
+                    return (
+                        <div>
+                            <span className="badge bg-warning-subtle text-warning">
+                                <i className="ri-user-line me-1"></i>
+                                Contact
+                            </span>
+                        </div>
+                    );
+                } else {
+                    return (
+                        <div>
+                            <span className="badge bg-secondary-subtle text-secondary">
+                                <i className="ri-question-line me-1"></i>
+                                Unknown
+                            </span>
+                        </div>
+                    );
+                }
+            },
             enableColumnFilter: false
         },
         {

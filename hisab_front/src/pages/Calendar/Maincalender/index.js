@@ -50,7 +50,7 @@ import {
 import { createSelector } from "reselect";
 
 const Calender = () => {
-  document.title = "Calendar | Velzon - React Admin & Dashboard Template";
+  document.title = "Calendar | Vyavhar - Financial Management Platform";
 
   const dispatch = useDispatch();
   const [event, setEvent] = useState({});

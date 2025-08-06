@@ -16,7 +16,7 @@ import logosm from "../../../assets/images/logo-sm.png";
 import { BootstrapToastsExample, ToastPlacementExample, BorderIconExample, ToastifyExample } from './UiNotificationsCode';
 
 const UiNotifications = () => {
-    document.title="Notifications | Velzon - React Admin & Dashboard Template";
+    document.title="Notifications | vyavhar - React Admin & Dashboard Template";
 
     const [toast1, setToast1] = useState(true);
     const [toast2, setToast2] = useState(true);
@@ -67,7 +67,7 @@ const UiNotifications = () => {
                                                         <ToastHeader toggle={() => setToast1(!toast1)}>
                                                             <img src={logosm} className="rounded me-2"
                                                                 alt="..." height="20" />
-                                                            <span className="fw-semibold me-auto">Velzon</span>
+                                                            <span className="fw-semibold me-auto">Vyavhar</span>
                                                             <small style={{ marginLeft: "140px" }}>06 mins ago</small>
                                                         </ToastHeader>
                                                         <ToastBody>
@@ -86,7 +86,7 @@ const UiNotifications = () => {
                                                             <ToastHeader toggle={() => setToast2(!toast2)}>
                                                                 <img src={logosm} className="rounded me-2"
                                                                     alt="..." height="20" />
-                                                                <span className="fw-semibold me-auto">Velzon</span>
+                                                                <span className="fw-semibold me-auto">Vyavhar</span>
                                                                 <small style={{ marginLeft: "150px" }}>11 mins ago</small>
                                                             </ToastHeader>
                                                             <ToastBody>
@@ -108,7 +108,7 @@ const UiNotifications = () => {
                                                             <ToastHeader toggle={() => setToast3(!toast3)}>
                                                                 <img src={logosm} className="rounded me-2"
                                                                     alt="..." height="20" />
-                                                                <span className="fw-semibold me-auto">Velzon</span>
+                                                                <span className="fw-semibold me-auto">Vyavhar</span>
                                                                 <small style={{ marginLeft: "165px" }}>Just now</small>
                                                             </ToastHeader>
                                                             <ToastBody>
@@ -120,7 +120,7 @@ const UiNotifications = () => {
                                                             <ToastHeader toggle={() => setToast4(!toast4)}>
                                                                 <img src={logosm} className="rounded me-2"
                                                                     alt="..." height="20" />
-                                                                <span className="fw-semibold me-auto">Velzon</span>
+                                                                <span className="fw-semibold me-auto">Vyavhar</span>
                                                                 <small style={{ marginLeft: "130px" }}>2 seconds ago</small>
                                                             </ToastHeader>
                                                             <ToastBody>
@@ -143,7 +143,7 @@ const UiNotifications = () => {
                                                                 <ToastHeader toggle={() => setToast5(!toast5)}>
                                                                     <img src={logosm} className="rounded me-2"
                                                                         alt="..." height="20" />
-                                                                    <span className="fw-semibold me-auto">Velzon</span>
+                                                                    <span className="fw-semibold me-auto">Vyavhar</span>
                                                                     <small style={{ marginLeft: "140px" }}>06 mins ago</small>
                                                                 </ToastHeader>
                                                                 <ToastBody>
@@ -163,7 +163,7 @@ const UiNotifications = () => {
                                                                 <ToastHeader toggle={() => setToast6(!toast6)}>
                                                                     <img src={logosm} className="rounded me-2"
                                                                         alt="..." height="20" />
-                                                                    <span className="fw-semibold me-auto">Velzon</span>
+                                                                    <span className="fw-semibold me-auto">Vyavhar</span>
                                                                     <small style={{ marginLeft: "150px" }}>11 mins ago</small>
                                                                 </ToastHeader>
                                                                 <ToastBody>
@@ -218,7 +218,7 @@ const UiNotifications = () => {
                                                     <ToastHeader toggle={() => setToast11(!toast11)}>
                                                         <img src={logosm} className="rounded me-2"
                                                             alt="..." height="20" />
-                                                        <strong className="me-auto">Velzon</strong>
+                                                        <strong className="me-auto">Vyavhar</strong>
                                                         <small style={{ marginLeft: "150px" }}>11 mins ago</small>
                                                     </ToastHeader>
                                                     <ToastBody>

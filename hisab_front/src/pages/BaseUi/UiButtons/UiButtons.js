@@ -11,7 +11,7 @@ import { Link } from 'react-router-dom';
 import { DefaultButtonsExample, OutlineButtonsExample, RoundedButtonsExample, SoftButtonsExample, GradientButtonsExample, AnimationButtonsExample, LabelButtonsExample, SizeButtonsExample, WidthButtonsExample, TagButtonsExample, GridButtonsExample, CheckButtonsExample, GroupButtonsExample, IconButtonsExample, ToolbarButtonsExample, GroupsizingButtonsExample, VerticalButtonsExample, GhostButtonsExample, LoadingbuttonsExample, BorderButtonsExample, CustomToggleButtonsExample, CustomSizingExample, BaseClassExample, FocusButtonExample, FocusUtilitiesExample } from './UiButtonCode';
 
 const UiButtons = () => {
-    document.title = "Buttons | Velzon - React Admin & Dashboard Template";
+    document.title = "Buttons | vyavhar - React Admin & Dashboard Template";
     const favouriteBtn = (ele) => {
         if (ele.closest("button").classList.contains("active")) {
             ele.closest("button").classList.remove("active");

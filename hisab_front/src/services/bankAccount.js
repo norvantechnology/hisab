@@ -19,6 +19,23 @@ export const getBankAccounts = async (params) => {
     });
 };
 
+export const getBankStatement = async (bankAccountId, params) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/bankAccount/getBankStatement/${bankAccountId}`,
+        params
+    });
+};
+
+export const exportBankStatementPDF = async (bankAccountId, params) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/bankAccount/exportBankStatementPDF/${bankAccountId}`,
+        params,
+        responseType: 'blob' // Important for PDF download
+    });
+};
+
 export const updateBankAccount = async (accountData) => {
     return apiCall({
         method: 'put',

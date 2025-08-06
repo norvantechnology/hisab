@@ -11,7 +11,7 @@ import UpcomingActivities from './UpcomingActivities';
 import Widgets from './Widgets';
 
 const DashboardCrm = () => {
-    document.title="CRM | Velzon - React Admin & Dashboard Template";
+    document.title = "CRM Dashboard | Vyavhar - Financial Management Platform";
     return (
         <React.Fragment>
             <div className="page-content">

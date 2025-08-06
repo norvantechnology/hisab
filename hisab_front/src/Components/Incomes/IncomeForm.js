@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col } from 'reactstrap';
-import { RiLoader2Line, RiBankLine, RiUser3Line } from 'react-icons/ri';
+import { RiLoader4Line, RiBankLine, RiUser3Line } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -8,7 +8,6 @@ import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
 
 const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, onSubmit, isLoading }) => {
-
 
     const validation = useFormik({
         enableReinitialize: true,
@@ -19,7 +18,7 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
             paymentMethod: selectedIncome?.bankAccountId && !selectedIncome?.contactId ? 'bank' : selectedIncome?.contactId ? 'contact' : 'bank',
             bankAccountId: selectedIncome?.bankAccountId || '',
             contactId: selectedIncome?.contactId || '',
-            status: selectedIncome?.status || 'paid',
+            status: selectedIncome?.status || (selectedIncome?.contactId ? 'pending' : 'paid'),
             dueDate: selectedIncome?.dueDate?.split('T')[0] || '',
             amount: selectedIncome ? parseFloat(selectedIncome.amount || 0) : 0,
             notes: selectedIncome?.notes || ''
@@ -54,9 +53,36 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                 .required("Amount is required")
         }),
         onSubmit: async (values) => {
+            console.log('Form submitted with values:', values);
             await onSubmit(values);
         }
     });
+
+    // Reset form when modal opens or selectedIncome changes
+    useEffect(() => {
+        if (isOpen && selectedIncome) {
+            // Force form to reinitialize with fresh data
+            validation.setValues({
+                id: selectedIncome.id || '',
+                date: selectedIncome.date?.split('T')[0] || '',
+                categoryId: selectedIncome.categoryId || '',
+                paymentMethod: selectedIncome.bankAccountId && !selectedIncome.contactId ? 'bank' : selectedIncome.contactId ? 'contact' : 'bank',
+                bankAccountId: selectedIncome.bankAccountId || '',
+                contactId: selectedIncome.contactId || '',
+                status: selectedIncome.status || (selectedIncome.contactId ? 'pending' : 'paid'),
+                dueDate: selectedIncome.dueDate?.split('T')[0] || '',
+                amount: parseFloat(selectedIncome.amount || 0),
+                notes: selectedIncome.notes || ''
+            });
+        }
+    }, [isOpen, selectedIncome?.id]);
+
+    // Handle modal close
+    const handleModalClose = () => {
+        validation.resetForm();
+        toggle();
+    };
+
 
     const handlePaymentMethodChange = (selectedOption) => {
         if (!selectedOption) {
@@ -79,7 +105,7 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
         } else if (type === 'contact') {
             validation.setFieldValue('contactId', id);
             validation.setFieldValue('bankAccountId', '');
-            validation.setFieldValue('status', '');
+            validation.setFieldValue('status', 'pending'); // Set default status for contact
             validation.setFieldValue('dueDate', '');
         }
     };
@@ -139,8 +165,8 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
     const isContactPending = isContactSelected && validation.values.status === 'pending';
 
     return (
-        <Modal isOpen={isOpen} toggle={toggle} size="lg">
-            <ModalHeader toggle={toggle}>
+        <Modal isOpen={isOpen} toggle={handleModalClose} size="lg">
+            <ModalHeader toggle={handleModalClose}>
                 {isEditMode ? 'Edit Income' : 'Add New Income'}
             </ModalHeader>
             <ModalBody>
@@ -200,7 +226,7 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                         )}
                     </FormGroup>
 
-                    {isContactSelected && (
+                    {isContactSelected && !isEditMode && (
                         <FormGroup>
                             <Label>Status</Label>
                             <ReactSelect
@@ -221,7 +247,20 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                         </FormGroup>
                     )}
 
-                    {isContactPaid && (
+                    {isContactSelected && isEditMode && (
+                        <FormGroup>
+                            <Label>Status</Label>
+                            <Input
+                                type="text"
+                                value={validation.values.status === 'paid' ? 'Paid' : 'Pending'}
+                                disabled
+                                className="form-control-plaintext"
+                            />
+                            <small className="text-muted">Status is managed by payments and cannot be changed in edit mode</small>
+                        </FormGroup>
+                    )}
+
+                    {isContactPaid && !isEditMode && (
                         <FormGroup>
                             <Label>Received From (Bank Account)</Label>
                             <BankAccountDropdown
@@ -288,10 +327,10 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                     </Row>
 
                     <ModalFooter>
-                        <Button color="light" onClick={toggle}>Cancel</Button>
+                        <Button color="light" onClick={handleModalClose}>Cancel</Button>
                         <Button color="primary" type="submit" disabled={isLoading}>
                             {isEditMode ? 'Update Income' : 'Create Income'}
-                            {isLoading && <RiLoader2Line className="ms-1 spin" />}
+                            {isLoading && <RiLoader4Line className="ms-1 spin" />}
                         </Button>
                     </ModalFooter>
                 </Form>

@@ -20,7 +20,7 @@ const projectList = [
         img: slack,
         imgbgColor: "warning",
         label: "Slack brand logo design",
-        caption: "Create a Brand logo design for a velzon admin.",
+        caption: "Create a Brand logo design for a vyavhar admin.",
         number: "18/42",
         progressBar: "34%",
         subItem: [

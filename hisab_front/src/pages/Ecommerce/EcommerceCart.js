@@ -18,7 +18,7 @@ import {
 
 const EcommerceCart = () => {
 
-  document.title="Shopping Cart | Velzon - React Admin & Dashboard Template";
+  document.title="Shopping Cart | Vyavhar - Financial Management Platform";
 
   const [productList, setproductList] = useState(shoppingCart);
   const [charge, setCharge] = useState(0);
@@ -260,7 +260,7 @@ const EcommerceCart = () => {
                           <tr>
                             <td>
                               Discount{" "}
-                              <span className="text-muted">(VELZON15)</span> :{" "}
+                              <span className="text-muted">(VYAVHAR15)</span> :{" "}
                             </td>
                             <td className="text-end" id="cart-discount">
                               - $ {dis}

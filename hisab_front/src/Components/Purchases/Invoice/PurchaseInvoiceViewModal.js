@@ -5,240 +5,236 @@ import {
   ModalBody,
   ModalFooter,
   Button,
-  Badge,
   Row,
   Col,
-  Table
+  Table,
+  Badge,
+  Card,
+  CardBody
 } from 'reactstrap';
-import { format } from 'date-fns';
-import { DISCOUNT_TYPES, TAX_TYPES } from './contant';
+import { RiCloseLine, RiDownload2Line, RiUserLine, RiBankLine, RiArrowRightLine } from 'react-icons/ri';
 
 const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR'
+    }).format(amount || 0);
+  };
+
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return format(new Date(dateString), 'dd/MM/yyyy');
+    return new Date(dateString).toLocaleDateString('en-IN');
   };
 
-  // Get display text for tax type
-  const getTaxTypeText = (taxType) => {
-    const tax = TAX_TYPES.find(t => t.value === taxType);
-    return tax ? tax.label : 'N/A';
-  };
-
-  // Get display text for discount type
-  const getDiscountTypeText = (discountType) => {
-    const discount = DISCOUNT_TYPES.find(d => d.value === discountType);
-    return discount ? discount.label : 'N/A';
-  };
-
-  // Get payment method text
-  const getPaymentMethodText = () => {
-    if (invoice?.paymentMethod === 'bank' && invoice?.bankAccount) {
-      return `${invoice.bankAccount.name} (${invoice.bankAccount.type})`;
-    }
-    if (invoice?.contact) {
-      return `Credit - ${invoice.contact.name}`;
-    }
-    return 'N/A';
-  };
-
-  // Calculate totals for display
-  const calculateTotals = () => {
-    if (!invoice) return null;
-
-    return {
-      basicAmount: invoice.basicAmount || 0,
-      taxAmount: invoice.taxAmount || 0,
-      totalDiscount: invoice.totalDiscount || 0,
-      roundOff: invoice.roundOff || 0,
-      netPayable: invoice.netPayable || 0
+  const getStatusBadge = (status) => {
+    const statusConfig = {
+      pending: { color: 'warning', text: 'Pending' },
+      paid: { color: 'success', text: 'Paid' },
+      partial: { color: 'info', text: 'Partial' },
+      draft: { color: 'secondary', text: 'Draft' },
+      cancelled: { color: 'danger', text: 'Cancelled' }
     };
+
+    const config = statusConfig[status] || { color: 'secondary', text: status };
+    return (
+      <Badge color={config.color} className="px-3 py-2">
+        {config.text}
+      </Badge>
+    );
   };
 
-  const totals = calculateTotals();
+  const getPaymentMethodDisplay = () => {
+    const hasContact = invoice.contact?.name || invoice.contactId;
+    const hasBank = invoice.bankAccount?.name || invoice.bankAccountId;
 
-  if (!invoice) return null;
+    if (hasContact && hasBank) {
+      return (
+        <div className="d-flex align-items-center">
+          <RiUserLine className="text-primary me-2" size={20} />
+          <span className="fw-bold">{invoice.contact.name}</span>
+          <RiArrowRightLine className="text-muted mx-2" />
+          <RiBankLine className="text-success me-2" size={20} />
+          <span className="text-success">{invoice.bankAccount.name}</span>
+        </div>
+      );
+    } else if (hasBank && !hasContact) {
+      return (
+        <div className="d-flex align-items-center">
+          <RiBankLine className="text-success me-2" size={20} />
+          <span className="fw-bold text-success">{invoice.bankAccount.name}</span>
+          <small className="text-muted ms-2">(Direct Bank Purchase)</small>
+        </div>
+      );
+    } else if (hasContact && !hasBank) {
+      return (
+        <div className="d-flex align-items-center">
+          <RiUserLine className="text-primary me-2" size={20} />
+          <span className="fw-bold">{invoice.contact.name}</span>
+          <small className="text-muted ms-2">(No Payment Bank)</small>
+        </div>
+      );
+    } else {
+      return <span className="text-muted">No vendor information</span>;
+    }
+  };
+
+  if (!invoice) {
+    return null;
+  }
 
   return (
-    <Modal isOpen={isOpen} toggle={toggle} size="xl">
-      <ModalHeader toggle={toggle}>Purchase Invoice Details</ModalHeader>
-      <ModalBody>
-        <Row className="mb-4">
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Invoice Number</h6>
-              <h4>{invoice.invoiceNumber || 'N/A'}</h4>
-            </div>
-            <div className="mb-3">
-              <h6 className="text-muted">Date</h6>
-              <p>{formatDate(invoice.invoiceDate)}</p>
-            </div>
-          </Col>
-          <Col md={6} className="text-end">
-            <div className="mb-3">
-              <h6 className="text-muted">Status</h6>
-              <Badge
-                color={invoice.status === 'paid' ? 'success' : 'warning'}
-                className={`${invoice.status === 'paid' ? 'bg-success' : 'bg-warning'} text-white border-0`}
-                style={{ 
-                  fontWeight: '600',
-                  fontSize: '0.75rem',
-                  padding: '0.375rem 0.75rem'
-                }}
-                pill
-              >
-                {invoice.status ? invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1) : 'N/A'}
-              </Badge>
-            </div>
-            <div className="mb-3">
-              <h6 className="text-muted">Net Payable</h6>
-              <h4>₹{(totals?.netPayable || 0).toFixed(2)}</h4>
-            </div>
-          </Col>
-        </Row>
-
-        <Row className="mb-4">
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Payment Method</h6>
-              <p>{getPaymentMethodText()}</p>
-            </div>
-            {invoice.bankAccount && (
-              <div className="mb-3">
-                <h6 className="text-muted">Bank Details</h6>
-                <p>
-                  <strong>Name:</strong> {invoice.bankAccount.name}<br />
-                  <strong>Type:</strong> {invoice.bankAccount.type}
-                </p>
+    <Modal isOpen={isOpen} toggle={toggle} size="xl" className="modal-dialog-centered">
+      <ModalHeader toggle={toggle} className="bg-light">
+        <div className="d-flex justify-content-between align-items-center w-100">
+          <div>
+            <h5 className="mb-0">Invoice #{invoice.invoiceNumber}</h5>
+            <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
+          </div>
+          <div className="d-flex align-items-center gap-3">
+            {getStatusBadge(invoice.status)}
+          </div>
+        </div>
+      </ModalHeader>
+      
+      <ModalBody className="p-4">
+        {/* Vendor & Payment Section */}
+        <Card className="mb-4 border-0 shadow-sm">
+          <CardBody>
+            <h6 className="card-title mb-3">
+              <RiUserLine className="me-2" />
+              Vendor & Payment
+            </h6>
+            {getPaymentMethodDisplay()}
+            
+            {/* Additional vendor details if available */}
+            {(invoice.contact?.email || invoice.contact?.mobile || invoice.contact?.gstin) && (
+              <div className="mt-3 pt-3 border-top">
+                <Row>
+                  {invoice.contact?.email && (
+                    <Col md={4}>
+                      <small className="text-muted d-block">Email</small>
+                      <span>{invoice.contact.email}</span>
+                    </Col>
+                  )}
+                  {invoice.contact?.mobile && (
+                    <Col md={4}>
+                      <small className="text-muted d-block">Mobile</small>
+                      <span>{invoice.contact.mobile}</span>
+                    </Col>
+                  )}
+                  {invoice.contact?.gstin && (
+                    <Col md={4}>
+                      <small className="text-muted d-block">GSTIN</small>
+                      <span>{invoice.contact.gstin}</span>
+                    </Col>
+                  )}
+                </Row>
               </div>
             )}
-          </Col>
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Tax & Discount</h6>
-              <p>
-                <strong>Tax Type:</strong> {getTaxTypeText(invoice.taxType)}<br />
-                <strong>Discount Type:</strong> {getDiscountTypeText(invoice.discountType)}
-                {invoice.discountValue > 0 && (
-                  <span>, {invoice.discountValue}%</span>
-                )}
-              </p>
-            </div>
-            <div className="mb-3">
-              <h6 className="text-muted">Round Off</h6>
-              <p>₹{(invoice.roundOff || 0).toFixed(2)}</p>
-            </div>
-          </Col>
-        </Row>
+          </CardBody>
+        </Card>
 
-        <div className="mb-4">
-          <h5 className="mb-3">Items ({invoice.itemsCount || 0})</h5>
-          <Table bordered responsive>
-            <thead className="table-light">
-              <tr>
-                <th>#</th>
-                <th>Item</th>
-                <th>Code</th>
-                <th className="text-end">Qty</th>
-                <th className="text-end">Rate</th>
-                <th className="text-end">Tax (%)</th>
-                <th className="text-end">Tax Amount</th>
-                <th className="text-end">Discount</th>
-                <th className="text-end">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoice.items?.map((item, index) => (
-                <tr key={item.id}>
-                  <td>{index + 1}</td>
-                  <td>
-                    <div className="fw-semibold">{item.productName}</div>
-                    {item.productCode && <div className="text-muted small">{item.productCode}</div>}
-                  </td>
-                  <td>{item.productCode || '-'}</td>
-                  <td className="text-end">{item.quantity}</td>
-                  <td className="text-end">₹{item.rate?.toFixed(2) || '0.00'}</td>
-                  <td className="text-end">{item.taxRate}%</td>
-                  <td className="text-end">₹{item.taxAmount?.toFixed(2) || '0.00'}</td>
-                  <td className="text-end">₹{item.discount?.toFixed(2) || '0.00'}</td>
-                  <td className="text-end fw-bold">₹{item.total?.toFixed(2) || '0.00'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </Table>
-        </div>
+        {/* Items Section */}
+        <Card className="mb-4 border-0 shadow-sm">
+          <CardBody>
+            <h6 className="card-title mb-3">Items ({invoice.items?.length || 0})</h6>
+            <div className="table-responsive">
+              <Table className="table-sm">
+                <thead className="table-light">
+                  <tr>
+                    <th>Product</th>
+                    <th className="text-center">Qty</th>
+                    <th className="text-end">Rate</th>
+                    <th className="text-end">Tax</th>
+                    <th className="text-end">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoice.items?.map((item, index) => (
+                    <tr key={item.id || index}>
+                      <td>
+                        <div>
+                          <strong>{item.productName || item.name}</strong>
+                          {item.productCode && (
+                            <small className="text-muted d-block">{item.productCode}</small>
+                          )}
+                          {item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0 && (
+                            <div className="mt-1">
+                              {item.serialNumbers.map((serial, idx) => (
+                                <Badge key={idx} color="info" size="sm" className="me-1">
+                                  {serial}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="text-center">{item.quantity}</td>
+                      <td className="text-end">{formatCurrency(item.rate)}</td>
+                      <td className="text-end">
+                        {item.taxRate}% ({formatCurrency(item.taxAmount)})
+                      </td>
+                      <td className="text-end fw-bold">{formatCurrency(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </Table>
+            </div>
+          </CardBody>
+        </Card>
 
+        {/* Summary Section */}
         <Row>
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Internal Notes</h6>
-              <p className="text-muted">{invoice.internalNotes || 'No notes available'}</p>
-            </div>
+          <Col md={8}>
+            {invoice.internalNotes && (
+              <Card className="border-0 shadow-sm">
+                <CardBody>
+                  <h6 className="card-title">Notes</h6>
+                  <p className="mb-0 text-muted">{invoice.internalNotes}</p>
+                </CardBody>
+              </Card>
+            )}
           </Col>
-          <Col md={6}>
-            <div className="border p-3 bg-light">
-              <h5>Summary</h5>
-              <div className="d-flex justify-content-between mb-2">
-                <span>Basic Amount:</span>
-                <span>₹ {(totals?.basicAmount || 0).toFixed(2)}</span>
-              </div>
-              {totals?.totalDiscount > 0 && (
+          <Col md={4}>
+            <Card className="border-0 shadow-sm">
+              <CardBody>
+                <h6 className="card-title">Summary</h6>
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Total Discount:</span>
-                  <span className="text-danger">- ₹ {(totals?.totalDiscount || 0).toFixed(2)}</span>
+                  <span>Basic Amount:</span>
+                  <span>{formatCurrency(invoice.basicAmount)}</span>
                 </div>
-              )}
-              {totals?.taxAmount > 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Tax Amount:</span>
-                  <span className="text-success">+ ₹ {(totals?.taxAmount || 0).toFixed(2)}</span>
+                  <span>Tax:</span>
+                  <span>{formatCurrency(invoice.taxAmount)}</span>
                 </div>
-              )}
-              {totals?.roundOff !== 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Round Off:</span>
-                  <span className={totals?.roundOff > 0 ? 'text-success' : 'text-danger'}>
-                    {totals?.roundOff > 0 ? '+' : ''}₹ {(totals?.roundOff || 0).toFixed(2)}
-                  </span>
+                  <span>Discount:</span>
+                  <span>{formatCurrency(invoice.totalDiscount)}</span>
                 </div>
-              )}
-              <div className="d-flex justify-content-between mt-3 pt-2 border-top">
-                <span className="fw-bold">Net Payable:</span>
-                <span className="fw-bold">₹ {(totals?.netPayable || 0).toFixed(2)}</span>
-              </div>
-            </div>
-          </Col>
-        </Row>
-
-        <hr />
-
-        <Row>
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Created By</h6>
-              <p>
-                {invoice.createdBy?.firstName || 'System'}
-                {invoice.createdBy?.email && (
-                  <span className="d-block text-muted small">{invoice.createdBy.email}</span>
+                {invoice.roundOff && (
+                  <div className="d-flex justify-content-between mb-2">
+                    <span>Round Off:</span>
+                    <span>{formatCurrency(invoice.roundOff)}</span>
+                  </div>
                 )}
-              </p>
-            </div>
-          </Col>
-          <Col md={6}>
-            <div className="mb-3">
-              <h6 className="text-muted">Created At</h6>
-              <p>{formatDate(invoice.createdAt)}</p>
-            </div>
-            <div className="mb-3">
-              <h6 className="text-muted">Last Updated</h6>
-              <p>{formatDate(invoice.updatedAt)}</p>
-            </div>
+                <hr />
+                <div className="d-flex justify-content-between">
+                  <strong>Total:</strong>
+                  <strong className="text-primary fs-5">{formatCurrency(invoice.netPayable)}</strong>
+                </div>
+              </CardBody>
+            </Card>
           </Col>
         </Row>
       </ModalBody>
-      <ModalFooter>
-        <Button color="secondary" onClick={toggle}>Close</Button>
-        <Button color="primary" onClick={() => window.print()}>Print</Button>
+      
+      <ModalFooter className="bg-light">
+        <Button color="secondary" onClick={toggle}>
+          <RiCloseLine className="me-1" /> Close
+        </Button>
+        <Button color="primary">
+          <RiDownload2Line className="me-1" /> Download PDF
+        </Button>
       </ModalFooter>
     </Modal>
   );

@@ -4,7 +4,7 @@ import BreadCrumb from '../../../../Components/Common/BreadCrumb';
 import {SimplePie,SimpleDonut,UpdateDonut,MonochromePie,GradientDonut,PatternedDonut,ImagePieChart} from './PieCharts'
 
 const PieCharts = () => {
-  document.title="Pie Charts | Velzon - React Admin & Dashboard Template";
+  document.title="Pie Charts | vyavhar - React Admin & Dashboard Template";
   return (
     <div className="page-content">
                 <Container fluid>                              

@@ -13,7 +13,7 @@ import BreadCrumb from '../../../Components/Common/BreadCrumb';
 import { DefaultAlertsExample, BorderlessExample, DismissingExample, LinkColorExample, LiveExample, OutlineAlertsExample, LeftBorderAlertsExample, LabelIconAlertsExample, TopBarAlertsExample, LabelIconArrowAlertsExample, RoundedLabelIconAlertsExample, AdditionalContentAlertsExample, SolidAlertsExample } from './UiAlertsCode';
 
 const UiAlerts = () => {
-    document.title="Alerts | Velzon - React Admin & Dashboard Template";
+    document.title="Alerts | vyavhar - React Admin & Dashboard Template";
     const [show, setShow] = useState(false);
     return (
         <React.Fragment>

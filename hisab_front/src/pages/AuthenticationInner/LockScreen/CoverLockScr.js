@@ -9,7 +9,7 @@ import avatar1 from "../../../assets/images/users/avatar-1.jpg";
 import AuthSlider from '../authCarousel';
 
 const CoverLockScreen = () => {
-    document.title="Lock Screen | Velzon - React Admin & Dashboard Template";
+    document.title = "Lock Screen | Vyavhar - Financial Management Platform";
     return (
         <React.Fragment>                
                 <div className="auth-page-wrapper auth-bg-cover py-5 d-flex justify-content-center align-items-center min-vh-100">
@@ -62,7 +62,7 @@ const CoverLockScreen = () => {
                             <Row>
                                 <Col lg={12}>
                                     <div className="text-center">
-                                        <p className="mb-0">&copy; {new Date().getFullYear()} Velzon. Crafted with <i className="mdi mdi-heart text-danger"></i> by Themesbrand</p>
+                                        <p className="mb-0">&copy; {new Date().getFullYear()} Vyavhar. Crafted with <i className="mdi mdi-heart text-danger"></i> by Vyavhar Team</p>
                                     </div>
                                 </Col>
                             </Row>

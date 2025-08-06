@@ -60,7 +60,7 @@ const tasklist = [
       },
       {
         id: "3",
-        title: "Velzon - Admin Layout Design",
+        title: "vyavhar - Admin Layout Design",
         text: "The dashboard is the front page of the Administration UI.",
         userImages: [{ id: 4, img: avatar9 }, { id: 5, img: avatar8 }],
         badge1: ["Layout", "Admin", "Dashboard"],

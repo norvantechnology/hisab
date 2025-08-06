@@ -16,7 +16,7 @@ import {
   Badge,
   Alert
 } from 'reactstrap';
-import { RiLoader2Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
+import { RiLoader4Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
 
 const ItemModal = ({
   isOpen,
@@ -135,6 +135,8 @@ const ItemModal = ({
     if (!localCurrentItem?.isSerialized) {
       if (!localCurrentItem?.quantity || localCurrentItem.quantity <= 0) {
         newErrors.quantity = 'Quantity must be greater than 0';
+      } else if (localCurrentItem?.currentStock && localCurrentItem.quantity > localCurrentItem.currentStock) {
+        newErrors.quantity = `Quantity cannot exceed available stock (${localCurrentItem.currentStock})`;
       }
     } else {
       if (serialNumbers.length === 0) {
@@ -283,11 +285,37 @@ const ItemModal = ({
     // This prevents the circular update issue that was causing the selection to reset
   }, [localCurrentItem, rateInput, discountRateInput, serialNumbers]); // Removed updateCurrentItem from dependencies
 
+  // Handle clicking on available serial numbers
+  const handleSelectSerialNumber = useCallback((serialNumber) => {
+    console.log('Selecting serial number:', serialNumber);
+    if (serialNumbers.includes(serialNumber)) {
+      console.log('Serial number already selected:', serialNumber);
+      return;
+    }
+
+    if (localCurrentItem?.currentStock && serialNumbers.length >= localCurrentItem.currentStock) {
+      console.log('Cannot add more serial numbers, stock limit reached.');
+      setErrors(prev => ({ ...prev, newSerial: `Cannot add more than ${localCurrentItem.currentStock} serial numbers` }));
+      return;
+    }
+
+    const updatedSerialNumbers = [...serialNumbers, serialNumber];
+    setSerialNumbers(updatedSerialNumbers);
+    setNewSerialNumber(''); // Clear the input field
+    setErrors(prev => ({ ...prev, newSerial: '' }));
+
+    // Update local current item with new serial numbers
+    setLocalCurrentItem(prev => ({
+      ...prev,
+      serialNumbers: updatedSerialNumbers
+    }));
+  }, [serialNumbers, localCurrentItem?.currentStock]);
+
   const renderProductList = useMemo(() => {
     if (loadingProducts) {
       return (
         <div className="text-center p-3">
-          <RiLoader2Line className="spin" />
+          <RiLoader4Line className="spin" />
           <div className="text-muted">Loading products...</div>
         </div>
       );
@@ -311,6 +339,34 @@ const ItemModal = ({
                     {product.isSerialized && (
                       <Badge color="info" pill className="mt-1">Serialized</Badge>
                     )}
+                    {product.isSerialized && product.availableSerialNumbers && product.availableSerialNumbers.length > 0 && (
+                      <div className="mt-2">
+                        <small className="text-success d-block mb-1">
+                          Available Serial Numbers ({product.availableSerialNumbers.length}):
+                        </small>
+                        <div className="d-flex flex-wrap gap-1">
+                          {product.availableSerialNumbers.slice(0, 5).map((serial, index) => (
+                            <Badge
+                              key={index}
+                              color="success"
+                              className="cursor-pointer"
+                              style={{ fontSize: '0.75rem' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectSerialNumber(serial);
+                              }}
+                            >
+                              {serial}
+                            </Badge>
+                          ))}
+                          {product.availableSerialNumbers.length > 5 && (
+                            <Badge color="secondary" style={{ fontSize: '0.75rem' }}>
+                              +{product.availableSerialNumbers.length - 5} more
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </td>
                   <td className="text-end">
                     <div className="small">Stock: {product.currentStock}</div>
@@ -322,7 +378,7 @@ const ItemModal = ({
           </Table>
           {isFetchingMore && (
             <div className="text-center p-2">
-              <RiLoader2Line className="spin" />
+              <RiLoader4Line className="spin" />
             </div>
           )}
         </>
@@ -372,6 +428,14 @@ const ItemModal = ({
           {localCurrentItem.isSerialized && (
             <Badge color="info" pill className="ms-2">Serialized</Badge>
           )}
+          {localCurrentItem.currentStock !== undefined && (
+            <div className="mt-1">
+              <small className={`${localCurrentItem.currentStock <= 0 ? 'text-danger' : 'text-muted'}`}>
+                Stock: {localCurrentItem.currentStock}
+                {localCurrentItem.currentStock <= 0 && ' (Out of stock)'}
+              </small>
+            </div>
+          )}
         </div>
       ) : (
         <div className="alert alert-warning py-2 mb-3">
@@ -397,6 +461,19 @@ const ItemModal = ({
                 if (!localCurrentItem?.isSerialized) {
                   const value = parseFloat(e.target.value) || 0;
                   updateLocalItem('quantity', value);
+                  
+                  // Clear quantity error when user starts typing
+                  if (errors.quantity) {
+                    setErrors(prev => ({ ...prev, quantity: '' }));
+                  }
+                  
+                  // Add real-time validation for stock limit
+                  if (localCurrentItem?.currentStock && value > localCurrentItem.currentStock) {
+                    setErrors(prev => ({ 
+                      ...prev, 
+                      quantity: `Quantity cannot exceed available stock (${localCurrentItem.currentStock})` 
+                    }));
+                  }
                 }
               }}
               placeholder="Enter quantity"
@@ -404,8 +481,12 @@ const ItemModal = ({
               invalid={!!errors.quantity}
             />
             {errors.quantity && <div className="text-danger small mt-1">{errors.quantity}</div>}
-            {localCurrentItem?.isSerialized && (
+            {localCurrentItem?.isSerialized ? (
               <div className="form-text">Quantity is determined by serial numbers ({serialNumbers.length})</div>
+            ) : (
+              localCurrentItem?.currentStock !== undefined && localCurrentItem.quantity > localCurrentItem.currentStock && (
+                <div className="text-danger small mt-1">⚠️ Exceeds stock limit</div>
+              )
             )}
           </FormGroup>
         </Col>
@@ -620,11 +701,16 @@ const ItemModal = ({
   }, [localCurrentItem?.id, localCurrentItem?.isSerialized, localCurrentItem?.name, localCurrentItem?.code, localCurrentItem?.quantity, serialNumbers, rateInput, discountRateInput, calculatedValues, saveItem]);
 
   const isFormValid = useMemo(() => {
-    return localCurrentItem?.productId &&
-      Number(rateInput) >= 0 &&
-      (localCurrentItem?.isSerialized ? serialNumbers.length > 0 : localCurrentItem?.quantity > 0) &&
-      (discountRateInput === '' || (!isNaN(Number(discountRateInput)) && Number(discountRateInput) >= 0 && Number(discountRateInput) <= 100));
-  }, [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, serialNumbers.length, rateInput, discountRateInput]);
+    const hasValidProduct = localCurrentItem?.productId;
+    const hasValidRate = Number(rateInput) >= 0;
+    const hasValidQuantity = localCurrentItem?.isSerialized ? 
+      serialNumbers.length > 0 : 
+      (localCurrentItem?.quantity > 0 && (!localCurrentItem?.currentStock || localCurrentItem.quantity <= localCurrentItem.currentStock));
+    const hasValidDiscountRate = discountRateInput === '' || 
+      (!isNaN(Number(discountRateInput)) && Number(discountRateInput) >= 0 && Number(discountRateInput) <= 100);
+    
+    return hasValidProduct && hasValidRate && hasValidQuantity && hasValidDiscountRate;
+  }, [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.currentStock, serialNumbers.length, rateInput, discountRateInput]);
 
   return (
     <Modal isOpen={isOpen} toggle={toggle} size="lg" key={`item-modal-${isOpen ? 'open' : 'closed'}-${currentItem?.id || 'new'}`}>

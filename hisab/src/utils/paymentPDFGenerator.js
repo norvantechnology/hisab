@@ -1,4 +1,4 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        import puppeteer from 'puppeteer';
+import puppeteer from 'puppeteer';
 
 // Convert number to words (Indian format)
 const convertNumberToWords = (amount) => {

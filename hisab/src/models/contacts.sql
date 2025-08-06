@@ -13,7 +13,6 @@ CREATE TABLE hisab.contacts (
 	email text NULL,
 	"dueDays" int4 NULL,
 	currency text DEFAULT 'INR'::text NULL,
-	"contactType" text DEFAULT 'customer'::text NOT NULL,
 	"billingAddress1" text NULL,
 	"billingAddress2" text NULL,
 	"billingCity" text NULL,
@@ -29,7 +28,7 @@ CREATE TABLE hisab.contacts (
 	"isShippingSame" bool DEFAULT false NULL,
 	"openingBalance" numeric(15, 2) DEFAULT 0.00 NULL,
 	"openingBalanceType" text DEFAULT 'payable'::text NULL,
-	"enablePortal" bool DEFAULT false NULL,
+	"enablePortal" bool DEFAULT false NULL, -- Whether this contact has access to the customer portal
 	notes text NULL,
 	"createdBy" int4 NULL,
 	"createdAt" timestamp DEFAULT CURRENT_TIMESTAMP NULL,
@@ -37,10 +36,21 @@ CREATE TABLE hisab.contacts (
 	"currentBalance" numeric(15, 2) DEFAULT 0.00 NULL,
 	"currentBalanceType" text DEFAULT 'payable'::text NULL,
 	"deletedAt" timestamp NULL,
+	"contactType" text DEFAULT 'customer'::text NOT NULL, -- Type of contact: customer or vendor
+	"portalAccessToken" text NULL, -- Temporary token for portal access
+	"portalAccessTokenExpiry" timestamp NULL, -- Expiry time for portal access token
 	CONSTRAINT "contacts_balanceType_check" CHECK (("openingBalanceType" = ANY (ARRAY['payable'::text, 'receivable'::text]))),
 	CONSTRAINT "contacts_contactType_check" CHECK (("contactType" = ANY (ARRAY['customer'::text, 'vendor'::text]))),
 	CONSTRAINT contacts_pkey PRIMARY KEY (id)
 );
+CREATE INDEX "contacts_portalAccessToken_idx" ON hisab.contacts USING btree ("portalAccessToken");
+
+-- Column comments
+
+COMMENT ON COLUMN hisab.contacts."enablePortal" IS 'Whether this contact has access to the customer portal';
+COMMENT ON COLUMN hisab.contacts."contactType" IS 'Type of contact: customer or vendor';
+COMMENT ON COLUMN hisab.contacts."portalAccessToken" IS 'Temporary token for portal access';
+COMMENT ON COLUMN hisab.contacts."portalAccessTokenExpiry" IS 'Expiry time for portal access token';
 
 -- Permissions
 

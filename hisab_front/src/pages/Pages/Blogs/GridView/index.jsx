@@ -7,7 +7,7 @@ import { Col, Container, Row } from 'reactstrap'
 
 const BlogGridView = () => {
 
-    document.title = "Grid View | Velzon - React Admin & Dashboard Template";
+    document.title = "Grid View | vyavhar - React Admin & Dashboard Template";
 
      //pagination
      const [currentPage, setCurrentPage] = useState(1);

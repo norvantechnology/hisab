@@ -67,7 +67,7 @@ const VerifyEmail = () => {
                                 <div className="text-center mt-sm-5 mb-4 text-white-50">
                                     <div className="mb-3">
                                         <Link to="/" className="d-inline-block auth-logo">
-                                            <img src={logoLight} alt="ProfitPe" height="30" />
+                                            <img src={logoLight} alt="Vyavhar" height="30" />
                                         </Link>
                                     </div>
                                     <p className="mt-1 fs-14 fw-medium">Smart Trading Analytics Platform</p>

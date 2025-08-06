@@ -17,7 +17,7 @@ AOS.init({
     anchorPlacement: 'top-bottom', 
 });
 const UiAnimation = () => {
-    document.title="Animation | Velzon - React Admin & Dashboard Template";
+    document.title="Animation | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">                

@@ -11,7 +11,7 @@ import PreviewCardHeader from '../../../Components/Common/PreviewCardHeader';
 import { DisplayHeadingExample, HeadingsExample, BlockquotesExample, BlockquoteColorExample, BlockquoteBorderColorExample, InlineTextExample, UnstyleListExample, InlineListExample, DescriptionListExample, TextWrappingExample, FontSizeExample, WordBreakExample, FontWeightExample, LineHeightExample, TextTransformExample, TextDecrationExample, TextTruncationExample, VisibilityExample, ClearfixExample } from './UiTypographyCode';
 
 const UiTypography = () => {
-    document.title="Typography | Velzon - React Admin & Dashboard Template";
+    document.title="Typography | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <UiContent />

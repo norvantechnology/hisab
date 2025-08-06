@@ -18,7 +18,7 @@ const Footer = () => {
                   <p>
                     You can build any type of web application like eCommerce,
                     CRM, CMS, Project management apps, Admin Panels, etc using
-                    Velzon.
+                    vyavhar.
                   </p>
                   <ul className="list-inline mb-0 footer-social-link">
                     <li className="list-inline-item">
@@ -130,7 +130,7 @@ const Footer = () => {
               <div>
                 <p className="copy-rights mb-0">
                   {new Date().getFullYear()} ©
-                  Velzon - Themesbrand
+                  Vyavhar - Financial Management Platform
                 </p>
               </div>
             </Col>

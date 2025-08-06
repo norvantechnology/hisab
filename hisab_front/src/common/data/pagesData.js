@@ -416,7 +416,7 @@ const projects = [
     },
     {
         id: 4,
-        title: "Velzon Project",
+        title: "vyavhar Project",
         updatedTime: "11 hr Ago",
         badgeText: "Completed",
         badgeClass: "success",
@@ -661,7 +661,7 @@ const document = [
         id: 6,
         icon: "ri-image-2-fill",
         iconBackgroundClass: "danger",
-        fileName: "Velzon-logo.png",
+        fileName: "vyavhar-logo.png",
         fileType: "PNG File",
         fileSize: "879 KB",
         updatedDate: "02 Nov 2021"
@@ -846,10 +846,10 @@ const news = [
 const video = [
     {
         id: 1,
-        title: "Admin dashboard templates - Material Design for Velzon",
-        siteLink: "https://themesbrand.com/velzon/index.html",
+        title: "Admin dashboard templates - Material Design for vyavhar",
+        siteLink: "https://themesbrand.com/vyavhar/index.html",
         videoLink: "https://www.youtube.com/embed/GfSZtaoc5bw",
-        description: "Velzon admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using Velzon it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
+        description: "vyavhar admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using vyavhar it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
         likes: 335,
         comments: 102,
         auther: "Themesbrand"
@@ -857,19 +857,19 @@ const video = [
     {
         id: 2,
         title: "Create Responsive Admin Dashboard using Html CSS",
-        siteLink: "https://themesbrand.com/velzon/index.html",
+        siteLink: "https://themesbrand.com/vyavhar/index.html",
         videoLink: "https://www.youtube.com/embed/Z-fV2lGKnnU",
-        description: "Velzon admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using Velzon it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
+        description: "vyavhar admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using vyavhar it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
         likes: 485,
         comments: 167,
         auther: "Themesbrand"
     },
     {
         id: 3,
-        title: "Velzon - The Most Popular Bootstrap 5 HTML, Angular & React Js Admin",
-        siteLink: "https://themesbrand.com/velzon/index.html",
+        title: "vyavhar - The Most Popular Bootstrap 5 HTML, Angular & React Js Admin",
+        siteLink: "https://themesbrand.com/vyavhar/index.html",
         videoLink: "https://www.youtube.com/embed/1y_kfWUCFDQ",
-        description: "Velzon admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using Velzon it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
+        description: "vyavhar admin is super flexible, powerful, clean, modern & responsive admin template based on bootstrap 5 stable with unlimited possibilities. You can simply change to any layout or mode by changing a couple of lines of code. You can start small and large projects or update design in your existing project using vyavhar it is very quick and easy as it is beautiful, adroit, and delivers the ultimate user experience.",
         likes: 122,
         comments: 51,
         auther: "Themesbrand"

@@ -11,7 +11,7 @@ import {
 } from "./CandlestickChart";
 
 const CandlestickChart = () => {
-    document.title="Candlestick Charts | Velzon - React Admin & Dashboard Template";
+    document.title="Candlestick Charts | vyavhar - React Admin & Dashboard Template";
     return (
         <React.Fragment>
             <div className="page-content">               

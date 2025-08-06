@@ -46,7 +46,7 @@ const FeedbackAction = () => {
                                                                     <td className="content-block" style={{ fontFamily: "Roboto, sans-serif", boxSizing: "border-box", fontSize: "15px", verticalAlign: "top", margin: 0, padding: "0 0 0px" }} valign="top">
                                                                         <p style={{ fontFamily: "Roboto, sans-serif", marginBottom: "8px", color: "#878a99", lineHeight: 1.5 }}>Dear valuable Customer,</p>
                                                                         <p style={{ fontFamily: "Roboto, sans-serif", marginBottom: "8px", color: "#878a99", lineHeight: 1.5 }}>Thank you so much for providing 5 stars review It really means a lot to us. Your review motivates us to work even hard and provide top-notch features, support, and updates. You can share more details via the contact us so we can provide the best from our side in future updates. We are going to release the Vue and React version asap.</p>
-                                                                        <p style={{ fontFamily: "Roboto, sans-serif", marginBottom: "8px", color: "#878a99", lineHeight: 1.5 }}>Feel free to get in touch with us anytime via support from the link below. <Link to="https://themeforest.net/item/velzon-aspnet-core-admin-dashboard-template/36077495/support" target="_blank">https://themeforest.net/item/velzon-aspnet-core-admin-dashboard-template/36077495/support</Link></p>
+                                                                        <p style={{ fontFamily: "Roboto, sans-serif", marginBottom: "8px", color: "#878a99", lineHeight: 1.5 }}>Feel free to get in touch with us anytime via support from the link below. <Link to="https://themeforest.net/item/vyavhar-aspnet-core-admin-dashboard-template/36077495/support" target="_blank">https://themeforest.net/item/vyavhar-aspnet-core-admin-dashboard-template/36077495/support</Link></p>
                                                                         <h6 style={{ fontFamily: "Roboto, sans-serif", fontSize: "14px", marginBottom: "0px", textAlign: "end" }}>Thank you!</h6>
                                                                     </td>
                                                                 </tr>
@@ -57,7 +57,7 @@ const FeedbackAction = () => {
                                             </tbody>
                                         </table>
                                         <div style={{ textAlign: "center", margin: "28px auto 0px auto" }}>
-                                            <p style={{ fontFamily: "Roboto sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px" }}>2022 Velzon. Design & Develop by Themesbrand</p>
+                                            <p style={{ fontFamily: "Roboto sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px" }}>2022 vyavhar. Design & Develop by Themesbrand</p>
                                         </div>
                                     </div>
                                 </td>

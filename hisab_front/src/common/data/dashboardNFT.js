@@ -86,7 +86,7 @@ const topartWork = [
     },
     {
         id: 8,
-        img:"https://img.themesbrand.com/velzon/images/img-5.gif",
+        img:"https://img.themesbrand.com/vyavhar/images/img-5.gif",
         title: "Evolved Reality",
         sales: "513,794",
         collection: "870,000",
@@ -97,7 +97,7 @@ const topartWork = [
 const featuredNFTData = [
     {
         id: 1,
-        img: "https://img.themesbrand.com/velzon/images/img-3.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-3.gif",
         likes: "37.41k",
         title: "Walking On Air",
         category: "Artwork",
@@ -115,7 +115,7 @@ const featuredNFTData = [
     },
     {
         id: 3,
-        img: "https://img.themesbrand.com/velzon/images/img-1.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-1.gif",
         likes: "8.42k",
         title: "Patterns Arts & Culture",
         category: "Artwork",
@@ -124,7 +124,7 @@ const featuredNFTData = [
     },
     {
         id: 4,
-        img: "https://img.themesbrand.com/velzon/images/img-4.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-4.gif",
         likes: "15.93k",
         title: "Evolved Reality",
         category: "Video",
@@ -197,7 +197,7 @@ const recentNFTsData = [
     },
     {
         id: 2, 
-        img: "https://img.themesbrand.com/velzon/images/img-5.gif",
+        img: "https://img.themesbrand.com/vyavhar/images/img-5.gif",
         title: "Long-tailed Macaque",
         category: "Games",
         icon: ltcCoin,
@@ -268,7 +268,7 @@ const topCollectionData = [
     },
     {
         id: 3,
-        img:"https://img.themesbrand.com/velzon/images/img-5.gif",
+        img:"https://img.themesbrand.com/vyavhar/images/img-5.gif",
         category: "3d Style",
         items: "4781+",
     },

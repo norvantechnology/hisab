@@ -5,7 +5,7 @@ import { Button, Card, CardBody, Col, Container, Row } from 'reactstrap';
 // import offlineImg from "../../../assets/images/auth-offline.gif";
 
 const Offlinepage = () => {
-    document.title = "Offline Page | Velzon - React Admin & Dashboard Template";
+    document.title = "Offline | Vyavhar - Financial Management Platform";
     return (
         <React.Fragment>
             <div className="auth-page-wrapper auth-bg-cover py-5 d-flex justify-content-center align-items-center min-vh-100">
@@ -17,7 +17,7 @@ const Offlinepage = () => {
                                 <Card className="overflow-hidden">
                                     <CardBody className="p-4">
                                         <div className="text-center">
-                                            <img src={"https://img.themesbrand.com/velzon/images/auth-offline.gif"} alt="" height="210" />
+                                            <img src={"https://img.themesbrand.com/vyavhar/images/auth-offline.gif"} alt="" height="210" />
                                             <h3 className="mt-4 fw-semibold">We're currently offline</h3>
                                             <p className="text-muted mb-4 fs-14">We can't show you this images because you aren't connected to the internet. When you’re back online refresh the page or hit the button below</p>
                                             <Button color="success" className="btn-border"

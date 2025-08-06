@@ -18,7 +18,7 @@ import {
   Badge
 } from 'reactstrap';
 import {
-  RiLoader2Line,
+  RiLoader4Line,
   RiCloseLine,
   RiAddLine,
 } from 'react-icons/ri';
@@ -31,6 +31,7 @@ import { getNextInvoiceNumber } from '../../../services/purchaseInvoice';
 import ItemModal from './ItemModal';
 import { DISCOUNT_TYPES, TAX_TYPES, STATUS_OPTIONS } from './contant'
 import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
+import BankAccountDropdown from '../../Common/BankAccountDropdown';
 
 const PurchaseInvoiceForm = ({
   isOpen,
@@ -112,9 +113,9 @@ const PurchaseInvoiceForm = ({
         console.log('Fetching next invoice number for purchase...');
         const response = await getNextInvoiceNumber();
         console.log('Purchase invoice number response:', response);
-        if (response.success && response.data.nextInvoiceNumber) {
-          setSuggestedInvoiceNumber(response.data.nextInvoiceNumber);
-          console.log('Set suggested purchase invoice number:', response.data.nextInvoiceNumber);
+        if (response.success && response.nextInvoiceNumber) {
+          setSuggestedInvoiceNumber(response.nextInvoiceNumber);
+          console.log('Set suggested purchase invoice number:', response.nextInvoiceNumber);
         }
       } catch (error) {
         console.error('Error fetching next invoice number:', error);
@@ -231,12 +232,18 @@ const PurchaseInvoiceForm = ({
       netPayable
     };
 
+    // Handle both billFromBank and billFromContact - they can both be present
     if (billFromType === 'bank') {
       payload.billFromBank = billFromId;
       payload.billFromContact = null;
     } else if (billFromType === 'contact') {
       payload.billFromContact = billFromId;
-      payload.billFromBank = null;
+      // Only include bank account if status is 'paid'
+      if (values.status === 'paid' && values.billFromBank) {
+        payload.billFromBank = values.billFromBank;
+      } else {
+        payload.billFromBank = null; // Clear bank account for pending status
+      }
     }
 
     return payload;
@@ -246,6 +253,11 @@ const PurchaseInvoiceForm = ({
     invoiceNumber: Yup.string().required('Invoice number is required'),
     date: Yup.date().required('Date is required'),
     billFrom: Yup.string().required('Bill from is required'),
+    billFromBank: Yup.string().when(['status', 'billFrom'], {
+      is: (status, billFrom) => status === 'paid' && billFrom && billFrom.startsWith('contact_'),
+      then: (schema) => schema.required('Bank account is required when status is paid and vendor is a contact'),
+      otherwise: (schema) => schema
+    }),
     taxType: Yup.string().required('Tax type is required'),
     discountType: Yup.string().required('Discount type is required'),
     discountValue: Yup.number().min(0, 'Discount cannot be negative'),
@@ -285,10 +297,20 @@ const PurchaseInvoiceForm = ({
 
   const initialValues = useMemo(() => {
     let billFromValue = '';
+    let billFromBankValue = '';
+    
     if (isEditMode && selectedInvoice) {
-      if (selectedInvoice.bankAccount) {
+      // If both contact and bankAccount are present, show contact in Bill From and bank in Payment Bank Account
+      if (selectedInvoice.contact?.id && selectedInvoice.bankAccount?.id) {
+        billFromValue = `contact_${selectedInvoice.contact.id}`;
+        billFromBankValue = selectedInvoice.bankAccount.id.toString();
+      }
+      // If only bankAccount is present, show bank in Bill From
+      else if (selectedInvoice.bankAccount?.id) {
         billFromValue = `bank_${selectedInvoice.bankAccount.id}`;
-      } else if (selectedInvoice.contact) {
+      }
+      // If only contact is present, show contact in Bill From
+      else if (selectedInvoice.contact?.id) {
         billFromValue = `contact_${selectedInvoice.contact.id}`;
       }
     }
@@ -298,6 +320,7 @@ const PurchaseInvoiceForm = ({
       invoiceNumber: isEditMode && selectedInvoice ? selectedInvoice.invoiceNumber : '',
       date: isEditMode && selectedInvoice ? selectedInvoice.date : new Date().toISOString(),
       billFrom: billFromValue,
+      billFromBank: billFromBankValue,
       taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',
       discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
       discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
@@ -349,7 +372,35 @@ const PurchaseInvoiceForm = ({
   // Custom handler for billFrom dropdown (ReactSelect)
   const handleBillFromChange = (selectedOption) => {
     validation.setFieldValue('billFrom', selectedOption?.value || '');
+    // Only clear billFromBank if the selected option is not a contact
+    if (!selectedOption?.value?.startsWith('contact_')) {
+      validation.setFieldValue('billFromBank', '');
+    }
   };
+
+  // Custom handler for billFromBank dropdown
+  const handleBillFromBankChange = (selectedOption) => {
+    validation.setFieldValue('billFromBank', selectedOption?.value || '');
+  };
+
+  // Custom handler for status changes
+  const handleStatusChange = (e) => {
+    const newStatus = e.target.value;
+    validation.setFieldValue('status', newStatus);
+    
+    // Clear bank account if status changes from 'paid' to 'pending'
+    if (newStatus === 'pending' && validation.values.billFromBank) {
+      validation.setFieldValue('billFromBank', '');
+    }
+  };
+
+  // Check if bank account dropdown should be shown
+  const shouldShowBankAccountDropdown = useMemo(() => {
+    // Show dropdown only when status is 'paid' and a contact is selected
+    return validation.values.status === 'paid' && 
+           validation.values.billFrom && 
+           validation.values.billFrom.startsWith('contact_');
+  }, [validation.values.status, validation.values.billFrom]);
 
   const calculatedTotals = useMemo(() => {
     // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
@@ -434,6 +485,17 @@ const PurchaseInvoiceForm = ({
     }
   }, [validation.values.discountType, isOpen, calculateItemTotal]);
 
+  useEffect(() => {
+    fetchNextInvoiceNumber();
+  }, [fetchNextInvoiceNumber]);
+
+  // Auto-populate invoice number when suggestion is available
+  useEffect(() => {
+    if (suggestedInvoiceNumber && !validation.values.invoiceNumber && !isEditMode) {
+      validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber);
+    }
+  }, [suggestedInvoiceNumber, validation.values.invoiceNumber, isEditMode]);
+
   const fetchProducts = useCallback(async (page = 1, search = '', reset = false) => {
     if (fetchProductsRef.current) return;
 
@@ -453,7 +515,8 @@ const PurchaseInvoiceForm = ({
       const response = await listProducts({
         page,
         limit: 10,
-        search
+        search,
+        includeSerialNumbers: true
       });
 
       if (reset || page === 1) {
@@ -494,10 +557,6 @@ const PurchaseInvoiceForm = ({
       fetchProducts(1, '', true);
     }
   }, [addItemModal]);
-
-  useEffect(() => {
-    fetchNextInvoiceNumber();
-  }, [fetchNextInvoiceNumber]);
 
   const getDefaultTaxRate = useCallback(() => {
     const selectedTaxType = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
@@ -693,12 +752,20 @@ const PurchaseInvoiceForm = ({
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
                     disabled={isProcessing}
-                    placeholder={suggestedInvoiceNumber || "Enter invoice number"}
+                    placeholder="Enter invoice number"
                   />
                   {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
-                    <small className="text-muted">
-                      Suggested: {suggestedInvoiceNumber}
-                    </small>
+                    <div className="mt-2">
+                      <small className="text-muted me-2">Suggested: {suggestedInvoiceNumber}</small>
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-primary btn-sm"
+                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
+                        disabled={isProcessing}
+                      >
+                        Use Suggested
+                      </button>
+                    </div>
                   )}
                   {!suggestedInvoiceNumber && !isEditMode && (
                     <small className="text-muted">
@@ -706,6 +773,7 @@ const PurchaseInvoiceForm = ({
                         type="button" 
                         className="btn btn-link btn-sm p-0" 
                         onClick={fetchNextInvoiceNumber}
+                        disabled={isProcessing}
                       >
                         Click to generate invoice number
                       </button>
@@ -739,7 +807,7 @@ const PurchaseInvoiceForm = ({
                     type="select"
                     name="status"
                     value={validation.values.status}
-                    onChange={validation.handleChange}
+                    onChange={handleStatusChange}
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.status && !!validation.errors.status}
                     disabled={isProcessing}
@@ -752,6 +820,28 @@ const PurchaseInvoiceForm = ({
                 </FormGroup>
               </Col>
             </Row>
+
+            {shouldShowBankAccountDropdown && (
+              <Row className="mb-4">
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Payment Bank Account <span className="text-danger">*</span></Label>
+                    <BankAccountDropdown
+                      value={validation.values.billFromBank}
+                      onChange={handleBillFromBankChange}
+                      onBlur={() => validation.setFieldTouched('billFromBank', true)}
+                      disabled={isProcessing}
+                      placeholder="Select Bank Account"
+                      error={validation.errors.billFromBank}
+                      touched={validation.touched.billFromBank}
+                    />
+                    {validation.touched.billFromBank && validation.errors.billFromBank && (
+                      <div className="invalid-feedback d-block">{validation.errors.billFromBank}</div>
+                    )}
+                  </FormGroup>
+                </Col>
+              </Row>
+            )}
 
             <Row className="mb-4">
               <Col md={6}>
@@ -970,7 +1060,7 @@ const PurchaseInvoiceForm = ({
           >
             {isProcessing ? (
               <>
-                <RiLoader2Line className="spin me-1" />
+                <RiLoader4Line className="spin me-1" />
                 {isEditMode ? 'Updating...' : 'Creating...'}
               </>
             ) : (
