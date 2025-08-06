@@ -1,5 +1,5 @@
 {
-    "installCommand": "cd hisab_front && npm install",
+    "installCommand": "cd hisab_front && npm install --legacy-peer-deps",
     "buildCommand": "cd hisab_front && ls -la && pwd && ls -la public/ && cat public/index.html && npm run build",
     "outputDirectory": "hisab_front/build"
   }
