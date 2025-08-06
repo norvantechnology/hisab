@@ -1,5 +1,5 @@
 {
-    "buildCommand": "cd hisab_front && npm run build",
+    "buildCommand": "cd hisab_front && NODE_OPTIONS='--max-old-space-size=4096' npm run build",
     "outputDirectory": "hisab_front/build",
     "installCommand": "cd hisab_front && npm install",
     "devCommand": "cd hisab_front && npm start",
