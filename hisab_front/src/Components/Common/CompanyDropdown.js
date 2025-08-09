@@ -165,10 +165,22 @@ const CompanyDropdown = ({ layoutMode }) => {
 
     useEffect(() => {
         const storedCompany = getSelectedCompanyFromStorage();
-        if (storedCompany) {
-            updateState({ selectedCompany: storedCompany });
+        if (storedCompany && companies.length > 0) {
+            // Only set stored company if we have companies loaded
+            const companyExists = companies.find(c => c.id === storedCompany.id);
+            if (companyExists) {
+                updateState({ selectedCompany: storedCompany });
+            } else {
+                // Clear invalid stored company
+                localStorage.removeItem('selectedCompanyId');
+                updateState({ selectedCompany: null });
+            }
+        } else if (companies.length === 0) {
+            // Clear stored company if no companies exist
+            localStorage.removeItem('selectedCompanyId');
+            updateState({ selectedCompany: null });
         }
-    }, [getSelectedCompanyFromStorage, updateState]);
+    }, [getSelectedCompanyFromStorage, updateState, companies]);
 
     const toggleCompanyDropdown = useCallback(() => {
         updateState({ isCompanyDropdown: !isCompanyDropdown });
@@ -656,7 +668,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                     type="button"
                     className="btn d-flex align-items-center"
                 >
-                    {selectedCompany ? (
+                    {selectedCompany && companies.length > 0 ? (
                         <>
                             <div className="me-2">
                                 <span

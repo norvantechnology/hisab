@@ -23,7 +23,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const commonMailOptions = {
-    from: `"HISAB" <${process.env.SMTP_EMAIL}>`,
+    from: `"Vyavhar" <vyavhar@gmail.com>`,
     headers: {
         'X-Mailer': 'Nodemailer',
         'X-Priority': '3',

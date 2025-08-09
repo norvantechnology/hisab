@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS hisab."users" (
     "isVerified" BOOLEAN DEFAULT FALSE,
     "verificationToken" TEXT,
     "verificationTokenExpiry" TIMESTAMP,
+    "passwordResetToken" TEXT,
+    "passwordResetExpiry" TIMESTAMP,
     "createdAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

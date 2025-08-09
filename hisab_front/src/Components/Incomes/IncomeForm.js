@@ -6,6 +6,7 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
+import { getTodayDate } from '../../utils/dateUtils';
 import CategoryDropdown from '../Common/CategoryDropdown';
 
 const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, onSubmit, isLoading, onAddCategory }) => {
@@ -14,7 +15,7 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
         enableReinitialize: true,
         initialValues: {
             id: selectedIncome?.id || '',
-            date: selectedIncome?.date?.split('T')[0] || '',
+            date: selectedIncome?.date?.split('T')[0] || getTodayDate(),
             categoryId: selectedIncome?.categoryId || '',
             paymentMethod: selectedIncome?.bankAccountId && !selectedIncome?.contactId ? 'bank' : selectedIncome?.contactId ? 'contact' : 'bank',
             bankAccountId: selectedIncome?.bankAccountId || '',
@@ -65,7 +66,7 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
             // Force form to reinitialize with fresh data
             validation.setValues({
                 id: selectedIncome.id || '',
-                date: selectedIncome.date?.split('T')[0] || '',
+                date: selectedIncome.date?.split('T')[0] || getTodayDate(),
                 categoryId: selectedIncome.categoryId || '',
                 paymentMethod: selectedIncome.bankAccountId && !selectedIncome.contactId ? 'bank' : selectedIncome.contactId ? 'contact' : 'bank',
                 bankAccountId: selectedIncome.bankAccountId || '',

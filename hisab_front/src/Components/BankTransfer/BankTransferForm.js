@@ -5,6 +5,7 @@ import ReactSelect from 'react-select';
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import { ACCOUNT_TYPES } from '../BankAccounts/index';
+import { getTodayDate } from '../../utils/dateUtils';
 
 const BankTransferForm = ({
     isOpen,
@@ -19,7 +20,7 @@ const BankTransferForm = ({
         enableReinitialize: true,
         initialValues: {
             id: selectedTransfer?.id || '',
-            date: selectedTransfer?.date?.split('T')[0] || '',
+            date: selectedTransfer?.date?.split('T')[0] || getTodayDate(),
             fromBankId: selectedTransfer?.fromBankId || '',  // Changed from fromBankAccountId to match API
             toBankId: selectedTransfer?.toBankId || '',      // Changed from toBankAccountId to match API
             amount: selectedTransfer ? parseFloat(selectedTransfer.amount || 0) : 0,

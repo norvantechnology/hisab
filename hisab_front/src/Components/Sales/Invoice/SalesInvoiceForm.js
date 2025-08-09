@@ -343,7 +343,7 @@ const SalesInvoiceForm = ({
     return {
       id: isEditMode && selectedInvoice ? selectedInvoice.id : '',
       invoiceNumber: isEditMode && selectedInvoice ? selectedInvoice.invoiceNumber : '',
-      date: isEditMode && selectedInvoice ? selectedInvoice.date : new Date().toISOString(),
+      date: isEditMode && selectedInvoice ? selectedInvoice.date?.split('T')[0] : new Date().toISOString().split('T')[0],
       billTo: billToValue,
       billToBank: billToBankValue,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : '',

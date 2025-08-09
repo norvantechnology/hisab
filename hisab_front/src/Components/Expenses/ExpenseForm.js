@@ -7,13 +7,14 @@ import { useFormik } from "formik";
 import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
 import CategoryDropdown from '../Common/CategoryDropdown';
+import { getTodayDate } from '../../utils/dateUtils';
 
 const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, onSubmit, isLoading, onAddCategory }) => {
     const validation = useFormik({
         enableReinitialize: true,
         initialValues: {
             id: selectedExpense?.id || '',
-            date: selectedExpense?.date?.split('T')[0] || '',
+            date: selectedExpense?.date?.split('T')[0] || getTodayDate(),
             categoryId: selectedExpense?.categoryId || '',
             paymentMethod: selectedExpense?.bankAccountId && !selectedExpense?.contactId ? 'bank' : selectedExpense?.contactId ? 'contact' : 'bank',
             bankAccountId: selectedExpense?.bankAccountId || '',
@@ -64,7 +65,7 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, 
             // Force form to reinitialize with fresh data
             validation.setValues({
                 id: selectedExpense.id || '',
-                date: selectedExpense.date?.split('T')[0] || '',
+                date: selectedExpense.date?.split('T')[0] || getTodayDate(),
                 categoryId: selectedExpense.categoryId || '',
                 paymentMethod: selectedExpense.bankAccountId && !selectedExpense.contactId ? 'bank' : selectedExpense.contactId ? 'contact' : 'bank',
                 bankAccountId: selectedExpense.bankAccountId || '',

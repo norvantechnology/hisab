@@ -67,8 +67,9 @@ const BankAccounts = () => {
         setLoading(true);
         try {
             const response = await getBankAccounts({ includeInactive: true });
-            if (response.accounts && response.success) {
-                const formattedAccounts = response.accounts.map(account => ({
+            if (response.success) {
+                const accounts = response.accounts || [];
+                const formattedAccounts = accounts.map(account => ({
                     ...account,
                     id: account.id,
                     bankName: account.accountName,
@@ -79,6 +80,12 @@ const BankAccounts = () => {
                     openingDate: new Date(account.createdAt).toLocaleDateString()
                 }));
                 setBankAccounts(formattedAccounts);
+                
+                // Show info message if no accounts found instead of error
+                if (accounts.length === 0) {
+                    // No toast message needed for empty state - let UI handle it gracefully
+                    console.log("No bank accounts found - showing empty state");
+                }
             } else {
                 toast.error(response.message || "Failed to fetch bank accounts");
             }
@@ -423,6 +430,7 @@ const BankAccounts = () => {
                                 <EmptyState
                                     title="No bank accounts found"
                                     description="Try adjusting your search filters or add a new account to get started"
+                                    onAddClick={handleAddClick}
                                 />
                             )}
                         </>

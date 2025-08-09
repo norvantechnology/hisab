@@ -58,21 +58,27 @@ const BankAccountContactDropdown = ({
     
     try {
       const response = await getBankAccounts({ search, page });
-      if (page === 1) {
-        setBankAccounts(response.accounts || []);
-        setBankAccountsPagination({
-          page: response.currentPage || 1,
-          totalPages: response.totalPages || 1
-        });
+      if (response.success) {
+        if (page === 1) {
+          setBankAccounts(response.accounts || []);
+          setBankAccountsPagination({
+            page: response.currentPage || 1,
+            totalPages: response.totalPages || 1
+          });
+        } else {
+          setBankAccounts(prev => [...prev, ...(response.accounts || [])]);
+          setBankAccountsPagination(prev => ({
+            ...prev,
+            page: response.currentPage || page
+          }));
+        }
       } else {
-        setBankAccounts(prev => [...prev, ...(response.accounts || [])]);
-        setBankAccountsPagination(prev => ({
-          ...prev,
-          page: response.currentPage || page
-        }));
+        console.error('Failed to fetch bank accounts:', response.message);
+        setBankAccounts([]);
       }
     } catch (error) {
       console.error('Error fetching bank accounts:', error);
+      setBankAccounts([]);
     } finally {
       setLoading(false);
       setLoadingMore(false);

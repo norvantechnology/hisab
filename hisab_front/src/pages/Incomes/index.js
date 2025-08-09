@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
-import { toast } from 'react-toastify';
+import { toast , ToastContainer} from 'react-toastify';
 import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import IncomeFilters from '../../Components/Incomes/IncomeFilters';
@@ -325,6 +325,7 @@ const IncomesPage = () => {
 
     return (
         <div className="page-content">
+            <ToastContainer closeButton={false} position="top-right" />                                                                                                                                             
             <Container fluid>
                 <BreadCrumb title="Incomes" pageTitle="Finance" />
 

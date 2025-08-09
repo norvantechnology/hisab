@@ -203,6 +203,7 @@ import Offlinepage from "../pages/AuthenticationInner/Errors/Offlinepage";
 //login
 import Login from "../pages/Authentication/Login";
 import ForgetPasswordPage from "../pages/Authentication/ForgetPassword";
+import ResetPasswordPage from "../pages/Authentication/ResetPassword";
 import Logout from "../pages/Authentication/Logout";
 import Register from "../pages/Authentication/Register";
 import VerifyEmail from "../pages/Authentication/VerifyEmail.js";
@@ -506,6 +507,7 @@ const publicRoutes = [
 
   { path: "/logout", component: <Logout /> },
   { path: "/forgot-password", component: <ForgetPasswordPage /> },
+  { path: "/reset-password", component: <ResetPasswordPage /> },
 
 
   //AuthenticationInner pages

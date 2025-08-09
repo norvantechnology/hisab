@@ -337,7 +337,7 @@ const PurchaseInvoiceForm = ({
     return {
       id: isEditMode && selectedInvoice ? selectedInvoice.id : '',
       invoiceNumber: isEditMode && selectedInvoice ? selectedInvoice.invoiceNumber : '',
-      date: isEditMode && selectedInvoice ? selectedInvoice.date : new Date().toISOString(),
+      date: isEditMode && selectedInvoice ? selectedInvoice.date?.split('T')[0] : new Date().toISOString().split('T')[0],
       billFrom: billFromValue,
       billFromBank: billFromBankValue,
       taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',

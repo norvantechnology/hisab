@@ -57,9 +57,13 @@ export async function signup(req, res) {
       const templatePath = path.join(process.cwd(), "src/templates/email_verification_template.html");
       let htmlTemplate = fs.readFileSync(templatePath, "utf8");
 
+      // Simple text logo to avoid email client issues
+      const logoContent = '<div style="font-size: 32px; font-weight: bold; margin-bottom: 20px; color: white;">VYAVHAR</div>';
+
       htmlTemplate = htmlTemplate
         .replace("[Client Name]", name)
-        .replace("{{VERIFICATION_LINK}}", verificationUrl);
+        .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl)
+        .replace("{{LOGO_CONTENT}}", logoContent);
 
       console.log("htmlTemplate", htmlTemplate);
       
@@ -117,9 +121,9 @@ export async function signup(req, res) {
     const templatePath = path.join(process.cwd(), "src/templates/email_verification_template.html");
     let htmlTemplate = fs.readFileSync(templatePath, "utf8");
 
-          htmlTemplate = htmlTemplate
-        .replace("[Client Name]", name)
-        .replace("{{VERIFICATION_LINK}}", verificationUrl);
+            htmlTemplate = htmlTemplate
+            .replace("[Client Name]", name)
+            .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl);
 
       console.log("htmlTemplate", htmlTemplate);
       
@@ -387,9 +391,9 @@ export async function resendVerificationEmail(req, res) {
     const templatePath = path.join(process.cwd(), "src/templates/email_verification_template.html");
     let htmlTemplate = fs.readFileSync(templatePath, "utf8");
 
-    htmlTemplate = htmlTemplate
-      .replace("[Client Name]", userData.name)
-      .replace("{{VERIFICATION_LINK}}", verificationUrl);
+            htmlTemplate = htmlTemplate
+            .replace("[Client Name]", userData.name)
+            .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl);
 
     console.log("htmlTemplate", htmlTemplate);
     
@@ -415,6 +419,186 @@ export async function resendVerificationEmail(req, res) {
     await client.query("ROLLBACK");
     console.error("Resend verification email error:", error);
     return errorResponse(res, "Error sending verification email", 500);
+  } finally {
+    client.release();
+  }
+}
+
+export async function forgotPassword(req, res) {
+  const { email } = req.body;
+
+  if (!email) {
+    return errorResponse(res, "Email is required", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Check if user exists and is verified
+    const userQuery = `
+      SELECT id, "name", "email", "isVerified", "isActive"
+      FROM hisab."users"
+      WHERE "email" = $1
+      LIMIT 1
+    `;
+    const result = await client.query(userQuery, [email]);
+
+    if (result.rows.length === 0) {
+      // Don't reveal if user exists or not for security
+      return successResponse(res, {
+        message: "If your email is registered with us, you will receive a password reset link shortly.",
+      });
+    }
+
+    const user = result.rows[0];
+
+    // Check if user is active
+    if (!user.isActive) {
+      return errorResponse(res, "Your account has been deactivated. Please contact support.", 403);
+    }
+
+    // Check if user is verified
+    if (!user.isVerified) {
+      return errorResponse(res, "Please verify your email first before resetting password.", 400);
+    }
+
+    // Generate password reset token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    
+    // Calculate expiry time in JavaScript (UTC) - 1 hour from now
+    const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
+    
+    console.log("Setting reset token expiry:", {
+      now: new Date().toISOString(),
+      expiry: resetExpiry.toISOString(),
+      diffMinutes: (resetExpiry - new Date()) / (1000 * 60)
+    });
+    
+    // Update user with reset token
+    const updateUserQuery = `
+      UPDATE hisab."users"
+      SET "passwordResetToken" = $1, "passwordResetExpiry" = $2, "updatedAt" = CURRENT_TIMESTAMP
+      WHERE id = $3
+    `;
+    
+    await client.query(updateUserQuery, [resetToken, resetExpiry, user.id]);
+
+    // Create password reset URL
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`;
+
+    // Prepare email template (reuse verification template structure but modify content)
+    const templatePath = path.join(process.cwd(), "src/templates/email_verification_template.html");
+    let htmlTemplate = fs.readFileSync(templatePath, "utf8");
+
+    // Customize template for password reset
+    htmlTemplate = htmlTemplate
+      .replace(/Email Verification - Vyavhar/g, "Password Reset - Vyavhar")
+      .replace(/Welcome to Vyavhar/g, "Password Reset Request")
+      .replace(/Smart Financial Management Platform/g, "Reset Your Password")
+      .replace("[Client Name]", user.name)
+      .replace(/Thank you for joining Vyavhar! We're excited to help you manage your finances with ease and intelligence\./g, 
+               "We received a request to reset your password for your Vyavhar account.")
+      .replace(/To get started, please verify your email address by clicking the button below:/g,
+               "To reset your password, please click the button below:")
+      .replace(/Verify Email Address/g, "Reset Password")
+      .replace(/\{\{VERIFICATION_LINK\}\}/g, resetUrl)
+      .replace(/This verification link will expire in 24 hours/g, "This password reset link will expire in 1 hour")
+      .replace(/If you didn't create an account with Vyavhar, please ignore this email\./g,
+               "If you didn't request a password reset, please ignore this email. Your password will remain unchanged.");
+
+    try {
+      let emailSent = await sendOtpEmail(email, {
+        subject: "Password Reset Request - Vyavhar",
+        html: htmlTemplate
+      });
+
+      if (!emailSent) {
+        return errorResponse(res, "Failed to send password reset email", 500);
+      }
+    } catch (emailError) {
+      console.error("Email sending error:", emailError);
+      return errorResponse(res, "Failed to send password reset email. Please try again.", 500);
+    }
+
+    return successResponse(res, {
+      message: "If your email is registered with us, you will receive a password reset link shortly.",
+    });
+
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    return errorResponse(res, "Error processing password reset request", 500);
+  } finally {
+    client.release();
+  }
+}
+
+export async function resetPassword(req, res) {
+  const { token, newPassword } = req.body;
+
+  if (!token || !newPassword) {
+    return errorResponse(res, "Token and new password are required", 400);
+  }
+
+  if (newPassword.length < 8) {
+    return errorResponse(res, "Password must be at least 8 characters long", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Find user with valid reset token
+    const userQuery = `
+      SELECT id, "name", "email", "passwordResetExpiry"
+      FROM hisab."users"
+      WHERE "passwordResetToken" = $1 AND "isActive" = TRUE
+      LIMIT 1
+    `;
+    const result = await client.query(userQuery, [token]);
+
+    if (result.rows.length === 0) {
+      return errorResponse(res, "Invalid or expired reset token", 400);
+    }
+
+    const user = result.rows[0];
+
+    // Check if token is expired
+    const now = new Date();
+    const expiry = new Date(user.passwordResetExpiry);
+    
+    console.log("Token expiry check:", {
+      now: now.toISOString(),
+      expiry: expiry.toISOString(),
+      diffMinutes: (now - expiry) / (1000 * 60),
+      isExpired: now > expiry
+    });
+
+    if (now > expiry) {
+      return errorResponse(res, "Reset token has expired", 400);
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and clear reset token
+    await client.query(
+      `UPDATE hisab."users" 
+       SET "password" = $1, "passwordResetToken" = NULL, "passwordResetExpiry" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE id = $2`,
+      [hashedPassword, user.id]
+    );
+
+    return successResponse(res, {
+      message: "Password reset successfully. You can now login with your new password.",
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+      },
+    });
+
+  } catch (error) {
+    console.error("Reset password error:", error);
+    return errorResponse(res, "Error resetting password", 500);
   } finally {
     client.release();
   }

@@ -21,11 +21,11 @@ export const userForgetPassword = (user, history) => async (dispatch) => {
 
       } else if (process.env.REACT_APP_DEFAULTAUTH === "jwt") {
           response = postJwtForgetPwd(
-              user.email
+              user
           )
       } else {
           response = postFakeForgetPwd(
-              user.email
+              user
           )
       }
 

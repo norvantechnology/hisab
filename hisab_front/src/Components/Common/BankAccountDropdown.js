@@ -24,9 +24,15 @@ const BankAccountDropdown = ({
     setLoading(true);
     try {
       const response = await getBankAccounts({ search });
-      setBankAccounts(response.accounts || []);
+      if (response.success) {
+        setBankAccounts(response.accounts || []);
+      } else {
+        console.error('Failed to fetch bank accounts:', response.message);
+        setBankAccounts([]);
+      }
     } catch (error) {
       console.error('Error fetching bank accounts:', error);
+      setBankAccounts([]);
     } finally {
       setLoading(false);
     }

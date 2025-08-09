@@ -3,68 +3,72 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Email Verification</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background-color: #f6f9fc;
-      margin: 0;
-      padding: 0;
-      color: #333;
-    }
-    .container {
-      max-width: 600px;
-      background-color: #ffffff;
-      margin: 40px auto;
-      padding: 30px;
-      border-radius: 8px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    h1 {
-      color: #2d3748;
-      font-size: 24px;
-    }
-    p {
-      font-size: 16px;
-      line-height: 1.5;
-      margin: 20px 0;
-    }
-    a.button {
-      display: inline-block;
-      background-color: #4a90e2;
-      color: white !important;
-      padding: 12px 24px;
-      border-radius: 5px;
-      text-decoration: none;
-      font-weight: bold;
-      margin-top: 20px;
-    }
-    a.button:hover {
-      background-color: #357abd;
-    }
-    .footer {
-      font-size: 12px;
-      color: #999;
-      margin-top: 30px;
-      text-align: center;
-    }
-  </style>
+  <title>Email Verification - Vyavhar</title>
 </head>
-<body>
-  <div class="container">
-    <h1>Hello [Client Name],</h1>
-    <p>Thank you for signing up! Please verify your email address by clicking the button below:</p>
-    <p>
-      <a href="{{VERIFICATION_LINK}}" class="button" target="_blank" rel="noopener noreferrer">
-        Verify Email
-      </a>
-    </p>
-    <p>If the button above doesn't work, copy and paste this URL into your browser:</p>
-    <p><a href="{{VERIFICATION_LINK}}" target="_blank" rel="noopener noreferrer">{{VERIFICATION_LINK}}</a></p>
-    <p>This verification link will expire in 24 hours.</p>
-    <div class="footer">
-      &copy; 2025 HISAB. All rights reserved.
-    </div>
-  </div>
+<body style="font-family: Arial, sans-serif; background-color: #f6f9fc; margin: 0; padding: 20px; color: #333;">
+  
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);">
+    
+    <!-- Header -->
+    <tr>
+               <td style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); padding: 40px 30px; text-align: center; color: white;">
+           <h1 style="margin: 0 0 5px 0; font-size: 28px; font-weight: 600;">Welcome to Vyavhar</h1>
+           <p style="margin: 0; font-size: 16px; opacity: 0.9;">Smart Financial Management Platform</p>
+         </td>
+    </tr>
+    
+    <!-- Content -->
+    <tr>
+      <td style="padding: 40px 30px;">
+        
+        <h2 style="color: #1f2937; font-size: 20px; margin-bottom: 20px;">Hello [Client Name],</h2>
+        
+        <p style="font-size: 16px; line-height: 1.6; color: #4b5563; margin-bottom: 25px;">
+          Thank you for joining Vyavhar! We're excited to help you manage your finances with ease and intelligence.
+        </p>
+        
+        <p style="font-size: 16px; line-height: 1.6; color: #4b5563; margin-bottom: 30px;">
+          To get started, please verify your email address by clicking the button below:
+        </p>
+        
+        <!-- Button -->
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="text-align: center; padding: 20px 0;">
+              <a href="{{VERIFICATION_LINK}}" 
+                 style="display: inline-block; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 16px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 16px;">
+                Verify Email Address
+              </a>
+            </td>
+          </tr>
+        </table>
+        
+        
+        
+        <!-- Security Notice -->
+        <div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 15px; margin: 20px 0;">
+          <p style="margin: 0; font-size: 14px; color: #92400e;">
+            <strong>Security Notice:</strong> This verification link will expire in 24 hours for your security. If you didn't create an account with Vyavhar, please ignore this email.
+          </p>
+        </div>
+        
+      </td>
+    </tr>
+    
+    <!-- Footer -->
+    <tr>
+      <td style="background-color: #f8fafc; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
+        <p style="margin: 0 0 10px 0; font-size: 14px; color: #6b7280; font-weight: 600;">
+          Vyavhar - Smart Financial Management Platform
+        </p>
+        <p style="margin: 0; font-size: 12px; color: #9ca3af;">
+          © 2025 Vyavhar. All rights reserved.<br>
+          This email was sent from vyavhar@gmail.com
+        </p>
+      </td>
+    </tr>
+    
+  </table>
+  
 </body>
 </html>

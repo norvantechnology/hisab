@@ -1,5 +1,5 @@
-import React from "react";
-import { Row, Col, CardBody, Card, Container, Input, Label, Form, FormFeedback } from "reactstrap";
+import React, { useState } from "react";
+import { Row, Col, CardBody, Card, Container, Input, Label, Form, FormFeedback, Spinner } from "reactstrap";
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import { ToastContainer, toast } from 'react-toastify';
@@ -11,6 +11,7 @@ import { signup } from "../../services/auth";
 
 const Register = () => {
     const navigate = useNavigate();
+    const [loading, setLoading] = useState(false);
 
     const validation = useFormik({
         enableReinitialize: true,
@@ -31,6 +32,7 @@ const Register = () => {
                 .required("Please confirm your password"),
         }),
         onSubmit: async (values) => {
+            setLoading(true);
             try {
                 const { token, user, message } = await signup({
                     email: values.email,
@@ -52,6 +54,8 @@ const Register = () => {
             } catch (error) {
                 toast.error(error.message || "Registration failed");
                 console.error("Registration error:", error);
+            } finally {
+                setLoading(false);
             }
         }
     });
@@ -68,10 +72,20 @@ const Register = () => {
                                 <div className="text-center mt-sm-5 mb-4 text-white-50">
                                     <div>
                                         <Link to="/" className="d-inline-block auth-logo">
-                                            <img src={logoLight} alt="Vyavhar" height="40" />
+                                            <img 
+                                                src={logoLight} 
+                                                alt="Vyavhar" 
+                                                style={{ 
+                                                    height: '60px',
+                                                    width: 'auto',
+                                                    filter: 'brightness(0) invert(1)',
+                                                    maxWidth: '200px',
+                                                    objectFit: 'contain'
+                                                }} 
+                                            />
                                         </Link>
                                     </div>
-                                    <p className="mt-3 fs-15 fw-medium">Smart Trading Analytics Platform</p>
+                                    <p className="mt-3 fs-15 fw-medium">Smart Financial Management Platform</p>
                                 </div>
                             </Col>
                         </Row>
@@ -82,7 +96,7 @@ const Register = () => {
                                     <CardBody className="p-4">
                                         <div className="text-center mt-2">
                                             <h5 className="text-primary">Create Vyavhar Account</h5>
-                                            <p className="text-muted">Start your trading journey with us</p>
+                                            <p className="text-muted">Start managing your finances with ease</p>
                                         </div>
                                         <div className="p-2 mt-4">
                                             <Form
@@ -155,13 +169,20 @@ const Register = () => {
 
                                                 <div className="mb-4">
                                                     <p className="mb-0 fs-12 text-muted fst-italic">By registering you agree to Vyavhar's
-                                                        <Link to="#" className="text-primary text-decoration-underline fst-normal fw-medium"> Terms</Link>
+                                                        <Link to="/pages-terms-condition" className="text-primary text-decoration-underline fst-normal fw-medium"> Terms & Conditions</Link>
                                                     </p>
                                                 </div>
 
                                                 <div className="mt-4">
-                                                    <button className="btn btn-primary w-100" type="submit">
-                                                        Create Account
+                                                    <button className="btn btn-primary w-100" type="submit" disabled={loading}>
+                                                        {loading ? (
+                                                            <>
+                                                                <Spinner size="sm" className="me-2">Loading...</Spinner>
+                                                                Creating Account...
+                                                            </>
+                                                        ) : (
+                                                            "Create Account"
+                                                        )}
                                                     </button>
                                                 </div>
 
