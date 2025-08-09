@@ -188,7 +188,7 @@ const TileBoxs = () => {
                                 <Link to="#!">
                                     <h6 className="fs-15 fw-semibold">{item.title} <span className="text-muted fs-13">{item.year}</span></h6>
                                 </Link>
-                                <p className="text-muted mb-0"><i className="ri-building-line align-bottom"></i> Themesbrand <span className="ms-2"><i className="ri-map-pin-2-line align-bottom"></i> California</span></p>
+                                <p className="text-muted mb-0"><i className="ri-building-line align-bottom"></i> Norvan Technology <span className="ms-2"><i className="ri-map-pin-2-line align-bottom"></i> California</span></p>
                             </CardBody>
                         </Card>
                     </Col>))}

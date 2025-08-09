@@ -6,8 +6,9 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
+import CategoryDropdown from '../Common/CategoryDropdown';
 
-const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, onSubmit, isLoading }) => {
+const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, onSubmit, isLoading, onAddCategory }) => {
 
     const validation = useFormik({
         enableReinitialize: true,
@@ -189,19 +190,18 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                         <Col md={6}>
                             <FormGroup>
                                 <Label>Income Category</Label>
-                                <ReactSelect
-                                    options={categories.map(category => ({
-                                        value: category.id,
-                                        label: category.name
-                                    }))}
-                                    value={getCurrentCategory()}
-                                    onChange={(selectedOption) => {
-                                        validation.setFieldValue('categoryId', selectedOption?.value || '');
+                                <CategoryDropdown
+                                    categories={categories}
+                                    value={validation.values.categoryId}
+                                    onChange={(selectedValue) => {
+                                        validation.setFieldValue('categoryId', selectedValue);
                                     }}
                                     onBlur={() => validation.setFieldTouched('categoryId', true)}
-                                    className={`react-select-container ${validation.touched.categoryId && validation.errors.categoryId ? 'is-invalid' : ''}`}
-                                    classNamePrefix="react-select"
+                                    onAddCategory={onAddCategory}
                                     placeholder="Select Income Category"
+                                    addNewLabel="Add New Income Category"
+                                    isInvalid={validation.touched.categoryId && !!validation.errors.categoryId}
+                                    isDisabled={isLoading}
                                 />
                                 {validation.touched.categoryId && validation.errors.categoryId && (
                                     <div className="invalid-feedback d-block">{validation.errors.categoryId}</div>

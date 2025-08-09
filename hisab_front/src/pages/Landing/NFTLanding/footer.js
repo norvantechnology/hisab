@@ -72,44 +72,10 @@ const Footer = () => {
                             </div>
                         </Col>
                         <Col sm={6}>
-                            <div className="text-sm-end mt-3 mt-sm-0">
-                                <ul className="list-inline mb-0 footer-social-link">
-                                    <li className="list-inline-item">
-                                        <Link to="#" className="avatar-xs d-block">
-                                            <div className="avatar-title rounded-circle">
-                                                <i className="ri-facebook-fill"></i>
-                                            </div>
-                                        </Link>
-                                    </li>
-                                    <li className="list-inline-item">
-                                        <Link to="#" className="avatar-xs d-block">
-                                            <div className="avatar-title rounded-circle">
-                                                <i className="ri-github-fill"></i>
-                                            </div>
-                                        </Link>
-                                    </li>
-                                    <li className="list-inline-item">
-                                        <Link to="#" className="avatar-xs d-block">
-                                            <div className="avatar-title rounded-circle">
-                                                <i className="ri-linkedin-fill"></i>
-                                            </div>
-                                        </Link>
-                                    </li>
-                                    <li className="list-inline-item">
-                                        <Link to="#" className="avatar-xs d-block">
-                                            <div className="avatar-title rounded-circle">
-                                                <i className="ri-google-fill"></i>
-                                            </div>
-                                        </Link>
-                                    </li>
-                                    <li className="list-inline-item">
-                                        <Link to="#" className="avatar-xs d-block">
-                                            <div className="avatar-title rounded-circle">
-                                                <i className="ri-dribbble-line"></i>
-                                            </div>
-                                        </Link>
-                                    </li>
-                                </ul>
+                            <div className="text-sm-end d-none d-sm-block">
+                                <p className="copy-rights mb-0">
+                                    Powering Smart Financial Management
+                                </p>
                             </div>
                         </Col>
                     </Row>

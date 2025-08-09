@@ -7,31 +7,36 @@ const CompanyProtected = ({ children }) => {
     const location = useLocation();
     const [hasCompanies, setHasCompanies] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     const checkCompanies = async () => {
+        setError(null); // Clear any previous errors
         try {
             const response = await getAllCompanies();
             if (response?.success) {
                 const hasCompaniesNow = response.companies && response.companies.length > 0;
                 setHasCompanies(hasCompaniesNow);
                 
-                // If no companies exist and we're not already on welcome page, redirect to welcome page
+                // ONLY redirect to welcome if API succeeds but returns no companies
                 if (!hasCompaniesNow && location.pathname !== '/welcome') {
                     navigate('/welcome');
                     return;
                 }
             } else {
+                // API call succeeded but returned error response - don't redirect, show error
+                const errorMsg = response?.message || 'Failed to fetch companies';
+                console.error('Failed to fetch companies:', errorMsg);
+                setError(errorMsg);
                 setHasCompanies(false);
-                if (location.pathname !== '/welcome') {
-                    navigate('/welcome');
-                }
+                // Don't redirect on API errors - user might have network issues
             }
-        } catch (error) {
-            console.error('Error checking companies:', error);
+        } catch (err) {
+            // Network error, server down, etc. - don't redirect, show error
+            const errorMsg = err.message || 'Network error. Please check your connection.';
+            console.error('Error checking companies:', err);
+            setError(errorMsg);
             setHasCompanies(false);
-            if (location.pathname !== '/welcome') {
-                navigate('/welcome');
-            }
+            // Don't redirect on network/server errors - user should be able to retry
         } finally {
             setLoading(false);
         }
@@ -52,6 +57,27 @@ const CompanyProtected = ({ children }) => {
             <div className="d-flex justify-content-center align-items-center" style={{ height: '100vh' }}>
                 <div className="spinner-border text-primary" role="status">
                     <span className="visually-hidden">Loading...</span>
+                </div>
+            </div>
+        );
+    }
+
+    // Show error message with retry option if API failed
+    if (error) {
+        return (
+            <div className="d-flex justify-content-center align-items-center flex-column" style={{ height: '100vh' }}>
+                <div className="text-center">
+                    <h5 className="text-danger mb-3">Error Loading Companies</h5>
+                    <p className="text-muted mb-4">{error}</p>
+                    <button 
+                        className="btn btn-primary"
+                        onClick={() => {
+                            setLoading(true);
+                            checkCompanies();
+                        }}
+                    >
+                        Try Again
+                    </button>
                 </div>
             </div>
         );

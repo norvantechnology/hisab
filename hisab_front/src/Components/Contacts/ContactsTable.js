@@ -92,6 +92,8 @@ const ContactsTable = ({
                     calculatedBalance.type : 
                     cell.row.original.currentBalanceType;
                 
+
+                
                 if (balanceType === 'none' || balance === 0) {
                     return <span className="text-muted">₹0.00</span>;
                 }

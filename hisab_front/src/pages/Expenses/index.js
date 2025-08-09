@@ -367,6 +367,7 @@ const ExpensesPage = () => {
                     selectedExpense={selectedExpense}
                     onSubmit={handleSubmitExpense}
                     isLoading={apiLoading}
+                    onAddCategory={() => toggleModal('category', true)}
                 />
 
                 <ExpenseViewModal

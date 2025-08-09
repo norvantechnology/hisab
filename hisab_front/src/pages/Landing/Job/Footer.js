@@ -135,20 +135,10 @@ const Footer = () => {
               </div>
             </Col>
             <Col sm={6}>
-              <div className="text-sm-end mt-3 mt-sm-0">
-                <ul className="list-inline mb-0 footer-list gap-4 fs-15">
-                  <li className="list-inline-item">
-                    <Link to="/pages-privacy-policy">Privacy Policy</Link>
-                  </li>
-                  <li className="list-inline-item">
-                    <Link to="/pages-term-conditions">
-                      Terms & Conditions
-                    </Link>
-                  </li>
-                  <li className="list-inline-item">
-                    <Link to="/pages-privacy-policy"> Security</Link>
-                  </li>
-                </ul>
+              <div className="text-sm-end d-none d-sm-block">
+                <p className="copy-rights mb-0">
+                  Powering Smart Financial Management
+                </p>
               </div>
             </Col>
           </Row>

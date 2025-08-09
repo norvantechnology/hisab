@@ -47,12 +47,18 @@ const SalesInvoiceForm = ({
       const discount = (subtotal * parseFloat(item.discountRate || 0)) / 100;
       const total = subtotal + taxAmount - discount;
       
+      // For edit mode: Add the original quantity back to current stock for validation
+      // This allows the user to edit the quantity within the available stock + the quantity they already have
+      const originalQuantity = parseFloat(item.quantity || 0);
+      const availableStock = parseFloat(item.currentStock || 0);
+      const adjustedStock = isEditMode ? availableStock + originalQuantity : availableStock;
+      
       return {
         id: item.id,
         productId: item.productId,
         name: item.productName || item.name,
         code: item.productCode || item.code,
-        quantity: parseFloat(item.quantity || 0),
+        quantity: originalQuantity,
         rate: parseFloat(item.rate || 0),
         taxRate: parseFloat(item.taxRate || 0),
         taxAmount: taxAmount,
@@ -61,7 +67,8 @@ const SalesInvoiceForm = ({
         total: total,
         isSerialized: item.isSerialized,
         serialNumbers: item.serialNumbers || [],
-        currentStock: parseFloat(item.currentStock || 0)
+        currentStock: adjustedStock,
+        originalQuantity: originalQuantity // Keep track of original quantity for reference
       };
     }) || [
         {
@@ -78,10 +85,11 @@ const SalesInvoiceForm = ({
           total: 0,
           isSerialized: false,
           serialNumbers: [],
-          currentStock: 0
+          currentStock: 0,
+          originalQuantity: 0
         }
       ];
-  }, [selectedInvoice]);
+  }, [selectedInvoice, isEditMode]);
 
   const [items, setItems] = useState(() => getInitialItems());
   const [selectedDate, setSelectedDate] = useState(() =>
@@ -244,10 +252,17 @@ const SalesInvoiceForm = ({
     if (billToType === 'bank') {
       payload.billToBank = billToId;
       payload.billToContact = null;
+      payload.status = 'paid'; // Bank transactions are always paid
     } else if (billToType === 'contact') {
       payload.billToContact = billToId;
+      // Set default status if none selected
+      if (!values.status) {
+        payload.status = 'pending';
+      } else {
+        payload.status = values.status;
+      }
       // Only include bank account if status is 'paid'
-      if (values.status === 'paid' && values.billToBank) {
+      if (payload.status === 'paid' && values.billToBank) {
         payload.billToBank = values.billToBank;
       } else {
         payload.billToBank = null; // Clear bank account for pending status
@@ -261,7 +276,11 @@ const SalesInvoiceForm = ({
     invoiceNumber: Yup.string().required('Invoice number is required'),
     date: Yup.date().required('Date is required'),
     billTo: Yup.string().required('Bill to is required'),
-    status: Yup.string().required('Status is required'),
+    status: Yup.string().when('billTo', {
+      is: (billTo) => billTo && billTo.startsWith('contact_'),
+      then: (schema) => schema.required('Status is required'),
+      otherwise: (schema) => schema
+    }),
     billToBank: Yup.string().when(['status', 'billTo'], {
       is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
       then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
@@ -327,7 +346,7 @@ const SalesInvoiceForm = ({
       date: isEditMode && selectedInvoice ? selectedInvoice.date : new Date().toISOString(),
       billTo: billToValue,
       billToBank: billToBankValue,
-      status: isEditMode && selectedInvoice ? selectedInvoice.status : 'pending',
+      status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
           id: Date.now(),
@@ -429,6 +448,13 @@ const SalesInvoiceForm = ({
       validation.setFieldValue('billToBank', '');
     }
   };
+
+  // Check if status dropdown should be shown
+  const shouldShowStatusDropdown = useMemo(() => {
+    // Show status dropdown only when a contact is selected
+    return validation.values.billTo && 
+           validation.values.billTo.startsWith('contact_');
+  }, [validation.values.billTo]);
 
   // Check if bank account dropdown should be shown
   const shouldShowBankAccountDropdown = useMemo(() => {
@@ -852,25 +878,27 @@ const SalesInvoiceForm = ({
                   <FormFeedback>{validation.errors.billTo}</FormFeedback>
                 </FormGroup>
               </Col>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Status</Label>
-                  <Input
-                    type="select"
-                    name="status"
-                    value={validation.values.status}
-                    onChange={handleStatusChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.status && !!validation.errors.status}
-                    disabled={isProcessing}
-                  >
-                    {STATUS_OPTIONS.map(status => (
-                      <option key={status.value} value={status.value}>{status.label}</option>
-                    ))}
-                  </Input>
-                  <FormFeedback>{validation.errors.status}</FormFeedback>
-                </FormGroup>
-              </Col>
+              {shouldShowStatusDropdown && (
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Status</Label>
+                    <Input
+                      type="select"
+                      name="status"
+                      value={validation.values.status}
+                      onChange={handleStatusChange}
+                      onBlur={validation.handleBlur}
+                      invalid={validation.touched.status && !!validation.errors.status}
+                      disabled={isProcessing}
+                    >
+                      {STATUS_OPTIONS.map(status => (
+                        <option key={status.value} value={status.value}>{status.label}</option>
+                      ))}
+                    </Input>
+                    <FormFeedback>{validation.errors.status}</FormFeedback>
+                  </FormGroup>
+                </Col>
+              )}
             </Row>
 
             {shouldShowBankAccountDropdown && (

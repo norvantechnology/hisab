@@ -61,10 +61,20 @@ const Login = () => {
                                 <div className="text-center mt-sm-5 mb-4 text-white-50">
                                     <div>
                                         <Link to="/" className="d-inline-block auth-logo">
-                                            <img src={logoLight} alt="Vyavhar" height="30" />
+                                            <img 
+                                                src={logoLight} 
+                                                alt="Vyavhar" 
+                                                style={{ 
+                                                    height: '60px',
+                                                    width: 'auto',
+                                                    filter: 'brightness(0) invert(1)',
+                                                    maxWidth: '200px',
+                                                    objectFit: 'contain'
+                                                }} 
+                                            />
                                         </Link>
                                     </div>
-                                    <p className="mt-3 fs-15 fw-medium">Smart Trading Analytics Platform</p>
+                                    <p className="mt-3 fs-15 fw-medium">Smart Financial Management Platform</p>
                                 </div>
                             </Col>
                         </Row>

@@ -1,18 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
-import ProductsFilter from '../../Components/Products/ProductsFilter';
-import ProductTable from '../../Components/Products/ProductTable';
 import ProductForm from '../../Components/Products/ProductForm';
+import ProductTable from '../../Components/Products/ProductTable';
 import ProductViewModal from '../../Components/Products/ProductViewModal';
 import DeleteModal from "../../Components/Common/DeleteModal";
+import ProductsFilter from '../../Components/Products/ProductsFilter';
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
+import AddStockCategoryModal from '../../Components/Products/AddStockCategoryModal';
 import Loader from '../../Components/Common/Loader';
-import { listStockCategories } from '../../services/productSetup.js';
+import { createProduct, updateProduct, deleteProduct, listProducts, getProduct } from '../../services/products';
+import { listStockCategories, createStockCategory } from '../../services/productSetup.js';
 import { getTaxCategory } from '../../services/taxCategories.js';
-import { listProducts, createProduct, updateProduct, deleteProduct, getProduct } from '../../services/products';
 import { getUnitOfMeasurements } from '../../services/unitOfMeasurements.js';
 
 const ProductsPage = () => {
@@ -44,14 +45,16 @@ const ProductsPage = () => {
             delete: false,
             main: false,
             view: false,
-            export: false
+            export: false,
+            stockCategory: false
         },
         selectedProduct: null,
         isEditMode: false,
         apiLoading: false,
         viewLoading: false,
         categoriesLoading: false,
-        taxCategoriesLoading: false
+        taxCategoriesLoading: false,
+        newStockCategoryName: ''
     });
 
     const {
@@ -69,7 +72,8 @@ const ProductsPage = () => {
         apiLoading,
         viewLoading,
         categoriesLoading,
-        taxCategoriesLoading
+        taxCategoriesLoading,
+        newStockCategoryName
     } = state;
 
     // Fetch categories and tax categories
@@ -327,6 +331,46 @@ const ProductsPage = () => {
         }
     };
 
+    // Stock Category Modal Handlers
+    const handleAddStockCategory = () => {
+        setState(prev => ({
+            ...prev,
+            modals: { ...prev.modals, stockCategory: true }
+        }));
+    };
+
+    const handleStockCategoryNameChange = (e) => {
+        setState(prev => ({
+            ...prev,
+            newStockCategoryName: e.target.value
+        }));
+    };
+
+    const handleCreateStockCategory = async () => {
+        if (!newStockCategoryName.trim()) {
+            toast.error("Stock category name cannot be empty");
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+            const response = await createStockCategory(newStockCategoryName.trim());
+            if (response.success) {
+                toast.success("Stock category added successfully");
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, stockCategory: false },
+                    newStockCategoryName: '',
+                    apiLoading: false
+                }));
+                fetchCategories(); // Refresh the categories list
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(error.response?.data?.message || "Failed to add stock category");
+        }
+    };
+
     const handlePageChange = (page) => {
         setState(prev => ({
             ...prev,
@@ -377,6 +421,7 @@ const ProductsPage = () => {
 
     return (
         <div className="page-content">
+            <ToastContainer closeButton={false} position="top-right" />
             <Container fluid>
                 <BreadCrumb title="Products" pageTitle="Inventory" />
 
@@ -427,6 +472,16 @@ const ProductsPage = () => {
                     categoriesLoading={categoriesLoading}
                     taxCategoriesLoading={taxCategoriesLoading}
                     unitsOfMeasurement={unitsOfMeasurement}
+                    onAddStockCategory={handleAddStockCategory}
+                />
+
+                <AddStockCategoryModal
+                    isOpen={modals.stockCategory}
+                    toggle={() => toggleModal('stockCategory')}
+                    categoryName={newStockCategoryName}
+                    onCategoryNameChange={handleStockCategoryNameChange}
+                    onAddCategory={handleCreateStockCategory}
+                    isLoading={apiLoading}
                 />
 
                 <ProductViewModal

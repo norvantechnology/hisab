@@ -96,7 +96,7 @@ const CoverPasswReset = () => {
                         <Row>
                             <Col lg={12}>
                                 <div className="text-center">
-                                    <p className="mb-0">&copy; {new Date().getFullYear()} vyavhar. Crafted with <i className="mdi mdi-heart text-danger"></i> by Themesbrand</p>
+                                    <p className="mb-0 text-muted">&copy; {new Date().getFullYear()} Vyavhar - Financial Management Platform</p>
                                 </div>
                             </Col>
                         </Row>

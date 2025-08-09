@@ -125,6 +125,36 @@ const PurchaseInvoiceTable = ({
             enableColumnFilter: false
         },
         {
+            header: "Pending Amount",
+            accessorKey: "remainingAmount",
+            cell: (cell) => {
+                const remainingAmount = parseFloat(cell.row.original.remainingAmount || 0);
+                const paidAmount = parseFloat(cell.row.original.paidAmount || 0);
+                
+                if (remainingAmount > 0) {
+                    return (
+                        <div>
+                            <span className="fw-semibold text-warning">
+                                ₹{remainingAmount.toFixed(2)}
+                            </span>
+                            {paidAmount > 0 && (
+                                <small className="text-muted d-block">
+                                    Paid: ₹{paidAmount.toFixed(2)}
+                                </small>
+                            )}
+                        </div>
+                    );
+                } else {
+                    return (
+                        <span className="text-success fw-semibold">
+                            ₹0.00
+                        </span>
+                    );
+                }
+            },
+            enableColumnFilter: false
+        },
+        {
             header: "Tax",
             accessorKey: "taxAmount",
             cell: (cell) => (

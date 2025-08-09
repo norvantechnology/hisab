@@ -50,6 +50,12 @@ const PurchaseInvoiceForm = ({
       const discount = (subtotal * (item.discountRate || 0)) / 100;
       const total = subtotal + taxAmount - discount;
       
+      // For edit mode: Subtract the original quantity from current stock for validation
+      // This represents the stock that was there before this purchase was made
+      const originalQuantity = parseFloat(item.quantity || 0);
+      const currentStockWithPurchase = parseFloat(item.currentStock || 0);
+      const stockBeforePurchase = isEditMode ? Math.max(0, currentStockWithPurchase - originalQuantity) : currentStockWithPurchase;
+      
       return {
         id: item.id,
         productId: item.productId,
@@ -64,7 +70,8 @@ const PurchaseInvoiceForm = ({
         total: total,
         isSerialized: item.isSerialized,
         serialNumbers: item.serialNumbers || [],
-        currentStock: item.currentStock
+        currentStock: stockBeforePurchase,
+        originalQuantity: originalQuantity // Keep track of original quantity for reference
       };
     }) || [
         {
@@ -81,10 +88,11 @@ const PurchaseInvoiceForm = ({
           total: 0,
           isSerialized: false,
           serialNumbers: [],
-          currentStock: 0
+          currentStock: 0,
+          originalQuantity: 0
         }
       ];
-  }, [selectedInvoice]);
+  }, [selectedInvoice, isEditMode]);
 
   const [items, setItems] = useState(() => getInitialItems());
   const [selectedDate, setSelectedDate] = useState(() =>
@@ -236,10 +244,17 @@ const PurchaseInvoiceForm = ({
     if (billFromType === 'bank') {
       payload.billFromBank = billFromId;
       payload.billFromContact = null;
+      payload.status = 'paid'; // Bank transactions are always paid
     } else if (billFromType === 'contact') {
       payload.billFromContact = billFromId;
+      // Set default status if none selected
+      if (!values.status) {
+        payload.status = 'pending';
+      } else {
+        payload.status = values.status;
+      }
       // Only include bank account if status is 'paid'
-      if (values.status === 'paid' && values.billFromBank) {
+      if (payload.status === 'paid' && values.billFromBank) {
         payload.billFromBank = values.billFromBank;
       } else {
         payload.billFromBank = null; // Clear bank account for pending status
@@ -261,7 +276,11 @@ const PurchaseInvoiceForm = ({
     taxType: Yup.string().required('Tax type is required'),
     discountType: Yup.string().required('Discount type is required'),
     discountValue: Yup.number().min(0, 'Discount cannot be negative'),
-    status: Yup.string().required('Status is required'),
+    status: Yup.string().when('billFrom', {
+      is: (billFrom) => billFrom && billFrom.startsWith('contact_'),
+      then: (schema) => schema.required('Status is required'),
+      otherwise: (schema) => schema
+    }),
     items: Yup.array().of(
       Yup.object().shape({
         name: Yup.string().required('Item name is required'),
@@ -324,7 +343,7 @@ const PurchaseInvoiceForm = ({
       taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',
       discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
       discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
-      status: isEditMode && selectedInvoice ? selectedInvoice.status : 'pending',
+      status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
           id: Date.now(),
@@ -393,6 +412,13 @@ const PurchaseInvoiceForm = ({
       validation.setFieldValue('billFromBank', '');
     }
   };
+
+  // Check if status dropdown should be shown
+  const shouldShowStatusDropdown = useMemo(() => {
+    // Show status dropdown only when a contact is selected
+    return validation.values.billFrom && 
+           validation.values.billFrom.startsWith('contact_');
+  }, [validation.values.billFrom]);
 
   // Check if bank account dropdown should be shown
   const shouldShowBankAccountDropdown = useMemo(() => {
@@ -800,25 +826,27 @@ const PurchaseInvoiceForm = ({
                   <FormFeedback>{validation.errors.billFrom}</FormFeedback>
                 </FormGroup>
               </Col>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Status</Label>
-                  <Input
-                    type="select"
-                    name="status"
-                    value={validation.values.status}
-                    onChange={handleStatusChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.status && !!validation.errors.status}
-                    disabled={isProcessing}
-                  >
-                    {STATUS_OPTIONS.map(status => (
-                      <option key={status.value} value={status.value}>{status.label}</option>
-                    ))}
-                  </Input>
-                  <FormFeedback>{validation.errors.status}</FormFeedback>
-                </FormGroup>
-              </Col>
+              {shouldShowStatusDropdown && (
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Status</Label>
+                    <Input
+                      type="select"
+                      name="status"
+                      value={validation.values.status}
+                      onChange={handleStatusChange}
+                      onBlur={validation.handleBlur}
+                      invalid={validation.touched.status && !!validation.errors.status}
+                      disabled={isProcessing}
+                    >
+                      {STATUS_OPTIONS.map(status => (
+                        <option key={status.value} value={status.value}>{status.label}</option>
+                      ))}
+                    </Input>
+                    <FormFeedback>{validation.errors.status}</FormFeedback>
+                  </FormGroup>
+                </Col>
+              )}
             </Row>
 
             {shouldShowBankAccountDropdown && (

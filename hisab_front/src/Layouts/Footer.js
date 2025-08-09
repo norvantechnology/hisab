@@ -10,6 +10,11 @@ const Footer = () => {
                         <Col sm={6}>
                             {new Date().getFullYear()} © Vyavhar - Financial Management Platform.
                         </Col>
+                        <Col sm={6}>
+                            <div className="text-sm-end d-none d-sm-block">
+                                Powering Smart Financial Management
+                            </div>
+                        </Col>
                     </Row>
                 </Container>
             </footer>

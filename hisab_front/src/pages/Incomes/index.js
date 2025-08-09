@@ -374,6 +374,7 @@ const IncomesPage = () => {
                     selectedIncome={selectedIncome}
                     onSubmit={handleSubmitIncome}
                     isLoading={apiLoading}
+                    onAddCategory={() => toggleModal('category', true)}
                 />
 
                 <IncomeViewModal

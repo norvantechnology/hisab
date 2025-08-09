@@ -68,7 +68,7 @@ const EmailVerifyAction = () => {
                                         <div style={{textAlign: "center", margin: "25px auto 0px auto", fontFamily: "Roboto sans-serif"}}>
                                             <h4 style={{fontWeight: 500, lineHeight: "1.5", fontFamily: "Roboto sans-serif"}}>Need Help ?</h4>
                                             <p style={{color: "#878a99", lineHeight: 1.5}}>Please send and feedback or bug info to <Link to="" style={{fontWeight: 500}}>info@vyavhar.com</Link></p>
-                                            <p style={{fontFamily: "Roboto, sans-serif", fontSize: "14px", color: "#98a6ad", margin: "0px"}}>2022 vyavhar. Design & Develop by Themesbrand</p>
+                                            <p style={{ fontSize: "13px", color: "#74788d", margin: "0px"}}>2022 vyavhar. Design & Develop by Norvan Technology</p>
                                         </div>
                                     </div>
                                 </td>

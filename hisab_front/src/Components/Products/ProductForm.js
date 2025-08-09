@@ -30,7 +30,8 @@ const ProductForm = ({
     taxCategories = [],
     unitsOfMeasurement = [],
     categoriesLoading = false,
-    taxCategoriesLoading = false
+    taxCategoriesLoading = false,
+    onAddStockCategory // Add this new prop for handling stock category addition
 }) => {
     // Initialize with proper fallbacks
     const getInitialValues = () => ({
@@ -583,20 +584,32 @@ const ProductForm = ({
                             <Col md={6}>
                                 <FormGroup>
                                     <Label>Stock Category {validation.values.isInventoryTracked && '*'}</Label>
-                                    <Input
-                                        type="select"
-                                        name="stockCategoryId"
-                                        {...validation.getFieldProps('stockCategoryId')}
-                                        invalid={validation.touched.stockCategoryId && !!validation.errors.stockCategoryId}
-                                        disabled={isProcessing || categoriesLoading}
-                                    >
-                                        <option value="">Select</option>
-                                        {stockCategories.map(category => (
-                                            <option key={category.id} value={category.id}>
-                                                {category.name}
-                                            </option>
-                                        ))}
-                                    </Input>
+                                    <div className="d-flex gap-2">
+                                        <Input
+                                            type="select"
+                                            name="stockCategoryId"
+                                            {...validation.getFieldProps('stockCategoryId')}
+                                            invalid={validation.touched.stockCategoryId && !!validation.errors.stockCategoryId}
+                                            disabled={isProcessing || categoriesLoading}
+                                            style={{ flex: 1 }}
+                                        >
+                                            <option value="">Select</option>
+                                            {stockCategories.map(category => (
+                                                <option key={category.id} value={category.id}>
+                                                    {category.name}
+                                                </option>
+                                            ))}
+                                        </Input>
+                                        <Button
+                                            color="outline-primary"
+                                            size="sm"
+                                            onClick={onAddStockCategory}
+                                            disabled={isProcessing || categoriesLoading}
+                                            style={{ minWidth: '60px' }}
+                                        >
+                                            Add
+                                        </Button>
+                                    </div>
                                     {validation.values.isInventoryTracked && (
                                         <FormFeedback>{validation.errors.stockCategoryId}</FormFeedback>
                                     )}

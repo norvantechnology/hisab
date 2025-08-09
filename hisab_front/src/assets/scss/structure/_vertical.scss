@@ -283,6 +283,12 @@
     .logo-sm {
         display: none;
     }
+    
+    .logo-lg {
+        img {
+            height: 55px !important; // Make logo bigger when sidebar is expanded
+        }
+    }
 }
 
 .logo-light {
@@ -333,13 +339,12 @@
             }
         }
 
-        .logo {
-            span.logo-lg {
-                display: none;
-            }
-
-            span.logo-sm {
-                display: inline-block;
+        .navbar-brand-box {
+            .logo,
+            .logo .logo-sm,
+            .logo .logo-lg {
+                // Hide logo completely when sidebar is in sm-hover mode
+                display: none !important;
             }
         }
 
@@ -462,12 +467,12 @@
                 }
 
                 .logo {
-                    span.logo-lg {
-                        display: inline-block;
-                    }
-
+                    // Keep logo hidden even on hover when in sm-hover mode
+                    display: none !important;
+                    
+                    span.logo-lg,
                     span.logo-sm {
-                        display: none;
+                        display: none !important;
                     }
                 }
 
@@ -530,13 +535,12 @@
             background-color: var(--#{$prefix}vertical-menu-bg);
         }
 
-        .logo {
-            span.logo-lg {
-                display: none;
-            }
-
-            span.logo-sm {
-                display: inline-block;
+        .navbar-brand-box {
+            .logo,
+            .logo .logo-sm,
+            .logo .logo-lg {
+                // Hide logo completely when sidebar is collapsed
+                display: none !important;
             }
         }
 

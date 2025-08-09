@@ -130,17 +130,27 @@ export async function createPurchase(req, res) {
       }
     }
 
+    // Calculate remaining_amount and paid_amount based on status
+    let remainingAmount, paidAmount;
+    if (status === 'paid') {
+      remainingAmount = 0;
+      paidAmount = netPayable;
+    } else {
+      remainingAmount = netPayable;
+      paidAmount = 0;
+    }
+
     const purchaseRes = await client.query(
       `INSERT INTO hisab."purchases"
        ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
        "taxType", "discountType", "discountValue", "roundOff", "internalNotes",
-       "basicAmount", "totalDiscount", "taxAmount", "netPayable", "status")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       "basicAmount", "totalDiscount", "taxAmount", "netPayable", "status", "remaining_amount", "paid_amount")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
        RETURNING id`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
         taxType, discountType, discountValue, roundOff, internalNotes,
-        basicAmount, totalDiscount, taxAmount, netPayable, status
+        basicAmount, totalDiscount, taxAmount, netPayable, status, remainingAmount, paidAmount
       ]
     );
     const purchaseId = purchaseRes.rows[0].id;
@@ -441,6 +451,49 @@ export async function updatePurchase(req, res) {
       [purchaseId, companyId]
     );
 
+    // Get current payment status before updating
+    const currentPurchaseQuery = await client.query(
+      `SELECT "paid_amount", "remaining_amount", "netPayable" FROM hisab."purchases" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [purchaseId, companyId]
+    );
+    
+    const currentPurchase = currentPurchaseQuery.rows[0];
+    const currentPaidAmount = parseFloat(currentPurchase.paid_amount || 0);
+    const oldNetPayable = parseFloat(currentPurchase.netPayable || 0);
+    
+    // Calculate new remaining amount based on the new total and existing payments
+    let remainingAmount, paidAmount;
+    
+    if (currentPaidAmount > 0) {
+      // There are existing payments, preserve them
+      paidAmount = currentPaidAmount;
+      
+      // If the new total is different, adjust the remaining amount
+      if (netPayable !== oldNetPayable) {
+        remainingAmount = Math.max(0, netPayable - currentPaidAmount);
+        
+        // If paid amount exceeds new total, adjust accordingly
+        if (currentPaidAmount >= netPayable) {
+          remainingAmount = 0;
+          // Note: We keep paidAmount as is, even if it exceeds netPayable
+          // This creates an overpayment scenario that can be handled separately
+        }
+      } else {
+        // Total didn't change, keep existing remaining amount
+        remainingAmount = parseFloat(currentPurchase.remaining_amount || 0);
+      }
+    } else {
+      // No existing payments, use status-based logic
+      if (finalStatus === 'paid') {
+        remainingAmount = 0;
+        paidAmount = netPayable;
+      } else {
+        remainingAmount = netPayable;
+        paidAmount = 0;
+      }
+    }
+
     await client.query(
       `UPDATE hisab."purchases"
        SET "bankAccountId" = $1,
@@ -457,8 +510,10 @@ export async function updatePurchase(req, res) {
            "taxAmount" = $12,
            "netPayable" = $13,
            "status" = $14,
+           "remaining_amount" = $15,
+           "paid_amount" = $16,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $15 AND "companyId" = $16`,
+       WHERE "id" = $17 AND "companyId" = $18`,
       [
         bankAccountId,
         contactId,
@@ -474,6 +529,8 @@ export async function updatePurchase(req, res) {
         taxAmount,
         netPayable,
         finalStatus,
+        remainingAmount,
+        paidAmount,
         purchaseId,
         companyId
       ]
@@ -939,6 +996,8 @@ export async function listPurchases(req, res) {
         p."taxAmount",
         p."status",
         p."netPayable",
+        p."remaining_amount",
+        p."paid_amount",
         p."createdAt",
         p."updatedAt",
         
@@ -1125,6 +1184,8 @@ export async function listPurchases(req, res) {
           totalDiscount: parseFloat(row.totalDiscount || 0),
           taxAmount: parseFloat(row.taxAmount || 0),
           netPayable: parseFloat(row.netPayable || 0),
+          remainingAmount: parseFloat(row.remaining_amount || 0),
+          paidAmount: parseFloat(row.paid_amount || 0),
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
 

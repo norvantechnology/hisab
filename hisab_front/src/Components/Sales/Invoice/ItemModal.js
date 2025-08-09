@@ -469,9 +469,15 @@ const ItemModal = ({
                   
                   // Add real-time validation for stock limit
                   if (localCurrentItem?.currentStock && value > localCurrentItem.currentStock) {
+                    const isEditMode = localCurrentItem?.originalQuantity > 0;
+                    const baseStock = isEditMode ? localCurrentItem.currentStock - localCurrentItem.originalQuantity : localCurrentItem.currentStock;
+                    const message = isEditMode 
+                      ? `Quantity cannot exceed available stock (${baseStock} available + ${localCurrentItem.originalQuantity} from this item = ${localCurrentItem.currentStock} total)`
+                      : `Quantity cannot exceed available stock (${localCurrentItem.currentStock})`;
+                    
                     setErrors(prev => ({ 
                       ...prev, 
-                      quantity: `Quantity cannot exceed available stock (${localCurrentItem.currentStock})` 
+                      quantity: message
                     }));
                   }
                 }
@@ -485,7 +491,15 @@ const ItemModal = ({
               <div className="form-text">Quantity is determined by serial numbers ({serialNumbers.length})</div>
             ) : (
               localCurrentItem?.currentStock !== undefined && localCurrentItem.quantity > localCurrentItem.currentStock && (
-                <div className="text-danger small mt-1">⚠️ Exceeds stock limit</div>
+                <div className="text-danger small mt-1">
+                  ⚠️ Exceeds stock limit
+                  {localCurrentItem?.originalQuantity > 0 && (
+                    <div className="text-muted">
+                      Available: {Math.max(0, localCurrentItem.currentStock - localCurrentItem.originalQuantity)} + 
+                      {localCurrentItem.originalQuantity} (from this item) = {localCurrentItem.currentStock} total
+                    </div>
+                  )}
+                </div>
               )
             )}
           </FormGroup>

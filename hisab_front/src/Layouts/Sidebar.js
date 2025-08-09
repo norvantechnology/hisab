@@ -37,21 +37,24 @@ const Sidebar = ({ layoutType }) => {
     <React.Fragment>
       <div className="app-menu navbar-menu">
         <div className="navbar-brand-box">
-          <Link to="/" className="logo logo-dark">
+          <Link to="/" className="logo" style={{ display: 'block' }}>
             <span className="logo-sm">
-              <img src={logoSm} alt="" height="22" />
+              <img src={logoLight} alt="" height="50" style={{ 
+                padding: '8px 0', 
+                margin: '0 auto', 
+                filter: 'brightness(0) invert(1)',
+                display: 'block',
+                maxWidth: '100%'
+              }} />
             </span>
             <span className="logo-lg">
-              <img src={logoDark} alt="" height="17" />
-            </span>
-          </Link>
-
-          <Link to="/" className="logo logo-light">
-            <span className="logo-sm">
-              <img src={logoSm} alt="" height="22" />
-            </span>
-            <span className="logo-lg">
-              <img src={logoLight} alt="" height="17" />
+              <img src={logoLight} alt="" height="60" style={{ 
+                padding: '8px 0', 
+                margin: '0 auto', 
+                filter: 'brightness(0) invert(1)',
+                display: 'block',
+                maxWidth: '100%'
+              }} />
             </span>
           </Link>
           <button

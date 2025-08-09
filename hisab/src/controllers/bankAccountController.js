@@ -511,32 +511,30 @@ export async function getBankStatement(req, res) {
             END
           ) as description,
           CASE 
-            WHEN p."paymentType" = 'payment' THEN 
-              -- When we make a payment, money goes OUT regardless of allocation type
+            WHEN pa."allocationType" IN ('sale', 'income') THEN 
+              -- Sales and Income payments are always INFLOWS (money coming in)
+              pa."paidAmount"
+            WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
+              -- Purchase and Expense payments are always OUTFLOWS (money going out)
               -pa."paidAmount"
-            WHEN p."paymentType" = 'receipt' THEN 
-              -- When we receive a payment, the direction depends on allocation type
+            WHEN pa."allocationType" = 'current-balance' THEN 
+              -- For current-balance, direction depends on balance type
               CASE 
-                WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
-                  -- We're paying for purchases/expenses, so money goes OUT
-                  -pa."paidAmount"
-                WHEN pa."allocationType" IN ('sale', 'income') THEN 
-                  -- We're receiving payment for sales/incomes, so money comes IN
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
                   pa."paidAmount"
-                WHEN pa."allocationType" = 'current-balance' THEN 
-                  -- For current-balance, direction depends on balance type
-                  CASE 
-                    WHEN pa."balanceType" = 'receivable' THEN 
-                      -- They owe us, so we're receiving money back
-                      pa."paidAmount"
-                    WHEN pa."balanceType" = 'payable' THEN 
-                      -- We owe them, so we're paying money back
-                      -pa."paidAmount"
-                    ELSE -pa."paidAmount"
-                  END
-                ELSE pa."paidAmount"
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
+                  -pa."paidAmount"
+                ELSE -pa."paidAmount"
               END
-            ELSE -pa."paidAmount"
+            ELSE 
+              -- Default case: use payment type
+              CASE 
+                WHEN p."paymentType" = 'payment' THEN -pa."paidAmount"
+                WHEN p."paymentType" = 'receipt' THEN pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
           END as amount,
           p."paymentType" as type,
           c.name as contact_name,
@@ -955,24 +953,30 @@ export async function exportBankStatementPDF(req, res) {
             END
           ) as description,
           CASE 
-            WHEN p."paymentType" = 'payment' THEN 
-              -- When we make a payment, money goes OUT regardless of allocation type
+            WHEN pa."allocationType" IN ('sale', 'income') THEN 
+              -- Sales and Income payments are always INFLOWS (money coming in)
+              pa."paidAmount"
+            WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
+              -- Purchase and Expense payments are always OUTFLOWS (money going out)
               -pa."paidAmount"
-            WHEN p."paymentType" = 'receipt' THEN 
-              -- When we receive a payment, the direction depends on allocation type
+            WHEN pa."allocationType" = 'current-balance' THEN 
+              -- For current-balance, direction depends on balance type
               CASE 
-                WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
-                  -- We're paying for purchases/expenses, so money goes OUT
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
+                  pa."paidAmount"
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
                   -pa."paidAmount"
-                WHEN pa."allocationType" IN ('sale', 'income') THEN 
-                  -- We're receiving payment for sales/incomes, so money comes IN
-                  pa."paidAmount"
-                WHEN pa."allocationType" = 'current-balance' THEN 
-                  -- For current-balance allocations, if it's a receipt, it's always an inflow
-                  pa."paidAmount"
-                ELSE pa."paidAmount"
+                ELSE -pa."paidAmount"
               END
-            ELSE -pa."paidAmount"
+            ELSE 
+              -- Default case: use payment type
+              CASE 
+                WHEN p."paymentType" = 'payment' THEN -pa."paidAmount"
+                WHEN p."paymentType" = 'receipt' THEN pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
           END as amount,
           p."paymentType" as type,
           c.name as contact_name,
@@ -1409,8 +1413,30 @@ export async function getBankTransactionTracking(req, res) {
             END
           ) as description,
           CASE 
-            WHEN p."paymentType" = 'payment' THEN -pa."paidAmount"
-            WHEN p."paymentType" = 'receipt' THEN pa."paidAmount"
+            WHEN pa."allocationType" IN ('sale', 'income') THEN 
+              -- Sales and Income payments are always INFLOWS (money coming in)
+              pa."paidAmount"
+            WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
+              -- Purchase and Expense payments are always OUTFLOWS (money going out)
+              -pa."paidAmount"
+            WHEN pa."allocationType" = 'current-balance' THEN 
+              -- For current-balance, direction depends on balance type
+              CASE 
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
+                  pa."paidAmount"
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
+                  -pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
+            ELSE 
+              -- Default case: use payment type
+              CASE 
+                WHEN p."paymentType" = 'payment' THEN -pa."paidAmount"
+                WHEN p."paymentType" = 'receipt' THEN pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
           END as amount,
           p."paymentType" as type,
           CONCAT(

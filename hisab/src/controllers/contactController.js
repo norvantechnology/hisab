@@ -303,7 +303,7 @@ export async function getContacts(req, res) {
         const pendingExpensesInfo = pendingExpensesSummaryQuery.rows[0];
 
         contact.calculatedBalance = {
-          amount: balance,
+          amount: Number(balance),
           type: balanceType
         };
         contact.balanceBreakdown = breakdown;

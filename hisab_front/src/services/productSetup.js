@@ -7,3 +7,11 @@ export const listStockCategories = async (params) => {
         params,
     });
 };
+
+export const createStockCategory = async (categoryName) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/stockCategory/createStockCategory',
+        data: { name: categoryName },
+    });
+};

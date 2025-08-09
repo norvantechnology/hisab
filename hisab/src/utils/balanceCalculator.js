@@ -24,7 +24,7 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     
     console.log(`Current DB State: ${currentBalanceAmount} ${currentBalanceType}, Opening: ${openingBalanceAmount} ${openingBalanceType}`);
 
-    // Calculate total pending purchases (amounts we owe to this contact)
+    // Calculate total pending purchases (amounts we owe to this contact) - ONLY pending purchases
     const pendingPurchasesQuery = await client.query(
       `SELECT 
          "id",
@@ -33,35 +33,34 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
          "remaining_amount",
          "status"
        FROM hisab."purchases" 
-       WHERE "contactId" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL
        ORDER BY "id"`,
       [contactId, companyId]
     );
 
     let totalPendingPurchases = 0;
 
-    console.log(`\n=== PURCHASES DEBUG for Contact ${contactId} ===`);
-    console.log(`Found ${pendingPurchasesQuery.rows.length} purchases:`);
+    console.log(`\n=== PENDING PURCHASES DEBUG for Contact ${contactId} ===`);
+    console.log(`Found ${pendingPurchasesQuery.rows.length} pending purchases:`);
 
     for (const purchase of pendingPurchasesQuery.rows) {
       const remainingAmount = parseFloat(purchase.remaining_amount || 0);
+      const netPayable = parseFloat(purchase.netPayable || 0);
       const status = purchase.status;
 
-      console.log(`Purchase ID ${purchase.id} (${purchase.invoiceNumber}):`, {
-        remainingAmount,
-        status
+      console.log(`🛒 Purchase#${purchase.invoiceNumber} (ID: ${purchase.id}):`, {
+        netPayable: netPayable,
+        remainingAmount: remainingAmount,
+        status: status
       });
 
-      if (status === 'pending') {
-        totalPendingPurchases += remainingAmount;
-        console.log(`  -> Added ${remainingAmount} to pending (Total: ${totalPendingPurchases})`);
-      } else if (status === 'paid') {
-        console.log(`  -> Skipped paid purchase (no impact on current balance)`);
-      }
+      // Include only pending purchases using remaining_amount
+      totalPendingPurchases += remainingAmount;
+      console.log(`  ✅ Added ${remainingAmount} to purchases total (Running Total: ${totalPendingPurchases})`);
     }
-    console.log(`=== PURCHASES TOTAL: Pending=${totalPendingPurchases} ===\n`);
+    console.log(`=== PENDING PURCHASES TOTAL: ${totalPendingPurchases} ===\n`);
 
-    // Calculate total pending sales (amounts this contact owes us)
+    // Calculate total pending sales (amounts this contact owes us) - ONLY pending sales
     const pendingSalesQuery = await client.query(
       `SELECT 
          "id",
@@ -70,35 +69,34 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
          "remaining_amount",
          "status"
        FROM hisab."sales" 
-       WHERE "contactId" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL
+       WHERE "contactId" = $1 AND "companyId" = $2 AND "status" = 'pending' AND "deletedAt" IS NULL
        ORDER BY "id"`,
       [contactId, companyId]
     );
 
     let totalPendingSales = 0;
 
-    console.log(`\n=== SALES DEBUG for Contact ${contactId} ===`);
-    console.log(`Found ${pendingSalesQuery.rows.length} sales:`);
+    console.log(`\n=== PENDING SALES DEBUG for Contact ${contactId} ===`);
+    console.log(`Found ${pendingSalesQuery.rows.length} pending sales:`);
 
     for (const sale of pendingSalesQuery.rows) {
       const remainingAmount = parseFloat(sale.remaining_amount || 0);
+      const netReceivable = parseFloat(sale.netReceivable || 0);
       const status = sale.status;
 
-      console.log(`Sale ID ${sale.id} (${sale.invoiceNumber}):`, {
-        remainingAmount,
-        status
+      console.log(`💰 Sale#${sale.invoiceNumber} (ID: ${sale.id}):`, {
+        netReceivable: netReceivable,
+        remainingAmount: remainingAmount,
+        status: status
       });
 
-      if (status === 'pending') {
-        totalPendingSales += remainingAmount;
-        console.log(`  -> Added ${remainingAmount} to pending (Total: ${totalPendingSales})`);
-      } else if (status === 'paid') {
-        console.log(`  -> Skipped paid sale (no impact on current balance)`);
-      }
+      // Include only pending sales using remaining_amount
+      totalPendingSales += remainingAmount;
+      console.log(`  ✅ Added ${remainingAmount} to sales total (Running Total: ${totalPendingSales})`);
     }
-    console.log(`=== SALES TOTAL: Pending=${totalPendingSales} ===\n`);
+    console.log(`=== PENDING SALES TOTAL: ${totalPendingSales} ===\n`);
 
-    // Calculate total pending expenses (amounts we owe to this contact)
+    // Calculate total pending expenses (amounts we owe to this contact) - ONLY pending expenses
     const pendingExpensesQuery = await client.query(
       `SELECT 
          "id",
@@ -119,12 +117,20 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
 
     for (const expense of pendingExpensesQuery.rows) {
       const remainingAmount = parseFloat(expense.remaining_amount || 0);
+      const amount = parseFloat(expense.amount || 0);
+
+      console.log(`💸 Expense: ${expense.notes || 'No description'} (ID: ${expense.id}):`, {
+        amount: amount,
+        remainingAmount: remainingAmount,
+        status: expense.status
+      });
+
       totalPendingExpenses += remainingAmount;
-      console.log(`Expense ID ${expense.id}: ${remainingAmount} (Total: ${totalPendingExpenses})`);
+      console.log(`  ✅ Added ${remainingAmount} to expenses total (Running Total: ${totalPendingExpenses})`);
     }
     console.log(`=== PENDING EXPENSES TOTAL: ${totalPendingExpenses} ===\n`);
 
-    // Calculate total pending incomes (amounts this contact owes us)
+    // Calculate total pending incomes (amounts this contact owes us) - ONLY pending incomes
     const pendingIncomesQuery = await client.query(
       `SELECT 
          "id",
@@ -145,64 +151,90 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
 
     for (const income of pendingIncomesQuery.rows) {
       const remainingAmount = parseFloat(income.remaining_amount || 0);
+      const amount = parseFloat(income.amount || 0);
+
+      console.log(`💵 Income: ${income.notes || 'No description'} (ID: ${income.id}):`, {
+        amount: amount,
+        remainingAmount: remainingAmount,
+        status: income.status
+      });
+
       totalPendingIncomes += remainingAmount;
-      console.log(`Income ID ${income.id}: ${remainingAmount} (Total: ${totalPendingIncomes})`);
+      console.log(`  ✅ Added ${remainingAmount} to incomes total (Running Total: ${totalPendingIncomes})`);
     }
     console.log(`=== PENDING INCOMES TOTAL: ${totalPendingIncomes} ===\n`);
 
-    // SIMPLIFIED BALANCE CALCULATION - ONLY PENDING AMOUNTS
+    // PENDING TRANSACTIONS BALANCE CALCULATION
     // Balance = Current Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes
     let calculatedBalance = 0;
     let calculatedBalanceType = 'payable';
 
-    console.log(`\n=== SIMPLIFIED BALANCE CALCULATION for Contact ${contactId} ===`);
-    console.log(`Current Balance: ${currentBalanceAmount} (${currentBalanceType})`);
-    console.log(`Components:`);
+    console.log(`\n=== PENDING TRANSACTIONS BALANCE CALCULATION for Contact ${contactId} ===`);
+    console.log(`📊 Starting Balance Components:`);
+    console.log(`  Current Balance: ${currentBalanceAmount} (${currentBalanceType})`);
+    console.log(`  Opening Balance: ${openingBalanceAmount} (${openingBalanceType})`);
+    console.log(`\n🧮 Transaction Totals:`);
     console.log(`  + Pending Purchases: ${totalPendingPurchases} (we owe them)`);
     console.log(`  + Pending Expenses: ${totalPendingExpenses} (we owe them)`);
     console.log(`  - Pending Sales: ${totalPendingSales} (they owe us)`);
     console.log(`  - Pending Incomes: ${totalPendingIncomes} (they owe us)`);
 
-    // Start with current balance
+    // Start with current balance from database
     if (currentBalanceType === 'payable') {
       calculatedBalance = currentBalanceAmount; // We owe them
+      console.log(`\n📈 Calculation Steps:`);
+      console.log(`  Step 1: Start with current balance (payable): +${currentBalanceAmount}`);
     } else {
       calculatedBalance = -currentBalanceAmount; // They owe us  
+      console.log(`\n📈 Calculation Steps:`);
+      console.log(`  Step 1: Start with current balance (receivable): -${currentBalanceAmount}`);
     }
 
     // Add pending purchases (we owe them for these)
+    const beforePurchases = calculatedBalance;
     calculatedBalance += totalPendingPurchases;
+    console.log(`  Step 2: Add pending purchases: ${beforePurchases} + ${totalPendingPurchases} = ${calculatedBalance}`);
 
     // Add pending expenses (we owe them for these)
+    const beforeExpenses = calculatedBalance;
     calculatedBalance += totalPendingExpenses;
+    console.log(`  Step 3: Add pending expenses: ${beforeExpenses} + ${totalPendingExpenses} = ${calculatedBalance}`);
 
     // Subtract pending sales (they owe us for these, so reduces what we owe them)
+    const beforeSales = calculatedBalance;
     calculatedBalance -= totalPendingSales;
+    console.log(`  Step 4: Subtract pending sales: ${beforeSales} - ${totalPendingSales} = ${calculatedBalance}`);
 
     // Subtract pending incomes (they owe us for these, so reduces what we owe them)
+    const beforeIncomes = calculatedBalance;
     calculatedBalance -= totalPendingIncomes;
+    console.log(`  Step 5: Subtract pending incomes: ${beforeIncomes} - ${totalPendingIncomes} = ${calculatedBalance}`);
 
-    console.log(`Calculation: ${currentBalanceType === 'payable' ? currentBalanceAmount : -currentBalanceAmount} + ${totalPendingPurchases} + ${totalPendingExpenses} - ${totalPendingSales} - ${totalPendingIncomes} = ${calculatedBalance}`);
+    console.log(`\n🎯 Final Calculation Formula:`);
+    console.log(`   ${currentBalanceType === 'payable' ? currentBalanceAmount : -currentBalanceAmount} + ${totalPendingPurchases} + ${totalPendingExpenses} - ${totalPendingSales} - ${totalPendingIncomes} = ${calculatedBalance}`);
 
     // Determine balance type and amount
     if (calculatedBalance > 0) {
       calculatedBalanceType = 'payable'; // We owe them
-      console.log(`Result: ${calculatedBalance} payable (we owe them)`);
+      console.log(`\n✅ RESULT: ${calculatedBalance} payable (we owe them)`);
     } else if (calculatedBalance < 0) {
       calculatedBalanceType = 'receivable'; // They owe us
       calculatedBalance = Math.abs(calculatedBalance);
-      console.log(`Result: ${calculatedBalance} receivable (they owe us)`);
+      console.log(`\n✅ RESULT: ${calculatedBalance} receivable (they owe us)`);
     } else {
       calculatedBalanceType = 'payable'; // Default to payable when balance is 0
       calculatedBalance = 0;
-      console.log(`Result: 0 (balanced)`);
+      console.log(`\n✅ RESULT: 0 (balanced)`);
     }
-    console.log(`=== SIMPLIFIED RESULT: ${calculatedBalance} ${calculatedBalanceType} ===\n`);
+    console.log(`=== FINAL RESULT: ${calculatedBalance} ${calculatedBalanceType} ===\n`);
 
     // Debug logging
-    console.log(`Balance calculation for contact ${contactId}:`, {
+    console.log(`📋 Complete Balance Summary for contact ${contactId}:`, {
+      contactName: contact.name,
       currentBalance: currentBalanceAmount,
       currentBalanceType,
+      openingBalance: openingBalanceAmount,
+      openingBalanceType,
       totalPendingPurchases,
       totalPendingSales,
       totalPendingExpenses,
@@ -212,16 +244,18 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     });
 
     return {
-      balance: calculatedBalance,
+      balance: Number(calculatedBalance),
       balanceType: calculatedBalanceType,
       breakdown: {
-        currentBalance: currentBalanceAmount,
+        currentBalance: Number(currentBalanceAmount),
         currentBalanceType,
-        totalPendingPurchases,
-        totalPendingSales,
-        totalPendingExpenses,
-        totalPendingIncomes,
-        calculatedBalance,
+        openingBalance: Number(openingBalanceAmount),
+        openingBalanceType,
+        totalPendingPurchases: Number(totalPendingPurchases),
+        totalPendingSales: Number(totalPendingSales),
+        totalPendingExpenses: Number(totalPendingExpenses),
+        totalPendingIncomes: Number(totalPendingIncomes),
+        calculatedBalance: Number(calculatedBalance),
         calculatedBalanceType
       }
     };

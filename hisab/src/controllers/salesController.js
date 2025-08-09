@@ -113,18 +113,28 @@ export async function createSale(req, res) {
       }
     }
 
+    // Calculate remaining_amount and paid_amount based on status
+    let remainingAmount, paidAmount;
+    if (status === 'paid') {
+      remainingAmount = 0;
+      paidAmount = netReceivable;
+    } else {
+      remainingAmount = netReceivable;
+      paidAmount = 0;
+    }
+
     // Create sale record
     const saleResult = await client.query(
       `INSERT INTO hisab."sales" (
         "companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
         "taxType", "discountType", "discountValue", "roundOff", "internalNotes",
-        "basicAmount", "totalDiscount", "taxAmount", "netReceivable", "status"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        "basicAmount", "totalDiscount", "taxAmount", "netReceivable", "status", "remaining_amount", "paid_amount"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
         taxType, discountType, discountValue, roundOff, internalNotes,
-        basicAmount, totalDiscount, taxAmount, netReceivable, status
+        basicAmount, totalDiscount, taxAmount, netReceivable, status, remainingAmount, paidAmount
       ]
     );
 
@@ -369,18 +379,61 @@ export async function updateSale(req, res) {
       }
     }
 
-    // Update sale record
+    // Get current payment status before updating
+    const currentSaleQuery = await client.query(
+      `SELECT "paid_amount", "remaining_amount", "netReceivable" FROM hisab."sales" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [id, companyId]
+    );
+    
+    const currentSale = currentSaleQuery.rows[0];
+    const currentPaidAmount = parseFloat(currentSale.paid_amount || 0);
+    const oldNetReceivable = parseFloat(currentSale.netReceivable || 0);
+    
+    // Calculate new remaining amount based on the new total and existing payments
+    let remainingAmount, paidAmount;
+    
+    if (currentPaidAmount > 0) {
+      // There are existing payments, preserve them
+      paidAmount = currentPaidAmount;
+      
+      // If the new total is different, adjust the remaining amount
+      if (netReceivable !== oldNetReceivable) {
+        remainingAmount = Math.max(0, netReceivable - currentPaidAmount);
+        
+        // If paid amount exceeds new total, adjust accordingly
+        if (currentPaidAmount >= netReceivable) {
+          remainingAmount = 0;
+          // Note: We keep paidAmount as is, even if it exceeds netReceivable
+          // This creates an overpayment scenario that can be handled separately
+        }
+      } else {
+        // Total didn't change, keep existing remaining amount
+        remainingAmount = parseFloat(currentSale.remaining_amount || 0);
+      }
+    } else {
+      // No existing payments, use status-based logic
+      if (status === 'paid') {
+        remainingAmount = 0;
+        paidAmount = netReceivable;
+      } else {
+        remainingAmount = netReceivable;
+        paidAmount = 0;
+      }
+    }
+
     await client.query(
       `UPDATE hisab."sales" SET
         "bankAccountId" = $1, "contactId" = $2, "invoiceNumber" = $3, "invoiceDate" = $4,
         "taxType" = $5, "discountType" = $6, "discountValue" = $7, "roundOff" = $8,
         "internalNotes" = $9, "basicAmount" = $10, "totalDiscount" = $11,
-        "taxAmount" = $12, "netReceivable" = $13, "status" = $14, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $15`,
+        "taxAmount" = $12, "netReceivable" = $13, "status" = $14, 
+        "remaining_amount" = $15, "paid_amount" = $16, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $17`,
       [
         bankAccountId, contactId, invoiceNumber, date, taxType, discountType,
         discountValue, roundOff, internalNotes, basicAmount, totalDiscount,
-        taxAmount, netReceivable, status, id
+        taxAmount, netReceivable, status, remainingAmount, paidAmount, id
       ]
     );
 
@@ -768,6 +821,8 @@ export async function listSales(req, res) {
 
         return {
           ...sale,
+          remainingAmount: parseFloat(sale.remaining_amount || 0),
+          paidAmount: parseFloat(sale.paid_amount || 0),
           items: itemsWithSerialNumbers
         };
       })
