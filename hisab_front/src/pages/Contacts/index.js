@@ -38,7 +38,14 @@ const ContactsPage = () => {
         exportModal: false,
         viewMode: 'grid',
         contactTypeFilter: 'all',
-        balanceTypeFilter: 'all'
+        balanceTypeFilter: 'all',
+        modals: {
+            main: false,
+            view: false,
+            delete: false,
+            export: false,
+            import: false
+        }
     });
 
     const {
@@ -60,7 +67,8 @@ const ContactsPage = () => {
         exportModal,
         viewMode,
         contactTypeFilter,
-        balanceTypeFilter
+        balanceTypeFilter,
+        modals
     } = state;
 
     const [pagination, setPagination] = useState({
@@ -78,6 +86,7 @@ const ContactsPage = () => {
     });
 
     const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+    const [isEditMode, setIsEditMode] = useState(false);
 
     // Check for selected company ID
     useEffect(() => {
@@ -180,19 +189,19 @@ const ContactsPage = () => {
     };
 
     const handleAddClick = () => {
+        setIsEditMode(false);
         setState(prev => ({
             ...prev,
-            isEditMode: false,
             selectedContact: null,
             modals: { ...prev.modals, main: true }
         }));
     };
 
     const handleEditClick = (contact) => {
+        setIsEditMode(true);
         setState(prev => ({
             ...prev,
             selectedContact: contact,
-            isEditMode: true,
             modals: { ...prev.modals, main: true }
         }));
     };
