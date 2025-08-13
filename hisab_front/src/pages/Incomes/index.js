@@ -15,50 +15,98 @@ import { getIncomeCategories, createIncomeCategory } from '../../services/catego
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
-import { createIncome, deleteIncome, getIncomes, updateIncome } from '../../services/incomes.js'
+import { createIncome, deleteIncome, getIncomes, updateIncome } from '../../services/incomes.js';
+import { getSelectedCompanyId } from '../../utils/apiCall';
 
 const IncomesPage = () => {
-    const currentMonthRange = getCurrentMonthRange();
+    document.title = "Incomes | Vyavhar - React Admin & Dashboard Template";
 
-    // State management
     const [state, setState] = useState({
         incomes: [],
         categories: [],
         bankAccounts: [],
         contacts: [],
         loading: false,
-        searchTerm: '',
-        pagination: {
-            page: 1,
-            limit: 10,
-            total: 0,
-            totalPages: 1,
-            currentPage: 1
-        },
-        filters: {
-            categoryId: '',
-            startDate: currentMonthRange.startDate,
-            endDate: currentMonthRange.endDate,
-            status: ''
-        },
-        modals: {
-            delete: false,
-            main: false,
-            category: false,
-            view: false,
-            export: false
-        },
+        apiLoading: false,
+        modal: false,
+        isEdit: false,
+        currentIncome: null,
+        deleteModal: false,
+        incomeToDelete: null,
         selectedIncome: null,
-        isEditMode: false,
-        newCategoryName: '',
-        apiLoading: false
+        statementModal: false,
+        selectedIncomeForStatement: null,
+        searchTerm: '',
+        currentPage: 1,
+        itemsPerPage: 10,
+        exportModal: false,
+        viewMode: 'grid'
     });
 
     const {
-        incomes, categories, bankAccounts, contacts, loading, searchTerm,
-        pagination, filters, modals, selectedIncome, isEditMode,
-        newCategoryName, apiLoading
+        incomes,
+        categories,
+        bankAccounts,
+        contacts,
+        loading,
+        apiLoading,
+        modal,
+        isEdit,
+        currentIncome,
+        deleteModal,
+        incomeToDelete,
+        selectedIncome,
+        statementModal,
+        selectedIncomeForStatement,
+        searchTerm,
+        currentPage,
+        itemsPerPage,
+        exportModal,
+        viewMode
     } = state;
+
+    const [pagination, setPagination] = useState({
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 1,
+        currentPage: 1
+    });
+
+    const [filters, setFilters] = useState({
+        categoryId: '',
+        startDate: '',
+        endDate: '',
+        status: 'all'
+    });
+
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+
+    // Check for selected company ID
+    useEffect(() => {
+        const checkCompanyId = () => {
+            const companyId = getSelectedCompanyId();
+            setSelectedCompanyId(companyId);
+        };
+        
+        // Check immediately
+        checkCompanyId();
+        
+        // Also check when localStorage changes (in case company selection happens)
+        const handleStorageChange = () => {
+            checkCompanyId();
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Check periodically to catch company selection
+        const interval = setInterval(checkCompanyId, 1000);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
+    }, []);
 
     // API calls with loading states
     const fetchData = async () => {
@@ -109,6 +157,13 @@ const IncomesPage = () => {
     useEffect(() => {
         fetchData();
     }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate, filters.status]);
+
+    // Only fetch data when a company is selected
+    useEffect(() => {
+        if (selectedCompanyId) {
+            fetchData();
+        }
+    }, [selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {

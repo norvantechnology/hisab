@@ -37,6 +37,7 @@ import {
 
 // API
 import { createBankAccount, getBankAccounts, updateBankAccount, deleteBankAccount } from '../../services/bankAccount';
+import { getSelectedCompanyId } from '../../utils/apiCall';
 
 const BankAccounts = () => {
     document.title = "Bank Accounts | Vyavhar - React Admin & Dashboard Template";
@@ -58,12 +59,48 @@ const BankAccounts = () => {
     const [loading, setLoading] = useState(false);
     const [viewMode, setViewMode] = useState('grid');
     const [statusFilter, setStatusFilter] = useState('all');
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
+    // Check for selected company ID
     useEffect(() => {
-        fetchBankAccounts();
+        const checkCompanyId = () => {
+            const companyId = getSelectedCompanyId();
+            setSelectedCompanyId(companyId);
+        };
+        
+        // Check immediately
+        checkCompanyId();
+        
+        // Also check when localStorage changes (in case company selection happens)
+        const handleStorageChange = () => {
+            checkCompanyId();
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Check periodically to catch company selection
+        const interval = setInterval(checkCompanyId, 1000);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
     }, []);
 
+    // Only fetch bank accounts when a company is selected
+    useEffect(() => {
+        if (selectedCompanyId) {
+            fetchBankAccounts();
+        }
+    }, [selectedCompanyId]);
+
     const fetchBankAccounts = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping bank accounts fetch');
+            return;
+        }
+
         setLoading(true);
         try {
             const response = await getBankAccounts({ includeInactive: true });

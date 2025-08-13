@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ReactSelect from 'react-select';
-import { RiBankLine, RiUser3Line } from 'react-icons/ri';
+import { RiBankLine, RiUserLine } from 'react-icons/ri';
 import { ACCOUNT_TYPES } from '../BankAccounts';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
+import { getSelectedCompanyId } from '../../utils/apiCall';
 import { debounce } from 'lodash';
 import ContactForm from '../Contacts/ContactForm';
 
@@ -13,7 +14,7 @@ const BankAccountContactDropdown = ({
   onChange,
   onBlur,
   disabled = false,
-  placeholder = "Select...",
+  placeholder = "Select Bank Account or Contact...",
   label = "",
   error = null,
   touched = false,
@@ -25,7 +26,9 @@ const BankAccountContactDropdown = ({
   // Search and pagination
   searchTerm = "",
   enableSearch = true,
-  enablePagination = true
+  enablePagination = true,
+  showBankAccounts = true,
+  showContacts = true
 }) => {
   
   const [bankAccounts, setBankAccounts] = useState([]);
@@ -47,9 +50,42 @@ const BankAccountContactDropdown = ({
     page: 1,
     totalPages: 1
   });
+  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+
+  // Check for selected company ID
+  useEffect(() => {
+    const checkCompanyId = () => {
+      const companyId = getSelectedCompanyId();
+      setSelectedCompanyId(companyId);
+    };
+    
+    // Check immediately
+    checkCompanyId();
+    
+    // Also check when localStorage changes (in case company selection happens)
+    const handleStorageChange = () => {
+      checkCompanyId();
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Check periodically to catch company selection
+    const interval = setInterval(checkCompanyId, 1000);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(interval);
+    };
+  }, []);
 
   // Fetch bank accounts
   const fetchBankAccounts = useCallback(async (search = '', page = 1) => {
+    // Don't proceed if no company is selected
+    if (!selectedCompanyId) {
+      console.log('No company selected, skipping bank accounts fetch');
+      return;
+    }
+
     if (page === 1) {
       setLoading(true);
     } else {
@@ -83,10 +119,16 @@ const BankAccountContactDropdown = ({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [selectedCompanyId]);
 
   // Fetch contacts
   const fetchContacts = useCallback(async (search = '', page = 1) => {
+    // Don't proceed if no company is selected
+    if (!selectedCompanyId) {
+      console.log('No company selected, skipping contacts fetch');
+      return;
+    }
+
     if (page === 1) {
       setLoading(true);
     } else {
@@ -114,13 +156,19 @@ const BankAccountContactDropdown = ({
       setLoading(false);
       setLoadingMore(false);
     }
-  }, []);
+  }, [selectedCompanyId]);
 
-  // Initial data fetch
+  // Only fetch data when a company is selected
   useEffect(() => {
-    fetchBankAccounts();
-    fetchContacts();
-  }, [fetchBankAccounts, fetchContacts]);
+    if (selectedCompanyId) {
+      if (showBankAccounts) {
+        fetchBankAccounts();
+      }
+      if (showContacts) {
+        fetchContacts();
+      }
+    }
+  }, [selectedCompanyId, showBankAccounts, showContacts, fetchBankAccounts, fetchContacts]);
 
   // Handle search
   const handleSearch = useCallback((searchTerm) => {
@@ -169,7 +217,7 @@ const BankAccountContactDropdown = ({
 
   // Helper function to get contact icon
   const getContactIcon = () => {
-    return <RiUser3Line />;
+    return <RiUserLine />;
   };
 
   // Custom onChange handler
@@ -219,7 +267,7 @@ const BankAccountContactDropdown = ({
   const options = [];
   
   // Add bank accounts section (only if there are bank accounts)
-  if (bankAccounts.length > 0) {
+  if (showBankAccounts && bankAccounts.length > 0) {
     options.push({
       label: 'Bank Accounts',
       options: bankAccounts.map(account => ({
@@ -239,10 +287,12 @@ const BankAccountContactDropdown = ({
     contact: contact
   }));
 
-  options.push({
-    label: 'Contacts',
-    options: contactOptions
-  });
+  if (showContacts) {
+    options.push({
+      label: 'Contacts',
+      options: contactOptions
+    });
+  }
 
   // Get current value for ReactSelect
   const getCurrentValue = () => {
@@ -303,7 +353,7 @@ const BankAccountContactDropdown = ({
                   onClick={() => setIsContactModalOpen(true)}
                 >
                   <div className="text-primary">
-                    <RiUser3Line className="me-2" />
+                    <RiUserLine className="me-2" />
                     Add New Contact
                   </div>
                 </div>

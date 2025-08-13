@@ -142,4 +142,4 @@ apiClient.interceptors.response.use(
   }
 );
 
-export { apiClient };
+export { apiClient, getSelectedCompanyId };

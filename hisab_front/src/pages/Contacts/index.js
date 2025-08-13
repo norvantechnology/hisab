@@ -14,43 +14,96 @@ import Loader from '../../Components/Common/Loader';
 import { getContacts, createContact, deleteContact, updateContact, bulkImportContacts } from '../../services/contacts';
 import { getBankAccounts } from '../../services/bankAccount';
 import { sampleContactData, contactFields } from '../../data/contactData';
+import { getSelectedCompanyId } from '../../utils/apiCall';
 
 const ContactsPage = () => {
-    // State management
+    document.title = "Contacts | Vyavhar - React Admin & Dashboard Template";
+
     const [state, setState] = useState({
         contacts: [],
         bankAccounts: [],
         loading: false,
-        searchTerm: '',
-        pagination: {
-            page: 1,
-            limit: 10,
-            total: 0,
-            totalPages: 1,
-            currentPage: 1
-        },
-        filters: {
-            contactType: '',
-            balanceType: '',
-            search: ''
-        },
-        modals: {
-            delete: false,
-            main: false,
-            view: false,
-            export: false,
-            import: false
-        },
+        apiLoading: false,
+        modal: false,
+        isEdit: false,
+        currentContact: null,
+        deleteModal: false,
+        contactToDelete: null,
         selectedContact: null,
-        isEditMode: false,
-        apiLoading: false
+        statementModal: false,
+        selectedContactForStatement: null,
+        searchTerm: '',
+        currentPage: 1,
+        itemsPerPage: 10,
+        exportModal: false,
+        viewMode: 'grid',
+        contactTypeFilter: 'all',
+        balanceTypeFilter: 'all'
     });
 
     const {
-        contacts, bankAccounts, loading, searchTerm,
-        pagination, filters, modals, selectedContact, isEditMode,
-        apiLoading
+        contacts,
+        bankAccounts,
+        loading,
+        apiLoading,
+        modal,
+        isEdit,
+        currentContact,
+        deleteModal,
+        contactToDelete,
+        selectedContact,
+        statementModal,
+        selectedContactForStatement,
+        searchTerm,
+        currentPage,
+        itemsPerPage,
+        exportModal,
+        viewMode,
+        contactTypeFilter,
+        balanceTypeFilter
     } = state;
+
+    const [pagination, setPagination] = useState({
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 1,
+        currentPage: 1
+    });
+
+    const [filters, setFilters] = useState({
+        contactType: 'all',
+        balanceType: 'all',
+        search: ''
+    });
+
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+
+    // Check for selected company ID
+    useEffect(() => {
+        const checkCompanyId = () => {
+            const companyId = getSelectedCompanyId();
+            setSelectedCompanyId(companyId);
+        };
+        
+        // Check immediately
+        checkCompanyId();
+        
+        // Also check when localStorage changes (in case company selection happens)
+        const handleStorageChange = () => {
+            checkCompanyId();
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Check periodically to catch company selection
+        const interval = setInterval(checkCompanyId, 1000);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
+    }, []);
 
     // API calls with loading states
     const fetchData = async () => {
@@ -90,6 +143,12 @@ const ContactsPage = () => {
     };
 
     const fetchBankAccounts = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping bank accounts fetch');
+            return;
+        }
+
         try {
             const response = await getBankAccounts({ includeInactive: false });
             setState(prev => ({
@@ -105,9 +164,12 @@ const ContactsPage = () => {
         fetchData();
     }, [pagination.page, filters.contactType, filters.balanceType, filters.search]);
 
+    // Only fetch bank accounts when a company is selected
     useEffect(() => {
-        fetchBankAccounts();
-    }, []);
+        if (selectedCompanyId) {
+            fetchBankAccounts();
+        }
+    }, [selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {

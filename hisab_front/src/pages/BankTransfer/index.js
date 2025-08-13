@@ -13,45 +13,93 @@ import Loader from '../../Components/Common/Loader';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { createBankTransfer, deleteBankTransfer, listBankTransfers, updateBankTransfer } from '../../services/bankTransfer';
+import { getSelectedCompanyId } from '../../utils/apiCall';
 
 const BankTransfersPage = () => {
-    const currentMonthRange = getCurrentMonthRange();
+    document.title = "Bank Transfers | Vyavhar - React Admin & Dashboard Template";
 
-    // State management
     const [state, setState] = useState({
         transfers: [],
         bankAccounts: [],
         loading: false,
-        searchTerm: '',
-        pagination: {
-            page: 1,
-            limit: 10,
-            total: 0,
-            totalPages: 1,
-            currentPage: 1
-        },
-        filters: {
-            fromBankAccountId: '',
-            toBankAccountId: '',
-            startDate: currentMonthRange.startDate,
-            endDate: currentMonthRange.endDate
-        },
-        modals: {
-            delete: false,
-            main: false,
-            view: false,
-            export: false
-        },
+        apiLoading: false,
+        modal: false,
+        isEdit: false,
+        currentTransfer: null,
+        deleteModal: false,
+        transferToDelete: null,
         selectedTransfer: null,
-        isEditMode: false,
-        apiLoading: false
+        statementModal: false,
+        selectedTransferForStatement: null,
+        searchTerm: '',
+        currentPage: 1,
+        itemsPerPage: 10,
+        exportModal: false,
+        viewMode: 'grid'
     });
 
     const {
-        transfers, bankAccounts, loading, searchTerm,
-        pagination, filters, modals, selectedTransfer, isEditMode,
-        apiLoading
+        transfers,
+        bankAccounts,
+        loading,
+        apiLoading,
+        modal,
+        isEdit,
+        currentTransfer,
+        deleteModal,
+        transferToDelete,
+        selectedTransfer,
+        statementModal,
+        selectedTransferForStatement,
+        searchTerm,
+        currentPage,
+        itemsPerPage,
+        exportModal,
+        viewMode
     } = state;
+
+    const [pagination, setPagination] = useState({
+        page: 1,
+        limit: 10,
+        total: 0,
+        totalPages: 1,
+        currentPage: 1
+    });
+
+    const [filters, setFilters] = useState({
+        fromBankAccountId: '',
+        toBankAccountId: '',
+        startDate: '',
+        endDate: ''
+    });
+
+    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+
+    // Check for selected company ID
+    useEffect(() => {
+        const checkCompanyId = () => {
+            const companyId = getSelectedCompanyId();
+            setSelectedCompanyId(companyId);
+        };
+        
+        // Check immediately
+        checkCompanyId();
+        
+        // Also check when localStorage changes (in case company selection happens)
+        const handleStorageChange = () => {
+            checkCompanyId();
+        };
+        
+        window.addEventListener('storage', handleStorageChange);
+        
+        // Check periodically to catch company selection
+        const interval = setInterval(checkCompanyId, 1000);
+        
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            clearInterval(interval);
+        };
+    }, []);
 
     // API calls with loading states
     const fetchData = async () => {
@@ -98,6 +146,13 @@ const BankTransfersPage = () => {
     useEffect(() => {
         fetchData();
     }, [pagination.page, filters.fromBankAccountId, filters.toBankAccountId, filters.startDate, filters.endDate]);
+
+    // Only fetch data when a company is selected
+    useEffect(() => {
+        if (selectedCompanyId) {
+            fetchData();
+        }
+    }, [selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
