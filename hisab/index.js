@@ -28,6 +28,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Simple CORS configuration - allow all origins
 app.use(cors());
 
 // Use express built-in JSON and urlencoded parsers instead of body-parser
