@@ -21,6 +21,8 @@ import { getSelectedCompanyId } from '../../utils/apiCall';
 const IncomesPage = () => {
     document.title = "Incomes | Vyavhar - React Admin & Dashboard Template";
 
+    const currentMonthRange = getCurrentMonthRange();
+
     const [state, setState] = useState({
         incomes: [],
         categories: [],
@@ -29,7 +31,7 @@ const IncomesPage = () => {
         loading: false,
         apiLoading: false,
         modal: false,
-        isEdit: false,
+        isEditMode: false,
         currentIncome: null,
         deleteModal: false,
         incomeToDelete: null,
@@ -40,7 +42,15 @@ const IncomesPage = () => {
         currentPage: 1,
         itemsPerPage: 10,
         exportModal: false,
-        viewMode: 'grid'
+        viewMode: 'grid',
+        modals: {
+            delete: false,
+            main: false,
+            view: false,
+            export: false,
+            category: false
+        },
+        newCategoryName: ''
     });
 
     const {
@@ -51,7 +61,7 @@ const IncomesPage = () => {
         loading,
         apiLoading,
         modal,
-        isEdit,
+        isEditMode,
         currentIncome,
         deleteModal,
         incomeToDelete,
@@ -62,7 +72,9 @@ const IncomesPage = () => {
         currentPage,
         itemsPerPage,
         exportModal,
-        viewMode
+        viewMode,
+        modals,
+        newCategoryName
     } = state;
 
     const [pagination, setPagination] = useState({
@@ -75,8 +87,8 @@ const IncomesPage = () => {
 
     const [filters, setFilters] = useState({
         categoryId: '',
-        startDate: '',
-        endDate: '',
+        startDate: currentMonthRange.startDate,
+        endDate: currentMonthRange.endDate,
         status: 'all'
     });
 

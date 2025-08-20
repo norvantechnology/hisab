@@ -16,6 +16,11 @@ export const DISCOUNT_TYPES = [
   { value: 'per_item_and_invoice', label: 'Per Item & On Invoice' }
 ];
 
+export const DISCOUNT_VALUE_TYPES = [
+  { value: 'percentage', label: 'Percentage (%)' },
+  { value: 'rupees', label: 'Rupees (₹)' }
+];
+
 export const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
   { value: 'paid', label: 'Paid' },

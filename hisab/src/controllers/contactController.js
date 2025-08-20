@@ -85,6 +85,14 @@ export async function createContact(req, res) {
     return errorResponse(res, "Contact name is required", 400);
   }
 
+  // Validate GSTIN format if provided
+  if (gstin && gstin.trim() !== '') {
+    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+    if (!gstinRegex.test(gstin)) {
+      return errorResponse(res, "Invalid GSTIN format", 400);
+    }
+  }
+
   const client = await pool.connect();
 
   try {
@@ -124,8 +132,11 @@ export async function createContact(req, res) {
       RETURNING *
     `;
 
+    // Convert empty GSTIN to null
+    const gstinValue = gstin && gstin.trim() !== '' ? gstin : null;
+    
     const params = [
-      companyId, gstin, name, mobile, email, dueDays, contactType,
+      companyId, gstinValue, name, mobile, email, dueDays, contactType,
       billingAddress1, billingAddress2, billingCity, billingPincode,
       billingState, billingCountry, isShippingSame,
       finalShipping.shippingAddress1, finalShipping.shippingAddress2,
@@ -438,6 +449,14 @@ export async function updateContact(req, res) {
     return errorResponse(res, "Unauthorized access", 401);
   }
 
+  // Validate GSTIN format if provided
+  if (gstin && gstin.trim() !== '') {
+    const gstinRegex = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+    if (!gstinRegex.test(gstin)) {
+      return errorResponse(res, "Invalid GSTIN format", 400);
+    }
+  }
+
   const client = await pool.connect();
 
   try {
@@ -527,8 +546,11 @@ export async function updateContact(req, res) {
       RETURNING *
     `;
 
+    // Convert empty GSTIN to null
+    const gstinValue = gstin && gstin.trim() !== '' ? gstin : null;
+    
     const params = [
-      gstin, name, mobile, email, dueDays, contactType,
+      gstinValue, name, mobile, email, dueDays, contactType,
       billingAddress1, billingAddress2, billingCity, billingPincode,
       billingState, billingCountry, isShippingSame,
       finalShipping.shippingAddress1, finalShipping.shippingAddress2,
@@ -1301,7 +1323,7 @@ export async function bulkImportContacts(req, res) {
 
         // Prepare contact data with defaults
         const contactData = {
-          gstin: contact.gstin || null,
+          gstin: contact.gstin && contact.gstin.trim() !== '' ? contact.gstin : null,
           name: contact.name.trim(),
           mobile: contact.mobile || null,
           email: contact.email || null,

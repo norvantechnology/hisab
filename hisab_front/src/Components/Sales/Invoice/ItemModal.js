@@ -158,9 +158,9 @@ const ItemModal = ({
     }
 
     // Discount rate validation
-    if (discountRateInput !== '' && (isNaN(Number(discountRateInput)) || Number(discountRateInput) < 0 || Number(discountRateInput) > 100)) {
-      newErrors.discountRate = 'Discount rate must be between 0 and 100';
-    }
+          if (discountRateInput !== '' && (isNaN(Number(discountRateInput)) || Number(discountRateInput) < 0 || (validation.values.discountValueType === 'percentage' && Number(discountRateInput) > 100))) {
+        newErrors.discountRate = validation.values.discountValueType === 'percentage' ? 'Discount rate must be between 0 and 100' : 'Discount rate cannot be negative';
+      }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -248,7 +248,12 @@ const ItemModal = ({
     const existingQuantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 1);
     const existingDiscountRate = parseFloat(discountRateInput) || 0;
     const subtotal = existingRate * existingQuantity;
-    const discount = (subtotal * existingDiscountRate) / 100;
+    let discount = 0;
+    if (validation.values.discountValueType === 'percentage') {
+      discount = (subtotal * existingDiscountRate) / 100;
+    } else if (validation.values.discountValueType === 'rupees') {
+      discount = existingDiscountRate;
+    }
     const afterDiscount = subtotal - discount;
     const taxAmount = (afterDiscount * productTaxRate) / 100;
     
@@ -283,7 +288,7 @@ const ItemModal = ({
     
     // Don't call updateCurrentItem here - let the parent get the updated item only when save is called
     // This prevents the circular update issue that was causing the selection to reset
-  }, [localCurrentItem, rateInput, discountRateInput, serialNumbers]); // Removed updateCurrentItem from dependencies
+  }, [localCurrentItem, rateInput, discountRateInput, serialNumbers, validation.values.discountValueType]); // Removed updateCurrentItem from dependencies
 
   // Handle clicking on available serial numbers
   const handleSelectSerialNumber = useCallback((serialNumber) => {
@@ -401,7 +406,12 @@ const ItemModal = ({
     // Calculate discount
     const discountRate = parseFloat(discountRateInput);
     const validDiscountRate = !isNaN(discountRate) && discountRate > 0 ? discountRate : 0;
-    const discount = (subtotal * validDiscountRate) / 100;
+    let discount = 0;
+    if (validation.values.discountValueType === 'percentage') {
+      discount = (subtotal * validDiscountRate) / 100;
+    } else if (validation.values.discountValueType === 'rupees') {
+      discount = validDiscountRate;
+    }
     const afterDiscount = subtotal - discount;
 
     // Calculate tax
@@ -415,7 +425,7 @@ const ItemModal = ({
       taxAmount,
       total
     };
-  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length]);
+  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, validation.values.discountValueType]);
 
   const renderItemDetails = useMemo(() => (
     <div className="border-top pt-3">
@@ -639,16 +649,18 @@ const ItemModal = ({
                   setDiscountRateInput(e.target.value);
                   if (errors.discountRate) setErrors(prev => ({ ...prev, discountRate: '' }));
                 }}
-                onBlur={e => {
-                  const value = parseFloat(e.target.value);
-                  if (!isNaN(value) && value >= 0 && value <= 100) {
-                    updateLocalItem('discountRate', value);
-                  }
-                }}
+                                  onBlur={e => {
+                    const value = parseFloat(e.target.value);
+                    if (!isNaN(value) && value >= 0 && (validation.values.discountValueType === 'percentage' ? value <= 100 : true)) {
+                      updateLocalItem('discountRate', value);
+                    }
+                  }}
                 placeholder="0.00"
                 invalid={!!errors.discountRate}
               />
-              <InputGroupText>%</InputGroupText>
+              <InputGroupText>
+                {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
+              </InputGroupText>
             </InputGroup>
             {errors.discountRate && <div className="text-danger small mt-1">{errors.discountRate}</div>}
           </FormGroup>
@@ -667,7 +679,7 @@ const ItemModal = ({
               </div>
               {calculatedValues.discount > 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Item Discount ({localCurrentItem?.discountRate || 0}%):</span>
+                  <span>Item Discount ({localCurrentItem?.discountRate || 0}{validation.values.discountValueType === 'percentage' ? '%' : '₹'}):</span>
                   <span className="text-danger">- ₹{calculatedValues.discount.toFixed(2)}</span>
                 </div>
               )}
@@ -690,7 +702,7 @@ const ItemModal = ({
         </div>
       )}
     </div>
-  ), [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.rate, localCurrentItem?.discountRate, localCurrentItem?.currentStock, localCurrentItem?.name, localCurrentItem?.code, serialNumbers, newSerialNumber, errors, calculatedValues, rateInput, discountRateInput]);
+  ), [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.rate, localCurrentItem?.discountRate, localCurrentItem?.currentStock, localCurrentItem?.name, localCurrentItem?.code, serialNumbers, newSerialNumber, errors, calculatedValues, rateInput, discountRateInput, validation.values.discountValueType]);
 
   const handleSave = useCallback(() => {
     if (!validateForm()) {
@@ -712,7 +724,7 @@ const ItemModal = ({
     };
 
     saveItem(itemToSave);
-  }, [localCurrentItem?.id, localCurrentItem?.isSerialized, localCurrentItem?.name, localCurrentItem?.code, localCurrentItem?.quantity, serialNumbers, rateInput, discountRateInput, calculatedValues, saveItem]);
+  }, [localCurrentItem?.id, localCurrentItem?.isSerialized, localCurrentItem?.name, localCurrentItem?.code, localCurrentItem?.quantity, serialNumbers, rateInput, discountRateInput, calculatedValues, saveItem, validation.values.discountValueType]);
 
   const isFormValid = useMemo(() => {
     const hasValidProduct = localCurrentItem?.productId;
@@ -721,10 +733,10 @@ const ItemModal = ({
       serialNumbers.length > 0 : 
       (localCurrentItem?.quantity > 0 && (!localCurrentItem?.currentStock || localCurrentItem.quantity <= localCurrentItem.currentStock));
     const hasValidDiscountRate = discountRateInput === '' || 
-      (!isNaN(Number(discountRateInput)) && Number(discountRateInput) >= 0 && Number(discountRateInput) <= 100);
+      (!isNaN(Number(discountRateInput)) && Number(discountRateInput) >= 0 && (validation.values.discountValueType === 'percentage' ? Number(discountRateInput) <= 100 : true));
     
     return hasValidProduct && hasValidRate && hasValidQuantity && hasValidDiscountRate;
-  }, [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.currentStock, serialNumbers.length, rateInput, discountRateInput]);
+  }, [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.currentStock, serialNumbers.length, rateInput, discountRateInput, validation.values.discountValueType]);
 
   return (
     <Modal isOpen={isOpen} toggle={toggle} size="lg" key={`item-modal-${isOpen ? 'open' : 'closed'}-${currentItem?.id || 'new'}`}>

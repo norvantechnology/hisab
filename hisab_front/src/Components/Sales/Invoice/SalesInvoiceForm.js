@@ -12,7 +12,9 @@ import {
   Button,
   Row,
   Col,
-  Table
+  Table,
+  InputGroup,
+  InputGroupText
 } from 'reactstrap';
 import {
   RiCloseLine,
@@ -26,7 +28,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { listProducts } from '../../../services/products';
 import { getNextInvoiceNumber } from '../../../services/salesInvoice';
 import ItemModal from './ItemModal';
-import { STATUS_OPTIONS } from './contant'
+import { STATUS_OPTIONS, DISCOUNT_TYPES, DISCOUNT_VALUE_TYPES } from './contant'
 import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../../Common/BankAccountDropdown';
 
@@ -190,15 +192,25 @@ const SalesInvoiceForm = ({
       return sum + taxAmount;
     }, 0);
 
-    const totalDiscount = itemsData.reduce((sum, item) => {
+    let totalDiscount = itemsData.reduce((sum, item) => {
       const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
       const subtotal = quantity * parseFloat(item.rate || 0);
       const discountRate = parseFloat(item.discountRate) || 0;
       const discount = (subtotal * discountRate) / 100;
       return sum + discount;
     }, 0);
+
+    // Add invoice-level discount if applicable
+    if (values.discountType === 'on_invoice' || values.discountType === 'per_item_and_invoice') {
+      const discountValue = parseFloat(values.discountValue) || 0;
+      if (values.discountValueType === 'percentage') {
+        totalDiscount += (basicAmount * discountValue) / 100;
+      } else if (values.discountValueType === 'rupees') {
+        totalDiscount += discountValue;
+      }
+    }
     
-    const netBeforeRound = basicAmount;
+    const netBeforeRound = basicAmount - totalDiscount;
     const roundOff = Math.round(netBeforeRound) - netBeforeRound;
     const netReceivable = Math.round(netBeforeRound);
 
@@ -245,7 +257,10 @@ const SalesInvoiceForm = ({
       totalTax,
       totalDiscount,
       roundOff,
-      netReceivable
+      netReceivable,
+      discountType: values.discountType,
+      discountValueType: values.discountValueType,
+      discountValue: values.discountValue
     };
 
     // Handle both billToBank and billToContact - they can both be present
@@ -284,6 +299,13 @@ const SalesInvoiceForm = ({
     billToBank: Yup.string().when(['status', 'billTo'], {
       is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
       then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
+      otherwise: (schema) => schema
+    }),
+    discountType: Yup.string().required('Discount type is required'),
+    discountValueType: Yup.string().required('Discount value type is required'),
+    discountValue: Yup.number().when('discountType', {
+      is: (type) => type === 'on_invoice' || type === 'per_item_and_invoice',
+      then: (schema) => schema.min(0, 'Discount value cannot be negative').required('Discount value is required'),
       otherwise: (schema) => schema
     }),
     items: Yup.array().of(
@@ -347,6 +369,9 @@ const SalesInvoiceForm = ({
       billTo: billToValue,
       billToBank: billToBankValue,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
+      discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
+      discountValueType: isEditMode && selectedInvoice ? selectedInvoice.discountValueType : 'percentage',
+      discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
           id: Date.now(),
@@ -488,15 +513,25 @@ const SalesInvoiceForm = ({
       return sum + taxAmount;
     }, 0);
 
-    const totalDiscount = items.reduce((sum, item) => {
+    let totalDiscount = items.reduce((sum, item) => {
       const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
       const subtotal = quantity * parseFloat(item.rate || 0);
       const discountRate = parseFloat(item.discountRate) || 0;
       const discount = (subtotal * discountRate) / 100;
       return sum + discount;
     }, 0);
+
+    // Add invoice-level discount if applicable
+    if (validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') {
+      const discountValue = parseFloat(validation.values.discountValue) || 0;
+      if (validation.values.discountValueType === 'percentage') {
+        totalDiscount += (basicAmount * discountValue) / 100;
+      } else if (validation.values.discountValueType === 'rupees') {
+        totalDiscount += discountValue;
+      }
+    }
     
-    const netBeforeRound = basicAmount;
+    const netBeforeRound = basicAmount - totalDiscount;
     const roundOff = Math.round(netBeforeRound) - netBeforeRound;
     const netReceivable = Math.round(netBeforeRound);
 
@@ -507,7 +542,7 @@ const SalesInvoiceForm = ({
       roundOff,
       netReceivable
     };
-  }, [items, calculateItemTotalForDisplay]);
+  }, [items, calculateItemTotalForDisplay, validation.values.discountType, validation.values.discountValueType, validation.values.discountValue]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(product =>
@@ -923,6 +958,77 @@ const SalesInvoiceForm = ({
               </Row>
             )}
 
+            <Row className="mb-4">
+              <Col md={6}>
+                <FormGroup>
+                  <Label>Discount Type</Label>
+                  <Input
+                    type="select"
+                    name="discountType"
+                    value={validation.values.discountType}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.discountType && !!validation.errors.discountType}
+                    disabled={isProcessing}
+                  >
+                    <option value="">Select Discount Type</option>
+                    {DISCOUNT_TYPES.map(discount => (
+                      <option key={discount.value} value={discount.value}>{discount.label}</option>
+                    ))}
+                  </Input>
+                  <FormFeedback>{validation.errors.discountType}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={6}>
+                <FormGroup>
+                  <Label>Discount Value Type</Label>
+                  <Input
+                    type="select"
+                    name="discountValueType"
+                    value={validation.values.discountValueType}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.discountValueType && !!validation.errors.discountValueType}
+                    disabled={isProcessing}
+                  >
+                    <option value="">Select Discount Value Type</option>
+                    {DISCOUNT_VALUE_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </Input>
+                  <FormFeedback>{validation.errors.discountValueType}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
+
+            {(validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && (
+              <Row className="mb-4">
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Discount Value</Label>
+                    <InputGroup>
+                      <Input
+                        type="number"
+                        name="discountValue"
+                        min="0"
+                        step="0.01"
+                        value={validation.values.discountValue}
+                        onChange={validation.handleChange}
+                        onBlur={validation.handleBlur}
+                        invalid={validation.touched.discountValue && !!validation.errors.discountValue}
+                        disabled={isProcessing}
+                        placeholder={validation.values.discountValueType === 'percentage' ? 'Enter discount percentage' : 'Enter discount amount'}
+                      />
+                      <InputGroupText>
+                        {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
+                      </InputGroupText>
+                    </InputGroup>
+                    <FormFeedback>{validation.errors.discountValue}</FormFeedback>
+                  </FormGroup>
+                </Col>
+              </Row>
+            )}
+
             <div className="mb-4">
               <div className="d-flex justify-content-between align-items-center mb-3">
                 <h5 className="mb-0">Items</h5>
@@ -946,7 +1052,7 @@ const SalesInvoiceForm = ({
                     <th className="text-end">Rate</th>
                     <th className="text-end">Tax (%)</th>
                     <th className="text-end">Tax Amount</th>
-                    <th className="text-end">Discount (%)</th>
+                    <th className="text-end">Discount</th>
                     <th className="text-end">Discount Amount</th>
                     <th className="text-end">Total</th>
                     <th>Action</th>
@@ -965,7 +1071,9 @@ const SalesInvoiceForm = ({
                       <td className="text-end">₹{parseFloat(item.rate || 0).toFixed(2)}</td>
                       <td className="text-end">{item.taxRate}%</td>
                       <td className="text-end">₹{parseFloat(item.taxAmount || 0).toFixed(2)}</td>
-                      <td className="text-end">{item.discountRate}%</td>
+                      <td className="text-end">
+                        {item.discountValueType === 'rupees' ? '₹' : ''}{item.discountRate}{item.discountValueType === 'percentage' ? '%' : ''}
+                      </td>
                       <td className="text-end">₹{parseFloat(item.discount || 0).toFixed(2)}</td>
                       <td className="text-end fw-bold">₹{calculateItemTotalForDisplay(item).toFixed(2)}</td>
                       <td>

@@ -74,8 +74,7 @@ const ContactForm = ({
     },
     validationSchema: Yup.object({
       gstin: Yup.string()
-        .matches(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN format')
-        .required('GSTIN is required'),
+        .matches(/^$|^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid GSTIN format'),
       name: Yup.string().required('Name is required'),
       mobile: Yup.string()
         .matches(/^[0-9]{10}$/, 'Mobile must be 10 digits')
@@ -215,7 +214,7 @@ An email has been sent to ${selectedContact.email}.`,
           <Row>
             <Col md={6}>
               <FormGroup>
-                <Label>GSTIN <span className="text-danger">*</span></Label>
+                <Label>GSTIN</Label>
                 <Input
                   type="text"
                   name="gstin"

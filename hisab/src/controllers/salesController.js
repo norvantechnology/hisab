@@ -9,6 +9,7 @@ export async function createSale(req, res) {
     date,
     taxType,
     discountType,
+    discountValueType = 'percentage',
     discountValue = 0,
     items,
     internalNotes = '',
@@ -127,13 +128,13 @@ export async function createSale(req, res) {
     const saleResult = await client.query(
       `INSERT INTO hisab."sales" (
         "companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
-        "taxType", "discountType", "discountValue", "roundOff", "internalNotes",
+        "taxType", "discountType", "discountValueType", "discountValue", "roundOff", "internalNotes",
         "basicAmount", "totalDiscount", "taxAmount", "netReceivable", "status", "remaining_amount", "paid_amount"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, discountType, discountValue, roundOff, internalNotes,
+        taxType, discountType, discountValueType, discountValue, roundOff, internalNotes,
         basicAmount, totalDiscount, taxAmount, netReceivable, status, remainingAmount, paidAmount
       ]
     );
@@ -224,6 +225,7 @@ export async function updateSale(req, res) {
     date,
     taxType,
     discountType,
+    discountValueType = 'percentage',
     discountValue = 0,
     items,
     internalNotes = '',
@@ -425,14 +427,14 @@ export async function updateSale(req, res) {
     await client.query(
       `UPDATE hisab."sales" SET
         "bankAccountId" = $1, "contactId" = $2, "invoiceNumber" = $3, "invoiceDate" = $4,
-        "taxType" = $5, "discountType" = $6, "discountValue" = $7, "roundOff" = $8,
-        "internalNotes" = $9, "basicAmount" = $10, "totalDiscount" = $11,
-        "taxAmount" = $12, "netReceivable" = $13, "status" = $14, 
-        "remaining_amount" = $15, "paid_amount" = $16, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $17`,
+        "taxType" = $5, "discountType" = $6, "discountValue" = $7, "discountValueType" = $8, "roundOff" = $9,
+        "internalNotes" = $10, "basicAmount" = $11, "totalDiscount" = $12,
+        "taxAmount" = $13, "netReceivable" = $14, "status" = $15, 
+        "remaining_amount" = $16, "paid_amount" = $17, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $18`,
       [
         bankAccountId, contactId, invoiceNumber, date, taxType, discountType,
-        discountValue, roundOff, internalNotes, basicAmount, totalDiscount,
+        discountValue, discountValueType, roundOff, internalNotes, basicAmount, totalDiscount,
         taxAmount, netReceivable, status, remainingAmount, paidAmount, id
       ]
     );

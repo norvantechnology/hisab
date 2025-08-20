@@ -29,7 +29,7 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { listProducts } from '../../../services/products';
 import { getNextInvoiceNumber } from '../../../services/purchaseInvoice';
 import ItemModal from './ItemModal';
-import { DISCOUNT_TYPES, TAX_TYPES, STATUS_OPTIONS } from './contant'
+import { DISCOUNT_TYPES, DISCOUNT_VALUE_TYPES, TAX_TYPES, STATUS_OPTIONS } from './contant'
 import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../../Common/BankAccountDropdown';
 
@@ -185,10 +185,18 @@ const PurchaseInvoiceForm = ({
       // For per_item, no invoice discount
       totalDiscount = 0;
     } else if (values.discountType === 'on_invoice') {
-      totalDiscount = (basicAmount * values.discountValue) / 100;
+      if (values.discountValueType === 'percentage') {
+        totalDiscount = (basicAmount * values.discountValue) / 100;
+      } else if (values.discountValueType === 'rupees') {
+        totalDiscount = values.discountValue;
+      }
     } else if (values.discountType === 'per_item_and_invoice') {
       // For per_item_and_invoice, invoice discount is applied on the basic amount
-      totalDiscount = (basicAmount * values.discountValue) / 100;
+      if (values.discountValueType === 'percentage') {
+        totalDiscount = (basicAmount * values.discountValue) / 100;
+      } else if (values.discountValueType === 'rupees') {
+        totalDiscount = values.discountValue;
+      }
     }
 
     const netBeforeRound = basicAmount - totalDiscount;
@@ -237,7 +245,10 @@ const PurchaseInvoiceForm = ({
       basicAmount,
       totalDiscount,
       roundOff,
-      netPayable
+      netPayable,
+      discountType: values.discountType,
+      discountValueType: values.discountValueType,
+      discountValue: values.discountValue
     };
 
     // Handle both billFromBank and billFromContact - they can both be present
@@ -275,7 +286,12 @@ const PurchaseInvoiceForm = ({
     }),
     taxType: Yup.string().required('Tax type is required'),
     discountType: Yup.string().required('Discount type is required'),
-    discountValue: Yup.number().min(0, 'Discount cannot be negative'),
+    discountValueType: Yup.string().required('Discount value type is required'),
+    discountValue: Yup.number().when('discountType', {
+      is: (type) => type === 'on_invoice' || type === 'per_item_and_invoice',
+      then: (schema) => schema.min(0, 'Discount value cannot be negative').required('Discount value is required'),
+      otherwise: (schema) => schema
+    }),
     status: Yup.string().when('billFrom', {
       is: (billFrom) => billFrom && billFrom.startsWith('contact_'),
       then: (schema) => schema.required('Status is required'),
@@ -342,6 +358,7 @@ const PurchaseInvoiceForm = ({
       billFromBank: billFromBankValue,
       taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',
       discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
+      discountValueType: isEditMode && selectedInvoice ? selectedInvoice.discountValueType : 'percentage',
       discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
@@ -442,11 +459,19 @@ const PurchaseInvoiceForm = ({
       // For per_item, no invoice discount
       totalDiscount = 0;
     } else if (discountType === 'on_invoice') {
-      invoiceDiscount = (basicAmount * discountValue) / 100;
+      if (validation.values.discountValueType === 'percentage') {
+        invoiceDiscount = (basicAmount * discountValue) / 100;
+      } else if (validation.values.discountValueType === 'rupees') {
+        invoiceDiscount = discountValue;
+      }
       totalDiscount = invoiceDiscount;
     } else if (discountType === 'per_item_and_invoice') {
       // For per_item_and_invoice, invoice discount is applied on the basic amount
-      invoiceDiscount = (basicAmount * discountValue) / 100;
+      if (validation.values.discountValueType === 'percentage') {
+        invoiceDiscount = (basicAmount * discountValue) / 100;
+      } else if (validation.values.discountValueType === 'rupees') {
+        invoiceDiscount = discountValue;
+      }
       totalDiscount = invoiceDiscount;
     }
 
@@ -461,7 +486,7 @@ const PurchaseInvoiceForm = ({
       roundOff,
       netPayable
     };
-  }, [items, validation.values.discountType, validation.values.discountValue, calculateItemTotalForDisplay]);
+  }, [items, validation.values.discountType, validation.values.discountValueType, validation.values.discountValue, calculateItemTotalForDisplay]);
 
   useEffect(() => {
     if (isOpen) {
@@ -914,26 +939,50 @@ const PurchaseInvoiceForm = ({
               </Col>
             </Row>
 
+            <Row className="mb-4">
+              <Col md={6}>
+                <FormGroup>
+                  <Label>Discount Value Type</Label>
+                  <Input
+                    type="select"
+                    name="discountValueType"
+                    value={validation.values.discountValueType}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.discountValueType && !!validation.errors.discountValueType}
+                    disabled={isProcessing}
+                  >
+                    <option value="">Select Discount Value Type</option>
+                    {DISCOUNT_VALUE_TYPES.map(type => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </Input>
+                  <FormFeedback>{validation.errors.discountValueType}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
+
             {(validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && (
               <Row className="mb-4">
                 <Col md={6}>
                   <FormGroup>
-                    <Label>Discount Value (%)</Label>
+                    <Label>Discount Value</Label>
                     <InputGroup>
                       <Input
                         type="number"
                         name="discountValue"
                         min="0"
-                        max="100"
                         step="0.01"
                         value={validation.values.discountValue}
                         onChange={validation.handleChange}
                         onBlur={validation.handleBlur}
                         invalid={validation.touched.discountValue && !!validation.errors.discountValue}
                         disabled={isProcessing}
-                        placeholder="Enter discount percentage"
+                        placeholder={validation.values.discountValueType === 'percentage' ? 'Enter discount percentage' : 'Enter discount amount'}
                       />
-                      <InputGroupText>%</InputGroupText>
+                      <InputGroupText>
+                        {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
+                      </InputGroupText>
                     </InputGroup>
                     <FormFeedback>{validation.errors.discountValue}</FormFeedback>
                   </FormGroup>
@@ -1049,7 +1098,7 @@ const PurchaseInvoiceForm = ({
                   </div>
                   {(validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && calculatedTotals.invoiceDiscount > 0 && (
                     <div className="d-flex justify-content-between mb-2">
-                      <span>Invoice Discount ({validation.values.discountValue}%):</span>
+                      <span>Invoice Discount ({validation.values.discountValue}{validation.values.discountValueType === 'percentage' ? '%' : '₹'}):</span>
                       <span className="text-danger">- ₹ {calculatedTotals.invoiceDiscount.toFixed(2)}</span>
                     </div>
                   )}

@@ -10,6 +10,7 @@ export async function createPurchase(req, res) {
     date,
     taxType,
     discountType,
+    discountValueType = 'percentage',
     discountValue = 0,
     items,
     internalNotes = '',
@@ -143,13 +144,13 @@ export async function createPurchase(req, res) {
     const purchaseRes = await client.query(
       `INSERT INTO hisab."purchases"
        ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
-       "taxType", "discountType", "discountValue", "roundOff", "internalNotes",
+       "taxType", "discountType", "discountValueType", "discountValue", "roundOff", "internalNotes",
        "basicAmount", "totalDiscount", "taxAmount", "netPayable", "status", "remaining_amount", "paid_amount")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
        RETURNING id`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, discountType, discountValue, roundOff, internalNotes,
+        taxType, discountType, discountValueType, discountValue, roundOff, internalNotes,
         basicAmount, totalDiscount, taxAmount, netPayable, status, remainingAmount, paidAmount
       ]
     );
@@ -262,6 +263,7 @@ export async function updatePurchase(req, res) {
     date,
     taxType,
     discountType,
+    discountValueType = 'percentage',
     discountValue = 0,
     items = [],
     internalNotes = '',
@@ -503,17 +505,18 @@ export async function updatePurchase(req, res) {
            "taxType" = $5,
            "discountType" = $6,
            "discountValue" = $7,
-           "roundOff" = $8,
-           "internalNotes" = $9,
-           "basicAmount" = $10,
-           "totalDiscount" = $11,
-           "taxAmount" = $12,
-           "netPayable" = $13,
-           "status" = $14,
-           "remaining_amount" = $15,
-           "paid_amount" = $16,
+           "discountValueType" = $8,
+           "roundOff" = $9,
+           "internalNotes" = $10,
+           "basicAmount" = $11,
+           "totalDiscount" = $12,
+           "taxAmount" = $13,
+           "netPayable" = $14,
+           "status" = $15,
+           "remaining_amount" = $16,
+           "paid_amount" = $17,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $17 AND "companyId" = $18`,
+       WHERE "id" = $18 AND "companyId" = $19`,
       [
         bankAccountId,
         contactId,
@@ -522,6 +525,7 @@ export async function updatePurchase(req, res) {
         taxType,
         discountType,
         discountValue,
+        discountValueType,
         roundOff,
         internalNotes,
         basicAmount,
@@ -988,6 +992,7 @@ export async function listPurchases(req, res) {
         p."invoiceDate",
         p."taxType",
         p."discountType",
+        p."discountValueType",
         p."discountValue",
         p."roundOff",
         p."internalNotes",
@@ -1177,6 +1182,7 @@ export async function listPurchases(req, res) {
           invoiceDate: row.invoiceDate,
           taxType: row.taxType,
           discountType: row.discountType,
+          discountValueType: row.discountValueType,
           discountValue: parseFloat(row.discountValue || 0),
           roundOff: parseFloat(row.roundOff || 0),
           internalNotes: row.internalNotes,

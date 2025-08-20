@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
 import BreadCrumb from '../../../Components/Common/BreadCrumb';
 import PurchaseInvoiceFilter from '../../../Components/Purchases/Invoice/PurchaseInvoiceFilter';
@@ -279,6 +279,7 @@ const PurchaseInvoicePage = () => {
 
     return (
         <div className="page-content">
+            <ToastContainer closeButton={false} position="top-right" />                                                                                                                                             
             <Container fluid>
                 <BreadCrumb title="Purchase Invoices" pageTitle="Purchases" />
 

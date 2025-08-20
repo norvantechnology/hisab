@@ -14,6 +14,7 @@ CREATE TABLE hisab.sales (
 	"invoiceDate" date NOT NULL,
 	"taxType" text NULL,
 	"discountType" text NULL,
+	"discountValueType" text DEFAULT 'percentage' NULL,
 	"discountValue" numeric(10, 2) DEFAULT 0 NULL,
 	"roundOff" numeric(10, 2) DEFAULT 0 NULL,
 	"internalNotes" text NULL,

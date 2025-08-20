@@ -372,8 +372,8 @@ const BankAccounts = () => {
 
     return (
         <React.Fragment>
-            <ToastContainer closeButton={false} position="top-right" />                                                                                                                                             
-            <DeleteModal
+            <ToastContainer closeButton={false} position="top-right" />                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     
+            <DeleteModal                                                                    
                 show={deleteModal}
                 onDeleteClick={handleDeleteAccount}
                 onCloseClick={() => setDeleteModal(false)}
