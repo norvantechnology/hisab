@@ -4,21 +4,41 @@ export const COMPANY_EVENTS = {
   COMPANY_CHANGED: 'companyChanged'
 };
 
-// Get selected company from localStorage
+// Get selected company from sessionStorage (more reliable for API calls)
 export const getSelectedCompany = () => {
   try {
-    const stored = localStorage.getItem('selectedCompanyId');
+    const stored = sessionStorage.getItem('selectedCompanyId');
     return stored ? JSON.parse(stored) : null;
   } catch (error) {
-    console.error('Error reading selected company from localStorage:', error);
+    console.error('Error reading selected company from sessionStorage:', error);
     return null;
   }
 };
 
-// Get only the company ID
+// Get only the company ID - with fallback logic
 export const getSelectedCompanyId = () => {
-  const company = getSelectedCompany();
-  return company?.id || null;
+  try {
+    // First try sessionStorage for immediate availability
+    let stored = sessionStorage.getItem('selectedCompanyId');
+    
+    // If not in sessionStorage, check localStorage and copy over
+    if (!stored) {
+      stored = localStorage.getItem('selectedCompanyId');
+      if (stored) {
+        sessionStorage.setItem('selectedCompanyId', stored);
+      }
+    }
+    
+    if (stored) {
+      const companyData = JSON.parse(stored);
+      return companyData?.id || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error reading selected company ID:', error);
+    return null;
+  }
 };
 
 // Set selected company and dispatch events
@@ -31,8 +51,9 @@ export const setSelectedCompany = (companyId, companyData) => {
       selectedAt: new Date().toISOString()
     };
     
-    // Store in localStorage
+    // Store in both localStorage (for persistence) and sessionStorage (for API reliability)
     localStorage.setItem('selectedCompanyId', JSON.stringify(dataToStore));
+    sessionStorage.setItem('selectedCompanyId', JSON.stringify(dataToStore));
     
     // Dispatch custom event for same-window components
     const customEvent = new CustomEvent(COMPANY_EVENTS.COMPANY_SELECTED, {
@@ -44,7 +65,7 @@ export const setSelectedCompany = (companyId, companyData) => {
     const storageEvent = new StorageEvent('storage', {
       key: 'selectedCompanyId',
       newValue: JSON.stringify(dataToStore),
-      oldValue: localStorage.getItem('selectedCompanyId')
+      oldValue: sessionStorage.getItem('selectedCompanyId')
     });
     window.dispatchEvent(storageEvent);
     
@@ -83,7 +104,24 @@ export const useCompanySelection = (callback) => {
 
 // Initialize company selection on app startup
 export const initializeCompanySelection = () => {
-  const selectedCompany = getSelectedCompany();
+  // First check sessionStorage, then fallback to localStorage
+  let selectedCompany = null;
+  try {
+    selectedCompany = sessionStorage.getItem('selectedCompanyId');
+    if (!selectedCompany) {
+      // Fallback to localStorage and copy to sessionStorage
+      const localStored = localStorage.getItem('selectedCompanyId');
+      if (localStored) {
+        sessionStorage.setItem('selectedCompanyId', localStored);
+        selectedCompany = localStored;
+      }
+    }
+    selectedCompany = selectedCompany ? JSON.parse(selectedCompany) : null;
+  } catch (error) {
+    console.error('Error initializing company selection:', error);
+    return;
+  }
+
   if (selectedCompany) {
     // Dispatch event to notify all components about the current selection
     setTimeout(() => {

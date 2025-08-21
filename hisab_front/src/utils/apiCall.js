@@ -22,6 +22,13 @@ export const apiCall = async ({
 }) => {
   try {
     const companyId = getSelectedCompanyId();
+    
+    // Debug logging
+    if (!companyId) {
+      console.warn('No companyId found for API call:', endpoint);
+    } else {
+      console.log('API call with companyId:', companyId, 'for endpoint:', endpoint);
+    }
 
     // Build headers, handling FormData specially
     const requestHeaders = { ...headers, companyId };
