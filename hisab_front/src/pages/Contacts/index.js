@@ -15,6 +15,7 @@ import { getContacts, createContact, deleteContact, updateContact, bulkImportCon
 import { getBankAccounts } from '../../services/bankAccount';
 import { sampleContactData, contactFields } from '../../data/contactData';
 import { getSelectedCompanyId } from '../../utils/apiCall';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const ContactsPage = () => {
     document.title = "Contacts | Vyavhar - React Admin & Dashboard Template";
@@ -85,34 +86,10 @@ const ContactsPage = () => {
         search: ''
     });
 
-    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
     const [isEditMode, setIsEditMode] = useState(false);
-
-    // Check for selected company ID
-    useEffect(() => {
-        const checkCompanyId = () => {
-            const companyId = getSelectedCompanyId();
-            setSelectedCompanyId(companyId);
-        };
-        
-        // Check immediately
-        checkCompanyId();
-        
-        // Also check when localStorage changes (in case company selection happens)
-        const handleStorageChange = () => {
-            checkCompanyId();
-        };
-        
-        window.addEventListener('storage', handleStorageChange);
-        
-        // Check periodically to catch company selection
-        const interval = setInterval(checkCompanyId, 1000);
-        
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
-        };
-    }, []);
+    
+    // Use the new company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
 
     // API calls with loading states
     const fetchData = async () => {

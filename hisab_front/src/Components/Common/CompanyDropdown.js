@@ -19,6 +19,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { createCompany, getAllCompanies, updateCompany, deleteCompany } from '../../services/company';
 import { layoutModeTypes } from '../../Components/constants/layout';
 import DeleteModal from './DeleteModal';
+import { setSelectedCompany, getSelectedCompany } from '../../utils/companyEvents';
 
 const initialFormState = {
     gstin: '',
@@ -75,37 +76,16 @@ const CompanyDropdown = ({ layoutMode }) => {
     }, []);
 
     const getSelectedCompanyFromStorage = useCallback(() => {
-        try {
-            const stored = localStorage.getItem('selectedCompanyId');
-            return stored ? JSON.parse(stored) : null;
-        } catch (error) {
-            console.error('Error reading from localStorage:', error);
-            return null;
-        }
-    }, []);
-
-    const setSelectedCompanyToStorage = useCallback((companyId, companyData) => {
-        try {
-            const dataToStore = {
-                id: companyId,
-                name: companyData.name,
-                logoUrl: companyData.logoUrl,
-                selectedAt: new Date().toISOString()
-            };
-            localStorage.setItem('selectedCompanyId', JSON.stringify(dataToStore));
-        } catch (error) {
-            console.error('Error saving to localStorage:', error);
-        }
+        return getSelectedCompany();
     }, []);
 
     const handleCompanySelect = useCallback((company) => {
         updateState({ isCompanyDropdown: false });
-        setSelectedCompanyToStorage(company.id, company);
+        // Use the centralized event system instead of page reload
+        setSelectedCompany(company.id, company);
         updateState({ selectedCompany: company });
-        setTimeout(() => {
-            window.location.reload();
-        }, 100);
-    }, [updateState, setSelectedCompanyToStorage]);
+        // No more page reload - events will handle the updates
+    }, [updateState]);
 
     const clearMessages = useCallback(() => {
         updateState({ error: null, success: null });
@@ -135,7 +115,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 const storedCompany = getSelectedCompanyFromStorage();
                 if (companiesList.length > 0 && !storedCompany) {
                     const firstCompany = companiesList[0];
-                    setSelectedCompanyToStorage(firstCompany.id, firstCompany);
+                    setSelectedCompany(firstCompany.id, firstCompany);
                     updateState({ selectedCompany: firstCompany });
                 }
             } else {
@@ -150,7 +130,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 isFetching: false
             });
         }
-    }, [updateState, getSelectedCompanyFromStorage, setSelectedCompanyToStorage, navigate]);
+    }, [updateState, getSelectedCompanyFromStorage, navigate]);
 
     useEffect(() => {
         if (isCompanyDropdown && companies.length === 0) {
@@ -348,7 +328,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 // If this is the currently selected company, update the stored data
                 if (isEditMode && selectedCompany?.id === currentCompanyId && response?.company) {
                     const updatedCompany = response.company;
-                    setSelectedCompanyToStorage(currentCompanyId, updatedCompany);
+                    setSelectedCompany(currentCompanyId, updatedCompany);
                     updateState({ selectedCompany: updatedCompany });
                 }
 
@@ -357,7 +337,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                     const updatedCompanies = await getAllCompanies();
                     if (updatedCompanies?.success && updatedCompanies.companies.length === 1) {
                         // This is the first company, auto-select it
-                        setSelectedCompanyToStorage(response.company.id, response.company);
+                        setSelectedCompany(response.company.id, response.company);
                         updateState({ selectedCompany: response.company });
                     }
                 }
@@ -382,7 +362,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 isLoading: false
             });
         }
-    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies, setSelectedCompanyToStorage, selectedCompany]);
+    }, [isEditMode, formData, currentCompanyId, updateState, fetchCompanies, selectedCompany]);
 
     const handleDeleteCompany = useCallback((company) => {
         updateState({
@@ -429,7 +409,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 // Auto-select first company if no company is selected after deletion
                 if (updatedCompanies?.success && updatedCompanies.companies.length > 0) {
                     const firstCompany = updatedCompanies.companies[0];
-                    setSelectedCompanyToStorage(firstCompany.id, firstCompany);
+                    setSelectedCompany(firstCompany.id, firstCompany);
                     updateState({ selectedCompany: firstCompany });
                 }
 
@@ -454,7 +434,7 @@ const CompanyDropdown = ({ layoutMode }) => {
                 deleteCompanyId: null
             });
         }
-    }, [deleteCompanyId, updateState, selectedCompany, fetchCompanies, setSelectedCompanyToStorage, navigate]);
+    }, [deleteCompanyId, updateState, selectedCompany, fetchCompanies, navigate]);
 
     const cancelDeleteCompany = useCallback(() => {
         updateState({
@@ -957,19 +937,7 @@ const CompanyDropdown = ({ layoutMode }) => {
     );
 };
 
-export const getSelectedCompany = () => {
-    try {
-        const stored = localStorage.getItem('selectedCompanyId');
-        return stored ? JSON.parse(stored) : null;
-    } catch (error) {
-        console.error('Error reading selected company from localStorage:', error);
-        return null;
-    }
-};
-
-export const getSelectedCompanyId = () => {
-    const company = getSelectedCompany();
-    return company ? company.id : null;
-};
+// Re-export from centralized system for backward compatibility
+export { getSelectedCompany, getSelectedCompanyId } from '../../utils/companyEvents';
 
 export default CompanyDropdown;

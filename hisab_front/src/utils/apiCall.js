@@ -1,18 +1,8 @@
 import axios from 'axios';
+import { getSelectedCompanyId as getCompanyId } from './companyEvents';
 
-const getSelectedCompanyId = () => {
-  try {
-    const stored = localStorage.getItem('selectedCompanyId');
-    if (stored) {
-      const companyData = JSON.parse(stored);
-      return companyData?.id || null;
-    }
-    return null;
-  } catch (error) {
-    console.error('Error reading selected company from localStorage:', error);
-    return null;
-  }
-};
+// Keep backward compatibility
+const getSelectedCompanyId = getCompanyId;
 
 const pendingRequests = new Map();
 

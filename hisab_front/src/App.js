@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 //import Scss
 import './assets/scss/themes.scss';
@@ -11,6 +11,9 @@ import Route from './Routes';
 
 // Fake Backend 
 import fakeBackend from "./helpers/AuthType/fakeBackend";
+
+// Company Event System
+import { initializeCompanySelection } from './utils/companyEvents';
 
 // Activating fake backend
 fakeBackend();
@@ -30,6 +33,11 @@ fakeBackend();
 // initFirebaseBackend(firebaseConfig);
 
 function App() {
+  useEffect(() => {
+    // Initialize company selection events on app startup
+    initializeCompanySelection();
+  }, []);
+
   return (
     <React.Fragment>
       <Route />
