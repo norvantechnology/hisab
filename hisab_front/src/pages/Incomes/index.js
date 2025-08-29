@@ -17,6 +17,7 @@ import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { createIncome, deleteIncome, getIncomes, updateIncome } from '../../services/incomes.js';
 import { getSelectedCompanyId } from '../../utils/apiCall';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const IncomesPage = () => {
     document.title = "Incomes | Vyavhar - React Admin & Dashboard Template";
@@ -92,48 +93,36 @@ const IncomesPage = () => {
         status: 'all'
     });
 
-    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
-
-    // Check for selected company ID
-    useEffect(() => {
-        const checkCompanyId = () => {
-            const companyId = getSelectedCompanyId();
-            setSelectedCompanyId(companyId);
-        };
-        
-        // Check immediately
-        checkCompanyId();
-        
-        // Also check when localStorage changes (in case company selection happens)
-        const handleStorageChange = () => {
-            checkCompanyId();
-        };
-        
-        window.addEventListener('storage', handleStorageChange);
-        
-        // Check periodically to catch company selection
-        const interval = setInterval(checkCompanyId, 1000);
-        
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
-        };
-    }, []);
+    // Use the new company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
 
     // API calls with loading states
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping incomes fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
-            const [incomesRes, categoriesRes, accountsRes, contactsRes] = await Promise.all([
-                getIncomes({
+            // Prepare API parameters
+            const apiParams = {
                     page: pagination.page,
                     limit: pagination.limit,
                     categoryId: filters.categoryId,
                     startDate: filters.startDate,
-                    endDate: filters.endDate,
-                    status: filters.status
-                }),
+                endDate: filters.endDate
+            };
+            
+            // Only include status if it's not 'all'
+            if (filters.status && filters.status !== 'all') {
+                apiParams.status = filters.status;
+            }
+
+            const [incomesRes, categoriesRes, accountsRes, contactsRes] = await Promise.all([
+                getIncomes(apiParams),
                 getIncomeCategories(),
                 getBankAccounts(),
                 getContacts({ skipPagination: true })
@@ -167,15 +156,10 @@ const IncomesPage = () => {
     };
 
     useEffect(() => {
-        fetchData();
-    }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate, filters.status]);
-
-    // Only fetch data when a company is selected
-    useEffect(() => {
         if (selectedCompanyId) {
             fetchData();
         }
-    }, [selectedCompanyId]);
+    }, [pagination.page, filters.categoryId, filters.startDate, filters.endDate, filters.status, selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
@@ -355,11 +339,9 @@ const IncomesPage = () => {
     };
 
     const handleFilterChange = (newFilters) => {
-        setState(prev => ({
-            ...prev,
-            filters: newFilters,
-            pagination: { ...prev.pagination, page: 1 }
-        }));
+        console.log('Filter change:', newFilters);
+        setFilters(newFilters);
+        setPagination(prev => ({ ...prev, page: 1, currentPage: 1 }));
     };
 
     const prepareExportData = () => {

@@ -532,6 +532,50 @@ const PaymentForm = ({
                         </Col>
                     </Row>
 
+                    {/* Contact Billing Address Display */}
+                    {validation.values.contactId && (() => {
+                        const selectedContact = contacts.find(c => c.id === validation.values.contactId);
+                        const hasBillingAddress = selectedContact && (
+                            selectedContact.billingAddress1 || 
+                            selectedContact.billingCity || 
+                            selectedContact.billingState
+                        );
+                        
+                        if (hasBillingAddress) {
+                            return (
+                                <Row className="mb-3">
+                                    <Col md={12}>
+                                        <div className="border rounded p-3 bg-light">
+                                            <h6 className="text-muted mb-2">
+                                                <i className="ri-map-pin-line me-2"></i>
+                                                Contact Billing Address
+                                            </h6>
+                                            <div className="small">
+                                                {selectedContact.billingAddress1 && (
+                                                    <div>{selectedContact.billingAddress1}</div>
+                                                )}
+                                                {selectedContact.billingAddress2 && (
+                                                    <div>{selectedContact.billingAddress2}</div>
+                                                )}
+                                                <div>
+                                                    {[
+                                                        selectedContact.billingCity,
+                                                        selectedContact.billingState,
+                                                        selectedContact.billingPincode
+                                                    ].filter(Boolean).join(', ')}
+                                                </div>
+                                                {selectedContact.billingCountry && (
+                                                    <div>{selectedContact.billingCountry}</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </Col>
+                                </Row>
+                            );
+                        }
+                        return null;
+                    })()}
+
                     <Row>
                         <Col md={6}>
                             <FormGroup>

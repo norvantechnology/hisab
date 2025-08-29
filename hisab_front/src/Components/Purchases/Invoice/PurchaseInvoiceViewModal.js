@@ -14,7 +14,18 @@ import {
 } from 'reactstrap';
 import { RiCloseLine, RiDownload2Line, RiUserLine, RiBankLine, RiArrowRightLine } from 'react-icons/ri';
 
-const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
+// Add CSS for spinner animation
+const spinnerStyle = `
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
+
+const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoading }) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -44,24 +55,24 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
   };
 
   const getPaymentMethodDisplay = () => {
-    const hasContact = invoice.contact?.name || invoice.contactId;
-    const hasBank = invoice.bankAccount?.name || invoice.bankAccountId;
+    const hasContact = invoice.contactName || invoice.contactId;
+    const hasBank = invoice.bankAccountName || invoice.accountName || invoice.bankAccountId;
 
     if (hasContact && hasBank) {
       return (
         <div className="d-flex align-items-center">
           <RiUserLine className="text-primary me-2" size={20} />
-          <span className="fw-bold">{invoice.contact.name}</span>
+          <span className="fw-bold">{invoice.contactName}</span>
           <RiArrowRightLine className="text-muted mx-2" />
           <RiBankLine className="text-success me-2" size={20} />
-          <span className="text-success">{invoice.bankAccount.name}</span>
+          <span className="text-success">{invoice.bankAccountName || invoice.accountName}</span>
         </div>
       );
     } else if (hasBank && !hasContact) {
       return (
         <div className="d-flex align-items-center">
           <RiBankLine className="text-success me-2" size={20} />
-          <span className="fw-bold text-success">{invoice.bankAccount.name}</span>
+          <span className="fw-bold text-success">{invoice.bankAccountName || invoice.accountName}</span>
           <small className="text-muted ms-2">(Direct Bank Purchase)</small>
         </div>
       );
@@ -69,7 +80,7 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
       return (
         <div className="d-flex align-items-center">
           <RiUserLine className="text-primary me-2" size={20} />
-          <span className="fw-bold">{invoice.contact.name}</span>
+          <span className="fw-bold">{invoice.contactName}</span>
           <small className="text-muted ms-2">(No Payment Bank)</small>
         </div>
       );
@@ -82,15 +93,19 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
     return null;
   }
 
+
+
   return (
+    <>
+      <style>{spinnerStyle}</style>
     <Modal isOpen={isOpen} toggle={toggle} size="xl" className="modal-dialog-centered">
       <ModalHeader toggle={toggle} className="bg-light">
-        <div className="d-flex justify-content-between align-items-center w-100">
-          <div>
+        <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center w-100 gap-2">
+          <div className="flex-grow-1">
             <h5 className="mb-0">Invoice #{invoice.invoiceNumber}</h5>
             <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
           </div>
-          <div className="d-flex align-items-center gap-3">
+          <div className="flex-shrink-0">
             {getStatusBadge(invoice.status)}
           </div>
         </div>
@@ -107,28 +122,58 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
             {getPaymentMethodDisplay()}
             
             {/* Additional vendor details if available */}
-            {(invoice.contact?.email || invoice.contact?.mobile || invoice.contact?.gstin) && (
+            {(invoice.contactEmail || invoice.contactMobile || invoice.contactGstin) && (
               <div className="mt-3 pt-3 border-top">
                 <Row>
-                  {invoice.contact?.email && (
+                  {invoice.contactEmail && (
                     <Col md={4}>
                       <small className="text-muted d-block">Email</small>
-                      <span>{invoice.contact.email}</span>
+                      <span>{invoice.contactEmail}</span>
                     </Col>
                   )}
-                  {invoice.contact?.mobile && (
+                  {invoice.contactMobile && (
                     <Col md={4}>
                       <small className="text-muted d-block">Mobile</small>
-                      <span>{invoice.contact.mobile}</span>
+                      <span>{invoice.contactMobile}</span>
                     </Col>
                   )}
-                  {invoice.contact?.gstin && (
+                  {invoice.contactGstin && (
                     <Col md={4}>
                       <small className="text-muted d-block">GSTIN</small>
-                      <span>{invoice.contact.gstin}</span>
+                      <span>{invoice.contactGstin}</span>
                     </Col>
                   )}
                 </Row>
+              </div>
+            )}
+
+
+
+            {/* Contact Billing Address */}
+            {(invoice.contactBillingAddress1 || invoice.contactBillingCity || invoice.contactBillingState) && (
+              <div className="mt-3 pt-3 border-top">
+                <h6 className="text-muted mb-2">
+                  <i className="ri-map-pin-line me-2"></i>
+                  Billing Address
+                </h6>
+                <div className="border rounded p-3 bg-light">
+                  {invoice.contactBillingAddress1 && (
+                    <div className="mb-1">{invoice.contactBillingAddress1}</div>
+                  )}
+                  {invoice.contactBillingAddress2 && (
+                    <div className="mb-1">{invoice.contactBillingAddress2}</div>
+                  )}
+                  <div className="mb-1">
+                    {[
+                      invoice.contactBillingCity,
+                      invoice.contactBillingState,
+                      invoice.contactBillingPincode
+                    ].filter(Boolean).join(', ')}
+                  </div>
+                  {invoice.contactBillingCountry && (
+                    <div>{invoice.contactBillingCountry}</div>
+                  )}
+                </div>
               </div>
             )}
           </CardBody>
@@ -232,11 +277,25 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
         <Button color="secondary" onClick={toggle}>
           <RiCloseLine className="me-1" /> Close
         </Button>
-        <Button color="primary">
+        <Button 
+          color="primary"
+          onClick={() => onGeneratePDF && onGeneratePDF(invoice)}
+          disabled={pdfLoading === invoice.id}
+        >
+          {pdfLoading === invoice.id ? (
+            <>
+              <i className="ri-loader-4-line spin me-1"></i>
+              Generating...
+            </>
+          ) : (
+            <>
           <RiDownload2Line className="me-1" /> Download PDF
+            </>
+          )}
         </Button>
       </ModalFooter>
     </Modal>
+    </>
   );
 };
 

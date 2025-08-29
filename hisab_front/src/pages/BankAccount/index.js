@@ -36,8 +36,9 @@ import {
 } from '../../Components/BankAccounts';
 
 // API
-import { createBankAccount, getBankAccounts, updateBankAccount, deleteBankAccount } from '../../services/bankAccount';
+import { getBankAccounts, createBankAccount, updateBankAccount, deleteBankAccount, getBankStatement } from '../../services/bankAccount';
 import { getSelectedCompanyId } from '../../utils/apiCall';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const BankAccounts = () => {
     document.title = "Bank Accounts | Vyavhar - React Admin & Dashboard Template";
@@ -59,33 +60,9 @@ const BankAccounts = () => {
     const [loading, setLoading] = useState(false);
     const [viewMode, setViewMode] = useState('grid');
     const [statusFilter, setStatusFilter] = useState('all');
-    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
-    // Check for selected company ID
-    useEffect(() => {
-        const checkCompanyId = () => {
-            const companyId = getSelectedCompanyId();
-            setSelectedCompanyId(companyId);
-        };
-        
-        // Check immediately
-        checkCompanyId();
-        
-        // Also check when localStorage changes (in case company selection happens)
-        const handleStorageChange = () => {
-            checkCompanyId();
-        };
-        
-        window.addEventListener('storage', handleStorageChange);
-        
-        // Check periodically to catch company selection
-        const interval = setInterval(checkCompanyId, 1000);
-        
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
-        };
-    }, []);
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
 
     // Only fetch bank accounts when a company is selected
     useEffect(() => {

@@ -46,3 +46,26 @@ export const getNextInvoiceNumber = async () => {
         endpoint: '/sales/getNextInvoiceNumber',
     });
 }; 
+
+export const generateSalesInvoicePDF = async (saleId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/sales/generateInvoicePDF',
+        params: { id: saleId }
+    });
+};
+
+export const downloadSalesPDF = (pdfUrl, fileName) => {
+    // Create a temporary link to download the PDF
+    const link = document.createElement('a');
+    link.href = pdfUrl;
+    link.download = fileName || 'sales_invoice.pdf';
+    link.target = '_blank';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
+export const openSalesPDFInNewTab = (pdfUrl) => {
+    window.open(pdfUrl, '_blank');
+}; 

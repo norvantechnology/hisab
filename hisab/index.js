@@ -23,6 +23,7 @@ import {
   portalRoutes
 } from "./src/routes/index.js";
 
+
 dotenv.config();
 
 const app = express();

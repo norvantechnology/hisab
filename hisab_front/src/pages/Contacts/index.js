@@ -87,12 +87,18 @@ const ContactsPage = () => {
     });
 
     const [isEditMode, setIsEditMode] = useState(false);
-    
+
     // Use the new company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
 
     // API calls with loading states
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping contacts fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
@@ -103,6 +109,17 @@ const ContactsPage = () => {
                 balanceType: filters.balanceType,
                 search: filters.search
             });
+
+            // Debug logging to see what data we're receiving
+            console.log('=== CONTACTS API RESPONSE DEBUG ===');
+            console.log('Full response:', response);
+            console.log('Contacts data:', response?.contacts);
+            if (response?.contacts && response.contacts.length > 0) {
+                console.log('First contact calculatedBalance:', response.contacts[0].calculatedBalance);
+                console.log('First contact currentBalance:', response.contacts[0].currentBalance);
+                console.log('First contact currentBalanceType:', response.contacts[0].currentBalanceType);
+            }
+            console.log('=== END DEBUG ===');
 
             setState(prev => ({
                 ...prev,
@@ -147,15 +164,11 @@ const ContactsPage = () => {
     };
 
     useEffect(() => {
-        fetchData();
-    }, [pagination.page, filters.contactType, filters.balanceType, filters.search]);
-
-    // Only fetch bank accounts when a company is selected
-    useEffect(() => {
         if (selectedCompanyId) {
+            fetchData();
             fetchBankAccounts();
         }
-    }, [selectedCompanyId]);
+    }, [pagination.page, filters.contactType, filters.balanceType, filters.search, selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {

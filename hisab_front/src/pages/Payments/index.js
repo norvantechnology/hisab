@@ -14,6 +14,7 @@ import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { createPayment, deletePayment, listPayments, updatePayment } from '../../services/payment';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const PaymentsPage = () => {
     const currentMonthRange = getCurrentMonthRange();
@@ -54,7 +55,16 @@ const PaymentsPage = () => {
         apiLoading
     } = state;
 
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
+
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping payments fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
             const [paymentsRes, accountsRes, contactsRes] = await Promise.all([
@@ -98,8 +108,10 @@ const PaymentsPage = () => {
     };
 
     useEffect(() => {
+        if (selectedCompanyId) {
         fetchData();
-    }, [pagination.page, filters.contactId, filters.bankId, filters.type, filters.startDate, filters.endDate]);
+        }
+    }, [pagination.page, filters.contactId, filters.bankId, filters.type, filters.startDate, filters.endDate, selectedCompanyId]);
 
     const toggleModal = (modalName, value) => {
         setState(prev => ({

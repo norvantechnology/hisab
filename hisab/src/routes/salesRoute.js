@@ -14,5 +14,6 @@ router.delete('/deleteSale', salesController.deleteSale);
 router.get('/getSale', salesController.getSale);
 router.get('/listSales', salesController.listSales);
 router.get('/getNextInvoiceNumber', salesController.getNextInvoiceNumber);
+router.get('/generateInvoicePDF', salesController.generateSalesInvoicePDF);
 
 export default router; 

@@ -10,5 +10,6 @@ router.get('/listPurchases', authenticateUser, purchaseController.listPurchases)
 router.put('/updatePurchases', authenticateUser, purchaseController.updatePurchase);
 router.delete('/deletePurchase', authenticateUser, purchaseController.deletePurchase);
 router.get('/getNextInvoiceNumber', authenticateUser, purchaseController.getNextInvoiceNumber);
+router.get('/generateInvoicePDF', authenticateUser, purchaseController.generatePurchaseInvoicePDF);
 
 export default router;

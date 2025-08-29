@@ -14,7 +14,18 @@ import {
 } from 'reactstrap';
 import { RiCloseLine, RiDownload2Line, RiUserLine, RiBankLine, RiArrowRightLine } from 'react-icons/ri';
 
-const SalesInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
+// Add CSS for spinner animation
+const spinnerStyle = `
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
+
+const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoading }) => {
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
@@ -82,15 +93,19 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
     return null;
   }
 
+
+
   return (
+    <>
+      <style>{spinnerStyle}</style>
     <Modal isOpen={isOpen} toggle={toggle} size="xl" className="modal-dialog-centered">
       <ModalHeader toggle={toggle} className="bg-light">
-        <div className="d-flex justify-content-between align-items-center w-100">
-          <div>
+        <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center w-100 gap-2">
+          <div className="flex-grow-1">
             <h5 className="mb-0">Invoice #{invoice.invoiceNumber}</h5>
             <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
           </div>
-          <div className="d-flex align-items-center gap-3">
+          <div className="flex-shrink-0">
             {getStatusBadge(invoice.status)}
           </div>
         </div>
@@ -129,6 +144,36 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
                     </Col>
                   )}
                 </Row>
+              </div>
+            )}
+
+
+
+            {/* Contact Billing Address */}
+            {(invoice.contactBillingAddress1 || invoice.contactBillingCity || invoice.contactBillingState) && (
+              <div className="mt-3 pt-3 border-top">
+                <h6 className="text-muted mb-2">
+                  <i className="ri-map-pin-line me-2"></i>
+                  Billing Address
+                </h6>
+                <div className="border rounded p-3 bg-light">
+                  {invoice.contactBillingAddress1 && (
+                    <div className="mb-1">{invoice.contactBillingAddress1}</div>
+                  )}
+                  {invoice.contactBillingAddress2 && (
+                    <div className="mb-1">{invoice.contactBillingAddress2}</div>
+                  )}
+                  <div className="mb-1">
+                    {[
+                      invoice.contactBillingCity,
+                      invoice.contactBillingState,
+                      invoice.contactBillingPincode
+                    ].filter(Boolean).join(', ')}
+                  </div>
+                  {invoice.contactBillingCountry && (
+                    <div>{invoice.contactBillingCountry}</div>
+                  )}
+                </div>
               </div>
             )}
           </CardBody>
@@ -232,11 +277,25 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice }) => {
         <Button color="secondary" onClick={toggle}>
           <RiCloseLine className="me-1" /> Close
         </Button>
-        <Button color="primary">
+        <Button 
+          color="success"
+          onClick={() => onGeneratePDF && onGeneratePDF(invoice)}
+          disabled={pdfLoading === invoice.id}
+        >
+          {pdfLoading === invoice.id ? (
+            <>
+              <i className="ri-loader-4-line spin me-1"></i>
+              Generating...
+            </>
+          ) : (
+            <>
           <RiDownload2Line className="me-1" /> Download PDF
+            </>
+          )}
         </Button>
       </ModalFooter>
     </Modal>
+    </>
   );
 };
 

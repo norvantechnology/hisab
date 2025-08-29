@@ -1,5 +1,6 @@
 import pool from "../config/dbConnection.js";
-import { errorResponse, successResponse } from "../utils/index.js";
+import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { generateSalesInvoicePDFFromHTML, generateSalesInvoicePDFFileName, createSalesInvoiceHTML } from "../utils/salesInvoicePDFGenerator.js";
 
 export async function createSale(req, res) {
   const client = await pool.connect();
@@ -8,9 +9,6 @@ export async function createSale(req, res) {
     invoiceNumber,
     date,
     taxType,
-    discountType,
-    discountValueType = 'percentage',
-    discountValue = 0,
     items,
     internalNotes = '',
     basicAmount,
@@ -128,14 +126,14 @@ export async function createSale(req, res) {
     const saleResult = await client.query(
       `INSERT INTO hisab."sales" (
         "companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
-        "taxType", "discountType", "discountValueType", "discountValue", "roundOff", "internalNotes",
-        "basicAmount", "totalDiscount", "taxAmount", "netReceivable", "status", "remaining_amount", "paid_amount"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        "taxType", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
+        "taxAmount", "netReceivable", "status", "remaining_amount", "paid_amount"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, discountType, discountValueType, discountValue, roundOff, internalNotes,
-        basicAmount, totalDiscount, taxAmount, netReceivable, status, remainingAmount, paidAmount
+        taxType, roundOff, internalNotes, basicAmount, totalDiscount, 
+        taxAmount, netReceivable, status, remainingAmount, paidAmount
       ]
     );
 
@@ -145,17 +143,18 @@ export async function createSale(req, res) {
     for (const item of items) {
       const {
         productId, quantity, rate, taxRate = 0, taxAmount = 0,
-        discount = 0, discountRate = 0, total, serialNumbers = []
+        discount = 0, discountRate = 0, total, serialNumbers = [],
+        discountType = 'percentage'
       } = item;
 
       // Insert sale item
       const saleItemResult = await client.query(
         `INSERT INTO hisab."sale_items" (
           "saleId", "productId", quantity, rate, "taxRate", "taxAmount",
-          discount, "discountRate", total
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          discount, "discountRate", total, "discountType"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *`,
-        [saleId, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total]
+        [saleId, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total, discountType]
       );
 
       const saleItemId = saleItemResult.rows[0].id;
@@ -224,9 +223,6 @@ export async function updateSale(req, res) {
     invoiceNumber,
     date,
     taxType,
-    discountType,
-    discountValueType = 'percentage',
-    discountValue = 0,
     items,
     internalNotes = '',
     basicAmount,
@@ -427,15 +423,13 @@ export async function updateSale(req, res) {
     await client.query(
       `UPDATE hisab."sales" SET
         "bankAccountId" = $1, "contactId" = $2, "invoiceNumber" = $3, "invoiceDate" = $4,
-        "taxType" = $5, "discountType" = $6, "discountValue" = $7, "discountValueType" = $8, "roundOff" = $9,
-        "internalNotes" = $10, "basicAmount" = $11, "totalDiscount" = $12,
-        "taxAmount" = $13, "netReceivable" = $14, "status" = $15, 
-        "remaining_amount" = $16, "paid_amount" = $17, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $18`,
+        "taxType" = $5, "roundOff" = $6, "internalNotes" = $7, "basicAmount" = $8, 
+        "totalDiscount" = $9, "taxAmount" = $10, "netReceivable" = $11, "status" = $12, 
+        "remaining_amount" = $13, "paid_amount" = $14, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $15`,
       [
-        bankAccountId, contactId, invoiceNumber, date, taxType, discountType,
-        discountValue, discountValueType, roundOff, internalNotes, basicAmount, totalDiscount,
-        taxAmount, netReceivable, status, remainingAmount, paidAmount, id
+        bankAccountId, contactId, invoiceNumber, date, taxType, roundOff, internalNotes, 
+        basicAmount, totalDiscount, taxAmount, netReceivable, status, remainingAmount, paidAmount, id
       ]
     );
 
@@ -443,17 +437,18 @@ export async function updateSale(req, res) {
     for (const item of items) {
       const {
         productId, quantity, rate, taxRate = 0, taxAmount = 0,
-        discount = 0, discountRate = 0, total, serialNumbers = []
+        discount = 0, discountRate = 0, total, serialNumbers = [],
+        discountType = 'percentage'
       } = item;
 
       // Insert sale item
       const saleItemResult = await client.query(
         `INSERT INTO hisab."sale_items" (
           "saleId", "productId", quantity, rate, "taxRate", "taxAmount",
-          discount, "discountRate", total
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          discount, "discountRate", total, "discountType"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         RETURNING *`,
-        [id, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total]
+        [id, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total, discountType]
       );
 
       const saleItemId = saleItemResult.rows[0].id;
@@ -627,6 +622,12 @@ export async function getSale(req, res) {
         c."email" as "contactEmail",
         c."mobile" as "contactMobile",
         c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         ba."accountName",
         ba."accountType",
         u."name" as "createdByName"
@@ -693,6 +694,148 @@ export async function getSale(req, res) {
   }
 }
 
+// Generate Sales Invoice PDF - Optimized for speed
+export async function generateSalesInvoicePDF(req, res) {
+  const { id } = req.query;
+  const companyId = req.currentUser?.companyId;
+
+  if (!id || !companyId) {
+    return errorResponse(res, "Sale ID and Company ID are required", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Fetch sale details with all related data
+    const saleQuery = `
+      SELECT 
+        s.*,
+        c."name" as "contactName",
+        c."email" as "contactEmail",
+        c."mobile" as "contactMobile",
+        c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
+        ba."accountName" as "bankAccountName",
+        ba."accountType" as "bankAccountType",
+        comp."name" as "companyName",
+        comp."logoUrl",
+        comp."address1",
+        comp."address2", 
+        comp."city",
+        comp."state",
+        comp."pincode",
+        comp."country",
+        comp."gstin" as "companyGstin"
+      FROM hisab."sales" s
+      LEFT JOIN hisab."contacts" c ON s."contactId" = c.id
+      LEFT JOIN hisab."bankAccounts" ba ON s."bankAccountId" = ba.id
+      LEFT JOIN hisab."companies" comp ON s."companyId" = comp.id
+      WHERE s."id" = $1 AND s."companyId" = $2 AND s."deletedAt" IS NULL
+    `;
+
+    // Optimized: Fetch sale details and items in parallel for faster response
+    const [saleResult, itemsResult] = await Promise.all([
+      client.query(saleQuery, [id, companyId]),
+      client.query(`
+        SELECT 
+          si.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode"
+        FROM hisab."sale_items" si
+        LEFT JOIN hisab."products" p ON si."productId" = p.id
+        WHERE si."saleId" = $1
+        ORDER BY si.id
+      `, [id])
+    ]);
+
+    if (saleResult.rows.length === 0) {
+      return errorResponse(res, "Sale not found", 404);
+    }
+
+    const sale = saleResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare data for PDF generation
+    const pdfData = {
+      sale: {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        invoiceDate: sale.invoiceDate,
+        status: sale.status,
+        taxType: sale.taxType,
+        discountType: sale.discountType,
+        discountValue: sale.discountValue,
+        basicAmount: sale.basicAmount,
+        totalDiscount: sale.totalDiscount,
+        taxAmount: sale.taxAmount,
+        roundOff: sale.roundOff,
+        netReceivable: sale.netReceivable,
+        internalNotes: sale.internalNotes
+      },
+      company: {
+        name: sale.companyName,
+        logoUrl: sale.logoUrl,
+        address1: sale.address1,
+        address2: sale.address2,
+        city: sale.city,
+        state: sale.state,
+        pincode: sale.pincode,
+        country: sale.country,
+        gstin: sale.companyGstin
+      },
+      contact: {
+        name: sale.contactName,
+        email: sale.contactEmail,
+        mobile: sale.contactMobile,
+        gstin: sale.contactGstin,
+        billingAddress1: sale.contactBillingAddress1,
+        billingAddress2: sale.contactBillingAddress2,
+        billingCity: sale.contactBillingCity,
+        billingState: sale.contactBillingState,
+        billingPincode: sale.contactBillingPincode,
+        billingCountry: sale.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: sale.bankAccountName,
+        accountType: sale.bankAccountType
+      },
+      items: items
+    };
+
+    // Generate HTML content
+    const htmlContent = createFastSalesInvoiceHTML(pdfData);
+
+    // Generate unique filename
+    const pdfFileName = generateFastSalesInvoicePDFFileName(sale.invoiceNumber, sale.companyName);
+
+    // Ultra-fast: Generate PDF and upload in parallel
+    const [pdfBuffer] = await Promise.all([
+      generateFastSalesInvoicePDF(htmlContent)
+    ]);
+
+    // Upload to S3
+    const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+
+    return successResponse(res, {
+      message: "Sales invoice PDF generated successfully",
+      pdfUrl: pdfUrl,
+      fileName: pdfFileName,
+      actionType: 'generated'
+    });
+
+  } catch (error) {
+    console.error("Error generating sales invoice PDF:", error);
+    return errorResponse(res, "Failed to generate sales invoice PDF", 500);
+  } finally {
+    client.release();
+  }
+}
+
 export async function listSales(req, res) {
   const companyId = req.currentUser?.companyId;
   const {
@@ -720,6 +863,12 @@ export async function listSales(req, res) {
         c."email" as "contactEmail",
         c."mobile" as "contactMobile",
         c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         ba."accountName",
         ba."accountType",
         u."name" as "createdByName"

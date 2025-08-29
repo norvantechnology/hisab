@@ -7,6 +7,8 @@ import errorAnimation from '../../assets/animations/error.json';
 import loadingAnimation from '../../assets/animations/loading.json';
 import ParticlesAuth from '../AuthenticationInner/ParticlesAuth';
 import { verifyEmail } from '../../services/auth';
+import { getAllCompanies } from '../../services/company';
+import { setSelectedCompany } from '../../utils/companyEvents';
 import logoLight from '../../assets/images/logo-light.png';
 
 const VerifyEmail = () => {
@@ -32,6 +34,18 @@ const VerifyEmail = () => {
 
                 if (response.user) {
                     sessionStorage.setItem('userData', JSON.stringify(response.user));
+                }
+
+                // Fetch companies and auto-select first one
+                try {
+                    const companiesResponse = await getAllCompanies();
+                    if (companiesResponse?.success && companiesResponse.companies?.length > 0) {
+                        const firstCompany = companiesResponse.companies[0];
+                        setSelectedCompany(firstCompany.id, firstCompany);
+                    }
+                } catch (companyError) {
+                    console.log("Error fetching companies after email verification:", companyError);
+                    // Don't fail the verification if company fetch fails
                 }
 
                 setTimeout(() => {

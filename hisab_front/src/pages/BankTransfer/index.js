@@ -14,6 +14,7 @@ import { getBankAccounts } from '../../services/bankAccount';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
 import { createBankTransfer, deleteBankTransfer, listBankTransfers, updateBankTransfer } from '../../services/bankTransfer';
 import { getSelectedCompanyId } from '../../utils/apiCall';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const BankTransfersPage = () => {
     document.title = "Bank Transfers | Vyavhar - React Admin & Dashboard Template";
@@ -58,6 +59,8 @@ const BankTransfersPage = () => {
         viewMode
     } = state;
 
+    const currentMonthRange = getCurrentMonthRange();
+
     const [pagination, setPagination] = useState({
         page: 1,
         limit: 10,
@@ -69,37 +72,20 @@ const BankTransfersPage = () => {
     const [filters, setFilters] = useState({
         fromBankAccountId: '',
         toBankAccountId: '',
-        startDate: '',
-        endDate: ''
+        startDate: currentMonthRange.startDate,
+        endDate: currentMonthRange.endDate
     });
 
-    const [selectedCompanyId, setSelectedCompanyId] = useState(null);
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
 
-    // Check for selected company ID
-    useEffect(() => {
-        const checkCompanyId = () => {
-            const companyId = getSelectedCompanyId();
-            setSelectedCompanyId(companyId);
-        };
-        
-        // Check immediately
-        checkCompanyId();
-        
-        // Also check when localStorage changes (in case company selection happens)
-        const handleStorageChange = () => {
-            checkCompanyId();
-        };
-        
-        window.addEventListener('storage', handleStorageChange);
-        
-        // Check periodically to catch company selection
-        const interval = setInterval(checkCompanyId, 1000);
-        
-        return () => {
-            window.removeEventListener('storage', handleStorageChange);
-            clearInterval(interval);
-        };
-    }, []);
+    // Create modals object for consistent modal state management
+    const modals = {
+        main: modal,
+        view: statementModal,
+        delete: deleteModal,
+        export: exportModal
+    };
 
     // API calls with loading states
     const fetchData = async () => {
@@ -144,8 +130,10 @@ const BankTransfersPage = () => {
     };
 
     useEffect(() => {
+        if (selectedCompanyId) {
         fetchData();
-    }, [pagination.page, filters.fromBankAccountId, filters.toBankAccountId, filters.startDate, filters.endDate]);
+        }
+    }, [pagination.page, filters.fromBankAccountId, filters.toBankAccountId, filters.startDate, filters.endDate, selectedCompanyId]);
 
     // Only fetch data when a company is selected
     useEffect(() => {
@@ -156,27 +144,32 @@ const BankTransfersPage = () => {
 
     // Modal handlers
     const toggleModal = (modalName, value) => {
-        setState(prev => ({
-            ...prev,
-            modals: { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] }
-        }));
+        if (modalName === 'main') {
+            setState(prev => ({ ...prev, modal: value !== undefined ? value : !prev.modal }));
+        } else if (modalName === 'view') {
+            setState(prev => ({ ...prev, statementModal: value !== undefined ? value : !prev.statementModal }));
+        } else if (modalName === 'delete') {
+            setState(prev => ({ ...prev, deleteModal: value !== undefined ? value : !prev.deleteModal }));
+        } else if (modalName === 'export') {
+            setState(prev => ({ ...prev, exportModal: value !== undefined ? value : !prev.exportModal }));
+        }
     };
 
     const handleAddClick = () => {
         setState(prev => ({
             ...prev,
-            isEditMode: false,
-            selectedTransfer: null,
-            modals: { ...prev.modals, main: true }
+            isEdit: false,
+            currentTransfer: null,
+            modal: true
         }));
     };
 
     const handleEditClick = (transfer) => {
         setState(prev => ({
             ...prev,
-            selectedTransfer: transfer,
-            isEditMode: true,
-            modals: { ...prev.modals, main: true }
+            currentTransfer: transfer,
+            isEdit: true,
+            modal: true
         }));
     };
 
@@ -184,15 +177,15 @@ const BankTransfersPage = () => {
         setState(prev => ({
             ...prev,
             selectedTransfer: transfer,
-            modals: { ...prev.modals, view: true }
+            statementModal: true
         }));
     };
 
     const handleDeleteClick = (transfer) => {
         setState(prev => ({
             ...prev,
-            selectedTransfer: transfer,
-            modals: { ...prev.modals, delete: true }
+            transferToDelete: transfer,
+            deleteModal: true
         }));
     };
 
@@ -200,12 +193,12 @@ const BankTransfersPage = () => {
     const handleDeleteTransfer = async () => {
         try {
             setState(prev => ({ ...prev, apiLoading: true }));
-            const response = await deleteBankTransfer(selectedTransfer.id);
+            const response = await deleteBankTransfer(transferToDelete.id);
             if (response.success) {
                 setState(prev => ({
                     ...prev,
-                    transfers: prev.transfers.filter(t => t.id !== selectedTransfer.id),
-                    modals: { ...prev.modals, delete: false },
+                    transfers: prev.transfers.filter(t => t.id !== transferToDelete.id),
+                    deleteModal: false,
                     apiLoading: false,
                     pagination: {
                         ...prev.pagination,
@@ -234,15 +227,15 @@ const BankTransfersPage = () => {
                 referenceNumber: values.referenceNumber || null
             };
 
-            const response = isEditMode
+            const response = isEdit
                 ? await updateBankTransfer(payload)
                 : await createBankTransfer(payload);
 
             if (response.success) {
-                toast.success(`Transfer ${isEditMode ? 'updated' : 'created'} successfully`);
+                toast.success(`Transfer ${isEdit ? 'updated' : 'created'} successfully`);
                 setState(prev => ({
                     ...prev,
-                    modals: { ...prev.modals, main: false },
+                    modal: false,
                     apiLoading: false
                 }));
                 fetchData();
@@ -250,7 +243,7 @@ const BankTransfersPage = () => {
         } catch (error) {
             console.log("error", error.message)
             setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.message || `Failed to ${isEditMode ? 'update' : 'create'} transfer`);
+            toast.error(error.message || `Failed to ${isEdit ? 'update' : 'create'} transfer`);
         }
     };
 
@@ -343,9 +336,9 @@ const BankTransfersPage = () => {
                 <BankTransferForm
                     isOpen={modals.main}
                     toggle={() => toggleModal('main')}
-                    isEditMode={isEditMode}
+                    isEditMode={isEdit}
                     bankAccounts={bankAccounts}
-                    selectedTransfer={selectedTransfer}
+                    selectedTransfer={currentTransfer}
                     onSubmit={handleSubmitTransfer}
                     isLoading={apiLoading}
                 />

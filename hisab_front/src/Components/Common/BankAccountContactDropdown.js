@@ -7,6 +7,7 @@ import { getContacts } from '../../services/contacts';
 import { getSelectedCompanyId } from '../../utils/apiCall';
 import { debounce } from 'lodash';
 import ContactForm from '../Contacts/ContactForm';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const BankAccountContactDropdown = ({
   // Common props
@@ -50,33 +51,9 @@ const BankAccountContactDropdown = ({
     page: 1,
     totalPages: 1
   });
-  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
-  // Check for selected company ID
-  useEffect(() => {
-    const checkCompanyId = () => {
-      const companyId = getSelectedCompanyId();
-      setSelectedCompanyId(companyId);
-    };
-    
-    // Check immediately
-    checkCompanyId();
-    
-    // Also check when localStorage changes (in case company selection happens)
-    const handleStorageChange = () => {
-      checkCompanyId();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Check periodically to catch company selection
-    const interval = setInterval(checkCompanyId, 1000);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-    };
-  }, []);
+  // Use the modern company selection hook
+  const { selectedCompanyId } = useCompanySelectionState();
 
   // Fetch bank accounts
   const fetchBankAccounts = useCallback(async (search = '', page = 1) => {

@@ -15,6 +15,7 @@ import { createProduct, updateProduct, deleteProduct, listProducts, getProduct }
 import { listStockCategories, createStockCategory } from '../../services/productSetup.js';
 import { getTaxCategory } from '../../services/taxCategories.js';
 import { getUnitOfMeasurements } from '../../services/unitOfMeasurements.js';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const ProductsPage = () => {
     // State management
@@ -76,6 +77,9 @@ const ProductsPage = () => {
         newStockCategoryName
     } = state;
 
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
+
     // Fetch categories and tax categories
     const fetchCategories = async () => {
         try {
@@ -126,6 +130,12 @@ const ProductsPage = () => {
     };
 
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping products fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
@@ -164,10 +174,12 @@ const ProductsPage = () => {
     };
 
     useEffect(() => {
+        if (selectedCompanyId) {
         fetchData();
         fetchCategories();
         fetchTaxCategories();
         fetchUnitOfMeasurements();
+        }
     }, [
         pagination.page,
         filters.search,
@@ -176,7 +188,8 @@ const ProductsPage = () => {
         filters.taxCategoryId,
         filters.unitOfMeasurement,
         filters.itemCode,
-        filters.hsnCode
+        filters.hsnCode,
+        selectedCompanyId
     ]);
 
     // Modal handlers

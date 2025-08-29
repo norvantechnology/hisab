@@ -83,6 +83,17 @@ const ContactsTable = ({
             header: "Current Balance",
             accessorKey: "calculatedBalance",
             cell: (cell) => {
+                // Debug logging to see what data we're receiving
+                console.log('=== CONTACT BALANCE DEBUG ===');
+                console.log('Contact name:', cell.row.original.name);
+                console.log('Full contact object:', cell.row.original);
+                console.log('calculatedBalance:', cell.row.original.calculatedBalance);
+                console.log('calculatedBalance.amount:', cell.row.original.calculatedBalance?.amount);
+                console.log('calculatedBalance.type:', cell.row.original.calculatedBalance?.type);
+                console.log('currentBalance:', cell.row.original.currentBalance);
+                console.log('currentBalanceType:', cell.row.original.currentBalanceType);
+                console.log('=== END DEBUG ===');
+                
                 // Use calculated balance if available, otherwise fall back to stored balance
                 const calculatedBalance = cell.row.original.calculatedBalance;
                 const balance = calculatedBalance ? 

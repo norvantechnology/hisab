@@ -14,12 +14,14 @@ import {
   Col,
   Table,
   InputGroup,
-  InputGroupText
+  InputGroupText,
+  Badge
 } from 'reactstrap';
 import {
   RiCloseLine,
   RiAddLine,
   RiLoader4Line,
+  RiEditLine,
 } from 'react-icons/ri';
 import * as Yup from "yup";
 import { useFormik } from "formik";
@@ -28,9 +30,10 @@ import 'react-datepicker/dist/react-datepicker.css';
 import { listProducts } from '../../../services/products';
 import { getNextInvoiceNumber } from '../../../services/salesInvoice';
 import ItemModal from './ItemModal';
-import { STATUS_OPTIONS, DISCOUNT_TYPES, DISCOUNT_VALUE_TYPES } from './contant'
+import { STATUS_OPTIONS, DISCOUNT_TYPES, DISCOUNT_VALUE_TYPES, TAX_TYPES, TAX_TYPES_SIMPLE, ITEM_RATE_TYPES } from './contant'
 import BankAccountContactDropdown from '../../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../../Common/BankAccountDropdown';
+import { calculateItemTotalForDisplay, calculateItemTaxAmount, calculateItemTaxAndTotal } from '../../../utils/taxCalculations';
 
 const SalesInvoiceForm = ({
   isOpen,
@@ -42,14 +45,25 @@ const SalesInvoiceForm = ({
 }) => {
   const getInitialItems = useCallback(() => {
     return selectedInvoice?.items?.map(item => {
-      // Calculate the correct values for the item
+      // Calculate the correct values for the item using common utility function
       const quantity = item.isSerialized ? (item.serialNumbers || []).length : item.quantity;
-      const subtotal = quantity * parseFloat(item.rate || 0);
-      const taxAmount = (subtotal * parseFloat(item.taxRate || 0)) / 100;
-      const discount = (subtotal * parseFloat(item.discountRate || 0)) / 100;
-      const total = subtotal + taxAmount - discount;
+      const rate = parseFloat(item.rate || 0);
+      const taxRate = parseFloat(item.taxRate || 0);
+      const discountRate = parseFloat(item.discountRate || 0);
+      const rateType = item.rateType || 'without_tax';
       
-      // For edit mode: Add the original quantity back to current stock for validation
+      // Use common utility function for consistent tax calculations
+      const result = calculateItemTaxAndTotal({
+        rate,
+        quantity,
+        taxRate,
+        discountRate: (item.discountType === 'percentage') ? discountRate : 0,
+        rateType,
+        discountValueType: item.discountType || 'percentage',
+        discountValue: (item.discountType === 'rupees') ? discountRate : 0
+              });
+        
+        // For edit mode: Add the original quantity back to current stock for validation
       // This allows the user to edit the quantity within the available stock + the quantity they already have
       const originalQuantity = parseFloat(item.quantity || 0);
       const availableStock = parseFloat(item.currentStock || 0);
@@ -61,12 +75,14 @@ const SalesInvoiceForm = ({
         name: item.productName || item.name,
         code: item.productCode || item.code,
         quantity: originalQuantity,
-        rate: parseFloat(item.rate || 0),
-        taxRate: parseFloat(item.taxRate || 0),
-        taxAmount: taxAmount,
-        discount: discount,
-        discountRate: parseFloat(item.discountRate || 0),
-        total: total,
+        rate: rate,
+        rateType: rateType,
+        taxRate: taxRate,
+        taxAmount: result.taxAmount,
+        discount: result.discount,
+        discountRate: discountRate,
+        discountType: item.discountType || 'percentage',
+        total: result.total,
         isSerialized: item.isSerialized,
         serialNumbers: item.serialNumbers || [],
         currentStock: adjustedStock,
@@ -80,10 +96,12 @@ const SalesInvoiceForm = ({
           code: '',
           quantity: 1,
           rate: 0,
+          rateType: 'without_tax',
           taxRate: 0,
           taxAmount: 0,
           discount: 0,
           discountRate: 0,
+          discountType: 'percentage',
           total: 0,
           isSerialized: false,
           serialNumbers: [],
@@ -109,6 +127,8 @@ const SalesInvoiceForm = ({
   const isInitializedRef = useRef(false);
   const [modalKey, setModalKey] = useState(0);
   const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState('');
+  const [isEditingRoundOff, setIsEditingRoundOff] = useState(false);
+  const [tempRoundOff, setTempRoundOff] = useState('');
 
   const fetchProductsRef = useRef(false);
   const lastSearchTermRef = useRef('');
@@ -132,161 +152,6 @@ const SalesInvoiceForm = ({
     }
   }, [isEditMode]);
 
-  const calculateItemTotal = useCallback((item) => {
-    const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-    const subtotal = quantity * parseFloat(item.rate || 0);
-    
-    // Calculate discount first
-    const discountRate = parseFloat(item.discountRate) || 0;
-    const discount = (subtotal * discountRate) / 100;
-    const afterDiscount = subtotal - discount;
-    
-    // Calculate tax on the amount after discount
-    const taxRate = parseFloat(item.taxRate) || 0;
-    const taxAmount = (afterDiscount * taxRate) / 100;
-    
-    const total = afterDiscount + taxAmount;
-    
-    return { 
-      ...item, 
-      quantity, 
-      subtotal,
-      taxAmount, 
-      discount, 
-      total 
-    };
-  }, []);
-
-  // Function to calculate the correct total for display in the table
-  const calculateItemTotalForDisplay = useCallback((item) => {
-    const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-    const subtotal = quantity * parseFloat(item.rate || 0);
-    
-    // Calculate discount first
-    const discountRate = parseFloat(item.discountRate) || 0;
-    const discount = (subtotal * discountRate) / 100;
-    const afterDiscount = subtotal - discount;
-    
-    // Calculate tax on the amount after discount
-    const taxRate = parseFloat(item.taxRate) || 0;
-    const taxAmount = (afterDiscount * taxRate) / 100;
-    
-    const total = afterDiscount + taxAmount;
-    
-    return total;
-  }, []);
-
-  const calculateInvoiceTotals = useCallback((values, itemsData) => {
-    // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
-    const basicAmount = itemsData.reduce((sum, item) => sum + calculateItemTotalForDisplay(item), 0);
-    
-    // Calculate total tax and total discount from all items
-    const totalTax = itemsData.reduce((sum, item) => {
-      const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-      const subtotal = quantity * parseFloat(item.rate || 0);
-      const discountRate = parseFloat(item.discountRate) || 0;
-      const discount = (subtotal * discountRate) / 100;
-      const afterDiscount = subtotal - discount;
-      const taxRate = parseFloat(item.taxRate) || 0;
-      const taxAmount = (afterDiscount * taxRate) / 100;
-      return sum + taxAmount;
-    }, 0);
-
-    let totalDiscount = itemsData.reduce((sum, item) => {
-      const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-      const subtotal = quantity * parseFloat(item.rate || 0);
-      const discountRate = parseFloat(item.discountRate) || 0;
-      const discount = (subtotal * discountRate) / 100;
-      return sum + discount;
-    }, 0);
-
-    // Add invoice-level discount if applicable
-    if (values.discountType === 'on_invoice' || values.discountType === 'per_item_and_invoice') {
-      const discountValue = parseFloat(values.discountValue) || 0;
-      if (values.discountValueType === 'percentage') {
-        totalDiscount += (basicAmount * discountValue) / 100;
-      } else if (values.discountValueType === 'rupees') {
-        totalDiscount += discountValue;
-      }
-    }
-    
-    const netBeforeRound = basicAmount - totalDiscount;
-    const roundOff = Math.round(netBeforeRound) - netBeforeRound;
-    const netReceivable = Math.round(netBeforeRound);
-
-    const billToParts = values.billTo.split('_');
-    const billToType = billToParts[0];
-    const billToId = billToParts[1];
-
-    const payload = {
-      ...values,
-      date: new Date(values.date).toISOString(),
-      items: itemsData.map(item => {
-        const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-        const subtotal = quantity * parseFloat(item.rate || 0);
-        
-        // Calculate discount first
-        const discountRate = parseFloat(item.discountRate) || 0;
-        const discount = (subtotal * discountRate) / 100;
-        const afterDiscount = subtotal - discount;
-        
-        // Calculate tax on the amount after discount
-        const taxRate = parseFloat(item.taxRate) || 0;
-        const taxAmount = (afterDiscount * taxRate) / 100;
-        
-        const total = afterDiscount + taxAmount;
-        
-        return {
-          id: item.id,
-          productId: item.productId,
-          name: item.name,
-          code: item.code,
-          quantity: item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0),
-          rate: parseFloat(item.rate || 0),
-          taxRate: parseFloat(item.taxRate || 0),
-          taxAmount: taxAmount,
-          discount: discount,
-          discountRate: parseFloat(item.discountRate || 0),
-          total: total,
-          isSerialized: item.isSerialized,
-          serialNumbers: item.isSerialized ? item.serialNumbers : undefined,
-          currentStock: parseFloat(item.currentStock || 0)
-        };
-      }),
-      basicAmount,
-      totalTax,
-      totalDiscount,
-      roundOff,
-      netReceivable,
-      discountType: values.discountType,
-      discountValueType: values.discountValueType,
-      discountValue: values.discountValue
-    };
-
-    // Handle both billToBank and billToContact - they can both be present
-    if (billToType === 'bank') {
-      payload.billToBank = billToId;
-      payload.billToContact = null;
-      payload.status = 'paid'; // Bank transactions are always paid
-    } else if (billToType === 'contact') {
-      payload.billToContact = billToId;
-      // Set default status if none selected
-      if (!values.status) {
-        payload.status = 'pending';
-      } else {
-        payload.status = values.status;
-      }
-      // Only include bank account if status is 'paid'
-      if (payload.status === 'paid' && values.billToBank) {
-        payload.billToBank = values.billToBank;
-      } else {
-        payload.billToBank = null; // Clear bank account for pending status
-      }
-    }
-
-    return payload;
-  }, [calculateItemTotalForDisplay]);
-
   const validationSchema = useMemo(() => Yup.object({
     invoiceNumber: Yup.string().required('Invoice number is required'),
     date: Yup.date().required('Date is required'),
@@ -301,13 +166,16 @@ const SalesInvoiceForm = ({
       then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
       otherwise: (schema) => schema
     }),
-    discountType: Yup.string().required('Discount type is required'),
-    discountValueType: Yup.string().required('Discount value type is required'),
-    discountValue: Yup.number().when('discountType', {
-      is: (type) => type === 'on_invoice' || type === 'per_item_and_invoice',
-      then: (schema) => schema.min(0, 'Discount value cannot be negative').required('Discount value is required'),
+    taxType: Yup.string().required('Tax type is required'),
+    rateType: Yup.string().when('taxType', {
+      is: (taxType) => {
+        const selectedTax = TAX_TYPES.find(tax => tax.value === taxType);
+        return selectedTax && selectedTax.rate > 0;
+      },
+      then: (schema) => schema.required('Rate type is required'),
       otherwise: (schema) => schema
     }),
+
     items: Yup.array().of(
       Yup.object().shape({
         name: Yup.string().required('Item name is required'),
@@ -369,9 +237,13 @@ const SalesInvoiceForm = ({
       billTo: billToValue,
       billToBank: billToBankValue,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
-      discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
-      discountValueType: isEditMode && selectedInvoice ? selectedInvoice.discountValueType : 'percentage',
-      discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
+      taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',
+      rateType: isEditMode && selectedInvoice ? 
+        (TAX_TYPES.find(tax => tax.value === selectedInvoice.taxType)?.rate === 0 ? '' : selectedInvoice.rateType) : 
+        '',
+      discountType: 'per_item', // Fixed to per_item only since we removed invoice-level discounts
+      discountValueType: 'percentage', // Default to percentage, but can be changed per item
+      discountValue: 0, // No invoice-level discount
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
           id: Date.now(),
@@ -379,6 +251,7 @@ const SalesInvoiceForm = ({
           code: '',
           quantity: 1,
           rate: 0,
+          rateType: 'without_tax',
           taxRate: 0,
           taxAmount: 0,
           discount: 0,
@@ -420,6 +293,7 @@ const SalesInvoiceForm = ({
           code: '',
           quantity: 1,
           rate: 0,
+          rateType: '',
           taxRate: 0,
           taxAmount: 0,
           discount: 0,
@@ -451,9 +325,12 @@ const SalesInvoiceForm = ({
   const handleBillToChange = (selectedOption) => {
     validation.setFieldValue('billTo', selectedOption?.value || '');
     
-    // Only clear billToBank if the selected option is not a contact
-    // This allows preserving the bank account when switching between contacts
-    if (!selectedOption?.value?.startsWith('contact_')) {
+    // When a contact is selected, automatically set status to 'pending'
+    if (selectedOption?.value?.startsWith('contact_')) {
+      validation.setFieldValue('status', 'pending');
+    } else {
+      // Clear status and billToBank if not a contact
+      validation.setFieldValue('status', '');
       validation.setFieldValue('billToBank', '');
     }
   };
@@ -473,6 +350,176 @@ const SalesInvoiceForm = ({
       validation.setFieldValue('billToBank', '');
     }
   };
+
+  // Custom handler for tax type changes
+  const handleTaxTypeChange = (e) => {
+    validation.setFieldValue('taxType', e.target.value);
+    
+    // Clear rateType if tax type has rate 0 (no tax)
+    if (TAX_TYPES.find(tax => tax.value === e.target.value)?.rate === 0) {
+      validation.setFieldValue('rateType', '');
+    }
+    
+    // Set default rateType if none is selected and tax type has a rate > 0
+    if (!validation.values.rateType && TAX_TYPES.find(tax => tax.value === e.target.value)?.rate > 0) {
+      validation.setFieldValue('rateType', 'without_tax');
+    }
+  };
+
+  // Custom handler for rate type changes
+  const handleRateTypeChange = useCallback((e) => {
+    const newRateType = e.target.value;
+    validation.setFieldValue('rateType', newRateType);
+    
+    // Live update all items based on the new rate type
+    if (items.length > 0) {
+      const updatedItems = items.map(item => {
+        // Recalculate item based on new rate type
+        const quantity = item.isSerialized ? (item.serialNumbers || []).length : item.quantity;
+        const rate = parseFloat(item.rate) || 0;
+        const taxRate = parseFloat(item.taxRate) || 0;
+        const discountRate = parseFloat(item.discountRate) || 0;
+        
+        // Calculate subtotal
+        let subtotal;
+        if (newRateType === 'with_tax') {
+          // Rate is inclusive of tax, extract base rate
+          if (taxRate > 0) {
+            subtotal = quantity * (rate / (1 + (taxRate / 100)));
+          } else {
+            subtotal = quantity * rate;
+          }
+        } else {
+          // Rate is without tax
+          subtotal = quantity * rate;
+        }
+        
+        // Calculate discount based on discount type
+        let discount = 0;
+        const itemDiscountType = item.discountType || 'percentage';
+        if (itemDiscountType === 'percentage') {
+          discount = (subtotal * discountRate) / 100;
+        } else if (itemDiscountType === 'rupees') {
+          discount = discountRate;
+        }
+        const afterDiscount = subtotal - discount;
+        
+        // Calculate tax amount based on new rate type
+        let taxAmount = 0;
+        const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
+        const shouldCalculateTax = selectedTax && selectedTax.rate > 0;
+        
+        if (shouldCalculateTax) {
+          // Use common utility function for tax calculations
+          const result = calculateItemTaxAndTotal({
+            rate: rate,
+            quantity,
+            taxRate,
+            discountRate: (item.discountType === 'percentage') ? discountRate : 0,
+            rateType: newRateType,
+            discountValueType: item.discountType || 'percentage',
+            discountValue: (item.discountType === 'rupees') ? discountRate : 0
+          });
+          
+          taxAmount = result.taxAmount;
+        }
+        
+        // Calculate total
+        const total = afterDiscount + taxAmount;
+        
+        return {
+          ...item,
+          rateType: newRateType, // Update item's rate type to match invoice
+          taxAmount: taxAmount,
+          total: total
+        };
+      });
+      
+      // Update items state with recalculated values
+      setItems(updatedItems);
+    }
+  }, [items, validation.values.taxType]);
+
+  // Custom handler for round-off changes
+  const handleRoundOffChange = useCallback((e) => {
+    const value = parseFloat(e.target.value) || 0;
+    validation.setFieldValue('roundOff', value);
+  }, []);
+
+  // Function to calculate item totals (moved here to avoid validation dependency issues)
+  const calculateItemTotal = useCallback((item, rateType = 'without_tax') => {
+    const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
+    const rate = parseFloat(item.rate || 0);
+    const taxRate = parseFloat(item.taxRate) || 0;
+    const discountRate = parseFloat(item.discountRate) || 0;
+    
+    // Use common utility function for consistent tax calculations
+    const result = calculateItemTaxAndTotal({
+      rate,
+      quantity,
+      taxRate,
+      discountRate: (item.discountType === 'percentage') ? discountRate : 0,
+      rateType,
+      discountValueType: item.discountType || 'percentage', // Use item-level discount type
+      discountValue: (item.discountType === 'rupees') ? discountRate : 0
+    });
+    
+    return { 
+      ...item, 
+      quantity, 
+      rateType, // Set the rateType from the parameter
+      subtotal: result.subtotal,
+      taxAmount: result.taxAmount, 
+      discount: result.discount, 
+      total: result.total 
+    };
+  }, []);
+
+  // Function to calculate the correct total for display in the table
+  // Now using the same logic as purchase form for consistency
+  const calculateItemTotalForDisplay = useCallback((item, taxType) => {
+    const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
+    let subtotal;
+    
+    if (item.rateType === 'with_tax') {
+      // Rate is inclusive of tax, so we need to extract the base rate
+      const taxRate = parseFloat(item.taxRate) || 0;
+      const rateWithoutTax = item.rate / (1 + (taxRate / 100));
+      subtotal = quantity * rateWithoutTax;
+    } else {
+      // Rate is without tax
+      subtotal = quantity * item.rate;
+    }
+    
+    // Calculate discount first
+    const discountRate = parseFloat(item.discountRate) || 0;
+    let discount = 0;
+    const itemDiscountType = item.discountType || 'percentage'; // Use item-level discount type
+    if (itemDiscountType === 'percentage') {
+      discount = (subtotal * discountRate) / 100;
+    } else if (itemDiscountType === 'rupees') {
+      discount = discountRate;
+    }
+    const afterDiscount = subtotal - discount;
+    
+    // Calculate tax based on rate type and tax type
+    let taxAmount = 0;
+    const selectedTax = TAX_TYPES.find(tax => tax.value === taxType);
+    const shouldCalculateTax = selectedTax && selectedTax.rate > 0;
+    
+    if (item.rateType === 'with_tax' && shouldCalculateTax) {
+      // For "With Tax" items, calculate the tax amount included in the rate
+      const taxRate = parseFloat(item.taxRate) || 0;
+      taxAmount = (afterDiscount * taxRate) / 100;
+    } else if (item.rateType === 'without_tax' && shouldCalculateTax) {
+      // For "Without Tax" items, add tax to the rate
+      const taxRate = parseFloat(item.taxRate) || 0;
+      taxAmount = (afterDiscount * taxRate) / 100;
+    }
+    
+    const total = afterDiscount + taxAmount;
+    return total;
+  }, []);
 
   // Check if status dropdown should be shown
   const shouldShowStatusDropdown = useMemo(() => {
@@ -497,52 +544,175 @@ const SalesInvoiceForm = ({
     // or navigate to a contact creation page
   };
 
-  const calculatedTotals = useMemo(() => {
-    // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
-    const basicAmount = items.reduce((sum, item) => sum + calculateItemTotalForDisplay(item), 0);
-    
-    // Calculate total tax and total discount from all items
-    const totalTax = items.reduce((sum, item) => {
+  const calculateInvoiceTotals = useCallback((values, itemsData) => {
+    // Basic Amount = Sum of all items' (Rate × Quantity) - before any discounts
+    const basicAmount = itemsData.reduce((sum, item) => {
       const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-      const subtotal = quantity * parseFloat(item.rate || 0);
-      const discountRate = parseFloat(item.discountRate) || 0;
-      const discount = (subtotal * discountRate) / 100;
-      const afterDiscount = subtotal - discount;
-      const taxRate = parseFloat(item.taxRate) || 0;
-      const taxAmount = (afterDiscount * taxRate) / 100;
-      return sum + taxAmount;
+      const rate = parseFloat(item.rate || 0);
+      return sum + (quantity * rate);
+    }, 0);
+    
+    // Calculate total tax from all items
+    const totalTax = itemsData.reduce((sum, item) => {
+      return sum + calculateItemTaxAmount(item, values.taxType, TAX_TYPES);
     }, 0);
 
-    let totalDiscount = items.reduce((sum, item) => {
+    // Total Discount = Sum of all individual item discounts (per_item only)
+    const totalDiscount = itemsData.reduce((sum, item) => {
       const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
-      const subtotal = quantity * parseFloat(item.rate || 0);
+      const rate = parseFloat(item.rate || 0);
+      const subtotal = quantity * rate;
       const discountRate = parseFloat(item.discountRate) || 0;
-      const discount = (subtotal * discountRate) / 100;
+      
+      let discount = 0;
+      const itemDiscountType = item.discountType || 'percentage'; // Use item-level discount type
+      if (itemDiscountType === 'percentage') {
+        discount = (subtotal * discountRate) / 100;
+      } else if (itemDiscountType === 'rupees') {
+        discount = discountRate;
+      }
       return sum + discount;
     }, 0);
 
-    // Add invoice-level discount if applicable
-    if (validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') {
-      const discountValue = parseFloat(validation.values.discountValue) || 0;
-      if (validation.values.discountValueType === 'percentage') {
-        totalDiscount += (basicAmount * discountValue) / 100;
-      } else if (validation.values.discountValueType === 'rupees') {
-        totalDiscount += discountValue;
+    const netBeforeRound = basicAmount - totalDiscount + totalTax;
+    // Use user-input round-off value instead of auto-calculating
+    const userRoundOff = parseFloat(values.roundOff || 0);
+    const netReceivable = netBeforeRound + userRoundOff;
+
+    const billToParts = values.billTo.split('_');
+    const billToType = billToParts[0];
+    const billToId = billToParts[1];
+
+    const payload = {
+      // Explicitly include only non-discount fields from values
+      invoiceNumber: values.invoiceNumber,
+      taxType: values.taxType,
+      rateType: values.rateType,
+      internalNotes: values.internalNotes,
+      billTo: values.billTo,
+      status: values.status,
+      date: new Date(values.date).toISOString(),
+      items: itemsData.map(item => {
+        const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
+        const subtotal = quantity * parseFloat(item.rate || 0);
+        
+        // Calculate discount first using correct discount value type
+        const discountRate = parseFloat(item.discountRate) || 0;
+        let discount = 0;
+        const itemDiscountType = item.discountType || 'percentage'; // Use item-level discount type
+        if (itemDiscountType === 'percentage') {
+          discount = (subtotal * discountRate) / 100;
+        } else if (itemDiscountType === 'rupees') {
+          discount = discountRate;
+        }
+        const afterDiscount = subtotal - discount;
+        
+        // Use common utility function for tax calculations to ensure consistency
+        const result = calculateItemTaxAndTotal({
+          rate: parseFloat(item.rate || 0),
+          quantity,
+          taxRate: parseFloat(item.taxRate || 0),
+          discountRate,
+          rateType: item.rateType || 'without_tax',
+          discountValueType: itemDiscountType,
+          discountValue: discountRate
+        });
+        
+        return {
+          id: item.id,
+          productId: item.productId,
+          name: item.name,
+          code: item.code,
+          quantity: item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0),
+          rate: parseFloat(item.rate || 0),
+          rateType: item.rateType,
+          taxRate: parseFloat(item.taxRate || 0),
+          taxAmount: result.taxAmount,
+          discount: discount,
+          discountRate: parseFloat(item.discountRate || 0),
+          discountType: itemDiscountType, // Include the item-level discount type
+          total: result.total,
+          isSerialized: item.isSerialized,
+          serialNumbers: item.isSerialized ? item.serialNumbers : undefined,
+          currentStock: parseFloat(item.currentStock || 0)
+        };
+      }),
+      basicAmount,
+      taxAmount: totalTax,
+      totalDiscount,
+      roundOff: userRoundOff,
+      netReceivable,
+
+    };
+
+    // Handle both billToBank and billToContact - they can both be present
+    if (billToType === 'bank') {
+      payload.billToBank = billToId;
+      payload.billToContact = null;
+      payload.status = 'paid'; // Bank transactions are always paid
+    } else if (billToType === 'contact') {
+      payload.billToContact = billToId;
+      // Set default status if none selected
+      if (!values.status) {
+        payload.status = 'pending';
+      } else {
+        payload.status = values.status;
+      }
+      // Only include bank account if status is 'paid'
+      if (payload.status === 'paid' && values.billToBank) {
+        payload.billToBank = values.billToBank;
+      } else {
+        payload.billToBank = null; // Clear bank account for pending status
       }
     }
-    
-    const netBeforeRound = basicAmount - totalDiscount;
-    const roundOff = Math.round(netBeforeRound) - netBeforeRound;
-    const netReceivable = Math.round(netBeforeRound);
+
+    return payload;
+  }, [calculateItemTaxAmount]);
+
+  // Function to calculate totals for display (moved here to avoid dependency issues)
+  const calculatedTotals = useMemo(() => {
+    // Basic Amount = Sum of all items' (Rate × Quantity) - before any discounts
+    const basicAmount = items.reduce((sum, item) => {
+      const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
+      const rate = parseFloat(item.rate || 0);
+      return sum + (quantity * rate);
+    }, 0);
+      
+    // Calculate total tax from all items
+    const totalTax = items.reduce((sum, item) => {
+      return sum + calculateItemTaxAmount(item, validation.values.taxType, TAX_TYPES);
+    }, 0);
+
+    // Total Discount = Sum of all individual item discounts (per_item only)
+    const totalDiscount = items.reduce((sum, item) => {
+      const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
+      const rate = parseFloat(item.rate || 0);
+      const subtotal = quantity * rate;
+      const discountRate = parseFloat(item.discountRate) || 0;
+      
+      let discount = 0;
+      const itemDiscountType = item.discountType || 'percentage'; // Use item-level discount type
+      if (itemDiscountType === 'percentage') {
+        discount = (subtotal * discountRate) / 100;
+      } else if (itemDiscountType === 'rupees') {
+        discount = discountRate;
+      }
+      return sum + discount;
+    }, 0);
+
+    const netBeforeRound = basicAmount - totalDiscount + totalTax;
+    // Use user-input round-off value instead of auto-calculating
+    const userRoundOff = parseFloat(validation.values.roundOff || 0);
+    const netReceivable = netBeforeRound + userRoundOff;
 
     return {
       basicAmount,
       totalTax,
       totalDiscount,
-      roundOff,
+      roundOff: userRoundOff,
       netReceivable
     };
-  }, [items, calculateItemTotalForDisplay, validation.values.discountType, validation.values.discountValueType, validation.values.discountValue]);
+  }, [items, validation.values.taxType, validation.values.roundOff]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(product =>
@@ -589,13 +759,16 @@ const SalesInvoiceForm = ({
 
   useEffect(() => {
     if (isOpen && isInitializedRef.current) {
+      // For sales invoices, preserve user-set roundOff values (don't override manual changes)
+              const shouldUpdateRoundOff = Math.abs(parseFloat(validation.values.roundOff || 0)) < 0.001; // Only update if roundOff is essentially 0
+      
       validation.setValues(prev => ({
         ...prev,
         items: items,
         basicAmount: calculatedTotals.basicAmount,
         taxAmount: calculatedTotals.totalTax,
         totalDiscount: calculatedTotals.totalDiscount,
-        roundOff: calculatedTotals.roundOff,
+        roundOff: shouldUpdateRoundOff ? calculatedTotals.roundOff : prev.roundOff, // Preserve user-set values
         netReceivable: calculatedTotals.netReceivable
       }), false);
 
@@ -606,7 +779,44 @@ const SalesInvoiceForm = ({
     }
   }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netReceivable, items, isOpen, suggestedInvoiceNumber, isEditMode]); // Removed validation from dependencies
 
-
+  // Reset form when switching from edit mode to new invoice mode
+  useEffect(() => {
+    if (!isEditMode && isOpen) {
+      // Reset form to initial state for new invoice
+      validation.resetForm();
+      
+      // Reset items to initial empty state
+      setItems([{
+        id: Date.now(),
+        productId: null,
+        name: '',
+        code: '',
+        quantity: 1,
+        rate: 0,
+        rateType: 'without_tax',
+        taxRate: 0,
+        taxAmount: 0,
+        discount: 0,
+        discountRate: 0,
+        total: 0,
+        isSerialized: false,
+        serialNumbers: [],
+        currentStock: 0
+      }]);
+      
+      // Clear search and product states
+      setProducts([]);
+      setSearchTerm('');
+      setPagination({ page: 1, limit: 10, total: 0, totalPages: 1 });
+      
+      // Reset round off editing states
+      setIsEditingRoundOff(false);
+      setTempRoundOff('0');
+      
+      // Reset selected date to today
+      setSelectedDate(new Date());
+    }
+  }, [isEditMode, isOpen]); // Removed validation dependency to prevent infinite loop
 
   const fetchProducts = useCallback(async (page = 1, search = '', reset = false) => {
     console.log(`fetchProducts called: page=${page}, search="${search}", reset=${reset}, fetchInProgress=${fetchProductsRef.current}`);
@@ -754,6 +964,8 @@ const SalesInvoiceForm = ({
     }
   }, [handleScroll]);
 
+  // Note: Removed useEffect for discount type changes since each item now manages its own discount type
+
   const handleDateChange = (date) => {
     setSelectedDate(date);
     validation.setFieldValue('date', date.toISOString());
@@ -801,13 +1013,13 @@ const SalesInvoiceForm = ({
   };
 
   const addItem = (item) => {
-    const calculatedItem = calculateItemTotal(item);
+    const calculatedItem = calculateItemTotal(item, validation.values.rateType);
     setItems(prev => [...prev, calculatedItem]);
     closeAddItemModal();
   };
 
   const updateItem = (item) => {
-    const calculatedItem = calculateItemTotal(item);
+    const calculatedItem = calculateItemTotal(item, validation.values.rateType);
     setItems(prev => prev.map(i => i.id === item.id ? calculatedItem : i));
     closeAddItemModal();
   };
@@ -817,9 +1029,13 @@ const SalesInvoiceForm = ({
   };
 
   const handleItemSave = (item) => {
-    if (currentItem) {
+    // Check if this is an existing item (already in the items array) or a new one
+    const existingItem = items.find(i => i.id === currentItem?.id);
+    if (existingItem) {
+      // This is editing an existing item
       updateItem({ ...item, id: currentItem.id });
     } else {
+      // This is adding a new item
       addItem(item);
     }
   };
@@ -926,6 +1142,7 @@ const SalesInvoiceForm = ({
                       invalid={validation.touched.status && !!validation.errors.status}
                       disabled={isProcessing}
                     >
+                      <option value="">Select Status</option>
                       {STATUS_OPTIONS.map(status => (
                         <option key={status.value} value={status.value}>{status.label}</option>
                       ))}
@@ -937,93 +1154,81 @@ const SalesInvoiceForm = ({
             </Row>
 
             {shouldShowBankAccountDropdown && (
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Payment Bank Account <span className="text-danger">*</span></Label>
-                    <BankAccountDropdown
-                      value={validation.values.billToBank}
-                      onChange={handleBillToBankChange}
-                      onBlur={() => validation.setFieldTouched('billToBank', true)}
-                      disabled={isProcessing}
-                      placeholder="Select Bank Account"
-                      error={validation.errors.billToBank}
-                      touched={validation.touched.billToBank}
-                    />
-                    {validation.touched.billToBank && validation.errors.billToBank && (
-                      <div className="invalid-feedback d-block">{validation.errors.billToBank}</div>
-                    )}
-                  </FormGroup>
-                </Col>
-              </Row>
-            )}
-
             <Row className="mb-4">
               <Col md={6}>
                 <FormGroup>
-                  <Label>Discount Type</Label>
-                  <Input
-                    type="select"
-                    name="discountType"
-                    value={validation.values.discountType}
-                    onChange={validation.handleChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.discountType && !!validation.errors.discountType}
+                  <Label>Payment Bank Account <span className="text-danger">*</span></Label>
+                  <BankAccountDropdown
+                    value={validation.values.billToBank}
+                    onChange={handleBillToBankChange}
+                    onBlur={() => validation.setFieldTouched('billToBank', true)}
                     disabled={isProcessing}
-                  >
-                    <option value="">Select Discount Type</option>
-                    {DISCOUNT_TYPES.map(discount => (
-                      <option key={discount.value} value={discount.value}>{discount.label}</option>
-                    ))}
-                  </Input>
-                  <FormFeedback>{validation.errors.discountType}</FormFeedback>
-                </FormGroup>
-              </Col>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Discount Value Type</Label>
-                  <Input
-                    type="select"
-                    name="discountValueType"
-                    value={validation.values.discountValueType}
-                    onChange={validation.handleChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.discountValueType && !!validation.errors.discountValueType}
-                    disabled={isProcessing}
-                  >
-                    <option value="">Select Discount Value Type</option>
-                    {DISCOUNT_VALUE_TYPES.map(type => (
-                      <option key={type.value} value={type.value}>{type.label}</option>
-                    ))}
-                  </Input>
-                  <FormFeedback>{validation.errors.discountValueType}</FormFeedback>
+                    placeholder="Select Bank Account"
+                    error={validation.errors.billToBank}
+                    touched={validation.touched.billToBank}
+                  />
+                  {validation.touched.billToBank && validation.errors.billToBank && (
+                    <div className="invalid-feedback d-block">{validation.errors.billToBank}</div>
+                  )}
                 </FormGroup>
               </Col>
             </Row>
+            )}
 
-            {(validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && (
               <Row className="mb-4">
                 <Col md={6}>
                   <FormGroup>
-                    <Label>Discount Value</Label>
-                    <InputGroup>
-                      <Input
-                        type="number"
-                        name="discountValue"
-                        min="0"
-                        step="0.01"
-                        value={validation.values.discountValue}
-                        onChange={validation.handleChange}
-                        onBlur={validation.handleBlur}
-                        invalid={validation.touched.discountValue && !!validation.errors.discountValue}
-                        disabled={isProcessing}
-                        placeholder={validation.values.discountValueType === 'percentage' ? 'Enter discount percentage' : 'Enter discount amount'}
-                      />
-                      <InputGroupText>
-                        {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
-                      </InputGroupText>
-                    </InputGroup>
-                    <FormFeedback>{validation.errors.discountValue}</FormFeedback>
+                    <Label>Tax Type</Label>
+                    <Input
+                      type="select"
+                      name="taxType"
+                      value={validation.values.taxType}
+                      onChange={handleTaxTypeChange}
+                      onBlur={validation.handleBlur}
+                      invalid={validation.touched.taxType && !!validation.errors.taxType}
+                      disabled={isProcessing}
+                    >
+                      <option value="">Select Tax Type</option>
+                      {TAX_TYPES.map(tax => (
+                        <option key={tax.value} value={tax.value}>{tax.label}</option>
+                      ))}
+                    </Input>
+                    <FormFeedback>{validation.errors.taxType}</FormFeedback>
+                  </FormGroup>
+                </Col>
+              </Row>
+
+
+
+            {validation.values.taxType && validation.values.taxType !== 'no_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+              <Row className="mb-4">
+                <Col md={6}>
+                  <FormGroup>
+                    <Label>Item Rate Type</Label>
+                    <div className="d-flex gap-3">
+                      {ITEM_RATE_TYPES.map(type => (
+                        <div key={type.value} className="form-check">
+                          <Input
+                            type="radio"
+                            name="rateType"
+                            id={`rateType_${type.value}`}
+                            value={type.value}
+                            checked={validation.values.rateType === type.value}
+                            onChange={handleRateTypeChange}
+                            disabled={isProcessing}
+                          />
+                          <Label className="form-check-label" htmlFor={`rateType_${type.value}`}>
+                            {type.label}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                    {validation.touched.rateType && validation.errors.rateType && (
+                      <div className="text-danger small">{validation.errors.rateType}</div>
+                    )}
+                    <div className="form-text text-muted">
+                      Changing the rate type will automatically recalculate tax amounts and totals for all items.
+                    </div>
                   </FormGroup>
                 </Col>
               </Row>
@@ -1050,10 +1255,17 @@ const SalesInvoiceForm = ({
                     <th>Code</th>
                     <th className="text-end">Qty</th>
                     <th className="text-end">Rate</th>
-                    <th className="text-end">Tax (%)</th>
-                    <th className="text-end">Tax Amount</th>
-                    <th className="text-end">Discount</th>
-                    <th className="text-end">Discount Amount</th>
+                    {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+                      <>
+                        <th className="text-end">Tax (%)</th>
+                        <th className="text-end">Tax Amount</th>
+                      </>
+                    )}
+                    {validation.values.discountType && validation.values.discountType !== 'none' && (
+                      <>
+                        <th className="text-end">Discount Amount</th>
+                      </>
+                    )}
                     <th className="text-end">Total</th>
                     <th>Action</th>
                   </tr>
@@ -1069,13 +1281,23 @@ const SalesInvoiceForm = ({
                       <td>{item.code || '-'}</td>
                       <td className="text-end">{item.quantity}</td>
                       <td className="text-end">₹{parseFloat(item.rate || 0).toFixed(2)}</td>
-                      <td className="text-end">{item.taxRate}%</td>
-                      <td className="text-end">₹{parseFloat(item.taxAmount || 0).toFixed(2)}</td>
-                      <td className="text-end">
-                        {item.discountValueType === 'rupees' ? '₹' : ''}{item.discountRate}{item.discountValueType === 'percentage' ? '%' : ''}
-                      </td>
-                      <td className="text-end">₹{parseFloat(item.discount || 0).toFixed(2)}</td>
-                      <td className="text-end fw-bold">₹{calculateItemTotalForDisplay(item).toFixed(2)}</td>
+                      {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+                        <>
+                          <td className="text-end">{item.taxRate}%</td>
+                          <td className="text-end">₹{parseFloat(item.taxAmount || 0).toFixed(2)}</td>
+                        </>
+                      )}
+                      {validation.values.discountType && validation.values.discountType !== 'none' && (
+                        <>
+                          <td className="text-end">
+                            <div>₹{parseFloat(item.discount || 0).toFixed(2)}</div>
+                            {item.discountType === 'percentage' && (
+                              <div className="text-muted small">{item.discountRate}%</div>
+                            )}
+                          </td>
+                        </>
+                      )}
+                      <td className="text-end fw-bold">₹{calculateItemTotalForDisplay(item, validation.values.taxType).toFixed(2)}</td>
                       <td>
                         <div className="d-flex gap-2">
                           <Button
@@ -1139,14 +1361,104 @@ const SalesInvoiceForm = ({
                       <span className="text-success">+ ₹ {calculatedTotals.totalTax.toFixed(2)}</span>
                     </div>
                   )}
-                  {Math.abs(calculatedTotals.roundOff) > 0 && (
                     <div className="d-flex justify-content-between mb-2">
                       <span>Round Off:</span>
-                      <span className={calculatedTotals.roundOff > 0 ? 'text-success' : 'text-danger'}>
-                        {calculatedTotals.roundOff > 0 ? '+' : ''} ₹ {calculatedTotals.roundOff.toFixed(2)}
+                    <div className="d-flex align-items-center gap-2">
+                      {isEditingRoundOff ? (
+                        <div className="d-flex align-items-center gap-1">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={tempRoundOff}
+                            onChange={(e) => setTempRoundOff(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                validation.setFieldValue('roundOff', parseFloat(tempRoundOff) || 0);
+                                setIsEditingRoundOff(false);
+                              }
+                            }}
+                            onBlur={(e) => {
+                              // Prevent onBlur when clicking on Auto button
+                              const relatedTarget = e.relatedTarget;
+                              const isAutoButton = relatedTarget && (
+                                relatedTarget.textContent === 'Auto' || 
+                                relatedTarget.title === 'Auto calculate round-off'
+                              );
+                              
+                              if (!isAutoButton) {
+                                validation.setFieldValue('roundOff', parseFloat(tempRoundOff) || 0);
+                                setIsEditingRoundOff(false);
+                              }
+                            }}
+                            style={{ width: '80px', fontSize: '0.875rem' }}
+                            size="sm"
+                            autoFocus
+                            disabled={isProcessing}
+                          />
+                          <Button
+                            color="outline-secondary"
+                            size="sm"
+                            onClick={() => {
+                              try {
+                                // Calculate fresh values without round off influence
+                                const basicAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
+                                
+                                // Calculate invoice discount fresh
+                                let totalDiscount = 0;
+                                const discountType = validation.values.discountType || 'none';
+                                const discountValueType = validation.values.discountValueType || 'percentage';
+                                const discountValue = parseFloat(validation.values.discountValue) || 0;
+                                
+                                if (discountType === 'on_invoice' || discountType === 'per_item_and_invoice') {
+                                  if (discountValueType === 'percentage') {
+                                    totalDiscount = (basicAmount * discountValue) / 100;
+                                  } else if (discountValueType === 'rupees') {
+                                    totalDiscount = discountValue;
+                                  }
+                                }
+                                
+                                const netBeforeRound = basicAmount - totalDiscount;
+                                const autoRoundOff = Math.round(netBeforeRound) - netBeforeRound;
+                                const roundOffValue = parseFloat(autoRoundOff.toFixed(2));
+                                
+                                // Set the calculated values
+                                setTempRoundOff(roundOffValue.toString());
+                                validation.setFieldValue('roundOff', roundOffValue, true);
+                                
+                                // Use setTimeout to prevent React batching conflicts
+                                setTimeout(() => {
+                                  setIsEditingRoundOff(false);
+                                }, 10);
+                              } catch (error) {
+                                console.error('Error in auto round off calculation:', error);
+                              }
+                            }}
+                            disabled={isProcessing}
+                            title="Auto calculate round-off"
+                            style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                          >
+                            Auto
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="d-flex align-items-center gap-1">
+                          <span className={parseFloat(validation.values.roundOff || 0) > 0 ? 'text-success' : parseFloat(validation.values.roundOff || 0) < 0 ? 'text-danger' : ''}>
+                            {parseFloat(validation.values.roundOff || 0) > 0 ? '+' : ''} ₹ {parseFloat(validation.values.roundOff || 0).toFixed(2)}
                       </span>
+                          <RiEditLine
+                            className="text-muted cursor-pointer"
+                            size={14}
+                            onClick={() => {
+                              setTempRoundOff(parseFloat(validation.values.roundOff || 0).toString());
+                              setIsEditingRoundOff(true);
+                            }}
+                            title="Edit round off"
+                            style={{ cursor: 'pointer' }}
+                          />
                     </div>
                   )}
+                    </div>
+                  </div>
                   <div className="d-flex justify-content-between mt-3 pt-2 border-top">
                     <span className="fw-bold">Net Receivable:</span>
                     <span className="fw-bold">₹ {calculatedTotals.netReceivable.toFixed(2)}</span>
@@ -1202,6 +1514,7 @@ const SalesInvoiceForm = ({
           });
         }}
         saveItem={handleItemSave}
+        rateType={validation.values.rateType}
       />
     </>
   );

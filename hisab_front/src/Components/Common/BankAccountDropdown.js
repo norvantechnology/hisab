@@ -4,6 +4,7 @@ import { RiBankLine } from 'react-icons/ri';
 import { ACCOUNT_TYPES } from '../BankAccounts';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getSelectedCompanyId } from '../../utils/apiCall';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const BankAccountDropdown = ({
   value,
@@ -19,33 +20,9 @@ const BankAccountDropdown = ({
   
   const [bankAccounts, setBankAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [selectedCompanyId, setSelectedCompanyId] = useState(null);
 
-  // Check for selected company ID
-  useEffect(() => {
-    const checkCompanyId = () => {
-      const companyId = getSelectedCompanyId();
-      setSelectedCompanyId(companyId);
-    };
-    
-    // Check immediately
-    checkCompanyId();
-    
-    // Also check when localStorage changes (in case company selection happens)
-    const handleStorageChange = () => {
-      checkCompanyId();
-    };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // Check periodically to catch company selection
-    const interval = setInterval(checkCompanyId, 1000);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(interval);
-    };
-  }, []);
+  // Use the modern company selection hook
+  const { selectedCompanyId } = useCompanySelectionState();
 
   // Fetch bank accounts
   const fetchBankAccounts = useCallback(async (search = '') => {

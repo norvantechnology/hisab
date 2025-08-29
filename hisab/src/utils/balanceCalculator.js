@@ -165,7 +165,7 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     console.log(`=== PENDING INCOMES TOTAL: ${totalPendingIncomes} ===\n`);
 
     // PENDING TRANSACTIONS BALANCE CALCULATION
-    // Balance = Current Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes
+    // Balance = Current Balance + Opening Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes
     let calculatedBalance = 0;
     let calculatedBalanceType = 'payable';
 
@@ -190,6 +190,16 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
       console.log(`  Step 1: Start with current balance (receivable): -${currentBalanceAmount}`);
     }
 
+    // Add opening balance (this represents the initial balance when contact was created)
+    const beforeOpeningBalance = calculatedBalance;
+    if (openingBalanceType === 'payable') {
+      calculatedBalance += openingBalanceAmount; // We owe them
+      console.log(`  Step 1.5: Add opening balance (payable): ${beforeOpeningBalance} + ${openingBalanceAmount} = ${calculatedBalance}`);
+    } else if (openingBalanceType === 'receivable') {
+      calculatedBalance -= openingBalanceAmount; // They owe us
+      console.log(`  Step 1.5: Subtract opening balance (receivable): ${beforeOpeningBalance} - ${openingBalanceAmount} = ${calculatedBalance}`);
+    }
+
     // Add pending purchases (we owe them for these)
     const beforePurchases = calculatedBalance;
     calculatedBalance += totalPendingPurchases;
@@ -211,7 +221,7 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     console.log(`  Step 5: Subtract pending incomes: ${beforeIncomes} - ${totalPendingIncomes} = ${calculatedBalance}`);
 
     console.log(`\n🎯 Final Calculation Formula:`);
-    console.log(`   ${currentBalanceType === 'payable' ? currentBalanceAmount : -currentBalanceAmount} + ${totalPendingPurchases} + ${totalPendingExpenses} - ${totalPendingSales} - ${totalPendingIncomes} = ${calculatedBalance}`);
+    console.log(`   ${currentBalanceType === 'payable' ? currentBalanceAmount : -currentBalanceAmount} ${openingBalanceType === 'payable' ? '+' : '-'} ${openingBalanceAmount} + ${totalPendingPurchases} + ${totalPendingExpenses} - ${totalPendingSales} - ${totalPendingIncomes} = ${calculatedBalance}`);
 
     // Determine balance type and amount
     if (calculatedBalance > 0) {

@@ -5,6 +5,8 @@ import { uploadFileToS3 } from "./uploadS3.js";
 import { generateOTP, isOtpExpired } from "./otpUtils.js";
 import { upload, conditionalUpload } from "./multerConfig.js";
 import { generatePaymentPDFFromHTML, generatePaymentPDFFileName, createPaymentInvoiceHTML } from "./paymentPDFGenerator.js";
+import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "./fastPurchaseInvoicePDFGenerator.js";
+import { generateFastSalesInvoicePDF, generateFastSalesInvoicePDFFileName, createFastSalesInvoiceHTML } from "./fastSalesInvoicePDFGenerator.js";
 
 export {
   sendCSVEmail,
@@ -20,5 +22,11 @@ export {
   conditionalUpload,
   generatePaymentPDFFromHTML,
   generatePaymentPDFFileName,
-  createPaymentInvoiceHTML
+  createPaymentInvoiceHTML,
+  generateFastPurchaseInvoicePDF,
+  generateFastPurchaseInvoicePDFFileName,
+  createFastPurchaseInvoiceHTML,
+  generateFastSalesInvoicePDF,
+  generateFastSalesInvoicePDFFileName,
+  createFastSalesInvoiceHTML
 };

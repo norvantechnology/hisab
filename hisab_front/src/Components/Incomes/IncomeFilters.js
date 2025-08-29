@@ -12,14 +12,14 @@ const IncomeFilters = ({ categories, filters, onFilterChange, currentMonthRange,
     };
 
     const getSelectedStatus = () => {
-        if (!filters.status) return { value: '', label: 'All Status' };
-        return filters.status === 'paid' 
-            ? { value: 'paid', label: 'Paid' }
-            : { value: 'pending', label: 'Pending' };
+        if (!filters.status || filters.status === 'all') return { value: 'all', label: 'All Status' };
+        if (filters.status === 'paid') return { value: 'paid', label: 'Paid' };
+        if (filters.status === 'pending') return { value: 'pending', label: 'Pending' };
+        return { value: 'all', label: 'All Status' };
     };
 
     const statusOptions = [
-        { value: '', label: 'All Status' },
+        { value: 'all', label: 'All Status' },
         { value: 'paid', label: 'Paid' },
         { value: 'pending', label: 'Pending' }
     ];

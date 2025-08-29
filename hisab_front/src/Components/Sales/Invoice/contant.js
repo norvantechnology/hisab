@@ -1,6 +1,17 @@
 export const TAX_TYPES = [
-  { value: 'percentage', label: 'Percentage' },
-  { value: 'fixed', label: 'Fixed Amount' }
+  { value: 'no_tax', label: 'No Tax', rate: 0 },
+  { value: 'local_registered', label: 'Local - registered', rate: 18 },
+  { value: 'outstate', label: 'Outstate', rate: 18 },
+  { value: 'import_deemed', label: 'Import deemed', rate: 18 },
+  { value: 'import_with_igst', label: 'Import with IGST', rate: 18 },
+  { value: 'import_under_bond', label: 'Import under bond/LUT', rate: 0 },
+  { value: 'merchant_export_local', label: 'Merchant export Local', rate: 0 },
+  { value: 'merchant_export_outstate', label: 'Merchant export outstate', rate: 0 }
+];
+
+export const TAX_TYPES_SIMPLE = [
+  { value: 'no_tax', label: 'No Tax' },
+  { value: 'with_tax', label: 'With Tax' }
 ];
 
 export const DISCOUNT_TYPES = [
@@ -18,4 +29,9 @@ export const DISCOUNT_VALUE_TYPES = [
 export const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
   { value: 'paid', label: 'Paid' }
+];
+
+export const ITEM_RATE_TYPES = [
+  { value: 'without_tax', label: 'Without Tax' },
+  { value: 'with_tax', label: 'With Tax' }
 ]; 

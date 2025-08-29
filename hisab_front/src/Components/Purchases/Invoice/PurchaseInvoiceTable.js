@@ -1,8 +1,19 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine } from 'react-icons/ri';
 import TableContainer from '../../Common/TableContainer';
-import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
+import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Button } from 'reactstrap';
+
+// Add CSS for spinner animation
+const spinnerStyle = `
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
 
 const PurchaseInvoiceTable = ({
     invoices,
@@ -11,7 +22,9 @@ const PurchaseInvoiceTable = ({
     onPageChange,
     onView,
     onEdit,
-    onDelete
+    onDelete,
+    onGeneratePDF,
+    pdfLoading = null
 }) => {
     const columns = useMemo(() => [
         {
@@ -214,32 +227,47 @@ const PurchaseInvoiceTable = ({
             header: "Action",
             accessorKey: "action",
             cell: (cell) => (
-                <UncontrolledDropdown direction="start">
-                    <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
-                        <RiMoreFill />
-                    </DropdownToggle>
-                    <DropdownMenu className="dropdown-menu-end">
-                        <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                            <RiEyeLine className="me-2 align-middle text-muted" /> View
-                        </DropdownItem>
-                        {(
+                <div className="d-flex align-items-center gap-2">
+                    <Button
+                        color="primary"
+                        size="sm"
+                        onClick={() => onGeneratePDF && onGeneratePDF(cell.row.original)}
+                        title="Generate Invoice PDF"
+                        disabled={pdfLoading === cell.row.original.id}
+                    >
+                        {pdfLoading === cell.row.original.id ? (
+                            <i className="ri-loader-4-line spin"></i>
+                        ) : (
+                            <RiFilePdfLine />
+                        )}
+                    </Button>
+                    <UncontrolledDropdown direction="start">
+                        <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
+                            <RiMoreFill />
+                        </DropdownToggle>
+                        <DropdownMenu className="dropdown-menu-end">
+                            <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
+                                <RiEyeLine className="me-2 align-middle text-muted" /> View
+                            </DropdownItem>
                             <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
                                 <RiPencilLine className="me-2 align-middle text-muted" /> Edit
                             </DropdownItem>
-                        )}
-                        <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
-                            <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
-                        </DropdownItem>
-                    </DropdownMenu>
-                </UncontrolledDropdown>
+                            <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
+                                <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
+                            </DropdownItem>
+                        </DropdownMenu>
+                    </UncontrolledDropdown>
+                </div>
             ),
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete]);
+    ], [onView, onEdit, onDelete, onGeneratePDF, pdfLoading]);
 
     return (
-        <Card className="shadow-sm">
-            <CardBody className="p-3">
+        <>
+            <style>{spinnerStyle}</style>
+            <Card className="shadow-sm">
+                <CardBody className="p-3">
                 <TableContainer
                     columns={columns}
                     data={invoices || []}
@@ -256,6 +284,7 @@ const PurchaseInvoiceTable = ({
                 />
             </CardBody>
         </Card>
+        </>
     );
 };
 

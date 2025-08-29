@@ -18,6 +18,8 @@ import {
   Alert
 } from 'reactstrap';
 import { RiLoader4Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
+import { calculateItemTaxAndTotal } from '../../../utils/taxCalculations';
+import { TAX_TYPES } from './contant';
 
 const ItemModal = ({
   isOpen,
@@ -31,7 +33,8 @@ const ItemModal = ({
   filteredProducts,
   scrollContainerRef,
   updateCurrentItem,
-  saveItem
+  saveItem,
+  rateType
 }) => {
   const [serialNumbers, setSerialNumbers] = useState([]);
   const [newSerialNumber, setNewSerialNumber] = useState('');
@@ -121,7 +124,18 @@ const ItemModal = ({
     }
 
     // Tax rate validation
-    if (localCurrentItem?.taxRate && (localCurrentItem.taxRate < 0 || localCurrentItem.taxRate > 100)) {
+    if (rateType === 'without_tax') {
+      // For "Without Tax" items, tax rate is required only if the selected tax type has a rate > 0
+      const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
+      if (selectedTax && selectedTax.rate > 0) {
+        if (!localCurrentItem?.taxRate || localCurrentItem.taxRate <= 0) {
+          newErrors.taxRate = 'Tax rate is required for "Without Tax" items';
+        } else if (localCurrentItem.taxRate > 100) {
+          newErrors.taxRate = 'Tax rate cannot exceed 100%';
+        }
+      }
+    } else if (localCurrentItem?.taxRate && (localCurrentItem.taxRate < 0 || localCurrentItem.taxRate > 100)) {
+      // For "With Tax" items, tax rate is optional but must be valid if provided
       newErrors.taxRate = 'Tax rate must be between 0 and 100';
     }
 
@@ -132,7 +146,7 @@ const ItemModal = ({
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput]);
+  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, rateType, validation.values.taxType]);
 
   const handleAddSerialNumber = useCallback(() => {
     const trimmedSerial = newSerialNumber.trim();
@@ -363,26 +377,28 @@ const ItemModal = ({
     const rate = parseFloat(rateInput);
     const validRate = !isNaN(rate) && rate >= 0 ? rate : 0;
     const quantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0);
-    const subtotal = quantity * validRate;
-
-    // Calculate discount
+    const taxRate = typeof localCurrentItem?.taxRate === 'number' && localCurrentItem.taxRate > 0 ? localCurrentItem.taxRate : 0;
     const discountRate = parseFloat(discountRateInput);
     const validDiscountRate = !isNaN(discountRate) && discountRate > 0 ? discountRate : 0;
-    const discount = (subtotal * validDiscountRate) / 100;
-    const afterDiscount = subtotal - discount;
 
-    // Calculate tax
-    const taxRate = typeof localCurrentItem?.taxRate === 'number' && localCurrentItem.taxRate > 0 ? localCurrentItem.taxRate : 0;
-    const taxAmount = (afterDiscount * taxRate) / 100;
-    const total = afterDiscount + taxAmount;
+    // Use the common tax calculation function
+    const result = calculateItemTaxAndTotal({
+      rate: validRate,
+      quantity,
+      taxRate,
+      discountRate: validDiscountRate,
+      rateType,
+      discountValueType: 'percentage', // Purchase modals use percentage discount
+      discountValue: validDiscountRate
+    });
 
     return {
-      subtotal,
-      discount,
-      taxAmount,
-      total
+      subtotal: result.subtotal,
+      discount: result.discount,
+      taxAmount: result.taxAmount,
+      total: result.total
     };
-  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length]);
+  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, rateType]);
 
   const renderItemDetails = useMemo(() => (
     <div className="border-top pt-3">
@@ -434,7 +450,7 @@ const ItemModal = ({
         </Col>
         <Col md={6}>
           <FormGroup>
-            <Label>Rate (Without Tax) <span className="text-danger">*</span></Label>
+            <Label>Rate {rateType === 'with_tax' ? '(With Tax)' : '(Without Tax)'} <span className="text-danger">*</span></Label>
             <InputGroup>
               <InputGroupText>₹</InputGroupText>
               <Input
@@ -532,30 +548,83 @@ const ItemModal = ({
         </Row>
       )}
 
-      <Row>
-        <Col md={6}>
-          <FormGroup>
-            <Label>Tax Rate</Label>
-            <InputGroup>
-              <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={localCurrentItem?.taxRate || ''}
-                onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
-                placeholder="0.00"
-                invalid={!!errors.taxRate}
-              />
-              <InputGroupText>%</InputGroupText>
-            </InputGroup>
-            {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
-            <div className="form-text">
-              {localCurrentItem?.productId ? 'Product tax rate (editable)' : 'Manual tax rate'}
-            </div>
-          </FormGroup>
-        </Col>
-        {(validation.values.discountType === 'per_item' || validation.values.discountType === 'per_item_and_invoice') && (
+      {rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+        <Row className="mb-3">
+          <Col md={6}>
+            <FormGroup>
+              <Label>Tax Rate</Label>
+              <InputGroup>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={localCurrentItem?.taxRate || ''}
+                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  invalid={!!errors.taxRate}
+                />
+                <InputGroupText>%</InputGroupText>
+              </InputGroup>
+              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
+              <div className="form-text">
+                {localCurrentItem?.productId ? 'Product tax rate (editable)' : 'Manual tax rate'}
+              </div>
+            </FormGroup>
+          </Col>
+          <Col md={6}>
+            <FormGroup>
+              <Label>Calculated Values</Label>
+              <div className="border p-3 bg-light rounded">
+                <div className="d-flex justify-content-between mb-2">
+                  <span>Rate (Excluding Tax):</span>
+                  <span className="fw-semibold">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
+                    (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100))).toFixed(2) : '0.00'}</span>
+                </div>
+                <div className="d-flex justify-content-between mb-2">
+                  <span>Tax Amount:</span>
+                  <span className="fw-semibold text-success">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
+                    (localCurrentItem.rate - (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100)))).toFixed(2) : '0.00'}</span>
+                </div>
+                <div className="d-flex justify-content-between pt-2 border-top">
+                  <span className="fw-bold">Total Rate (With Tax):</span>
+                  <span className="fw-bold">₹{localCurrentItem?.rate ? localCurrentItem.rate.toFixed(2) : '0.00'}</span>
+                </div>
+              </div>
+            </FormGroup>
+          </Col>
+        </Row>
+      )}
+
+      {rateType === 'without_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+        <Row className="mb-3">
+          <Col md={6}>
+            <FormGroup>
+              <Label>Tax Rate <span className="text-danger">*</span></Label>
+              <InputGroup>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={localCurrentItem?.taxRate || ''}
+                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  invalid={!!errors.taxRate}
+                />
+                <InputGroupText>%</InputGroupText>
+              </InputGroup>
+              <div className="form-text text-muted">
+                Tax rate is required to calculate tax amount separately (rate is exclusive of tax)
+              </div>
+              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
+            </FormGroup>
+          </Col>
+        </Row>
+      )}
+
+      {(validation.values.discountType === 'per_item' || validation.values.discountType === 'per_item_and_invoice') && (
+        <Row className="mb-3">
           <Col md={6}>
             <FormGroup>
               <Label>Discount Rate</Label>
@@ -584,8 +653,8 @@ const ItemModal = ({
               {errors.discountRate && <div className="text-danger small mt-1">{errors.discountRate}</div>}
             </FormGroup>
           </Col>
-        )}
-      </Row>
+        </Row>
+      )}
 
       {/* Calculation Summary */}
       {localCurrentItem?.rate && (localCurrentItem?.quantity > 0 || serialNumbers.length > 0) && (
@@ -603,10 +672,15 @@ const ItemModal = ({
                   <span className="text-danger">- ₹{calculatedValues.discount.toFixed(2)}</span>
                 </div>
               )}
-              {calculatedValues.taxAmount > 0 && (
+              {calculatedValues.taxAmount > 0 && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Tax ({localCurrentItem?.taxRate || 0}%):</span>
-                  <span className="text-success">+ ₹{calculatedValues.taxAmount.toFixed(2)}</span>
+                  <span>
+                    {rateType === 'with_tax' ? 'Tax Included' : 'Tax'} ({localCurrentItem?.taxRate || 0}%):
+                  </span>
+                  <span className={rateType === 'with_tax' ? 'text-info' : 'text-success'}>
+                    {rateType === 'with_tax' ? '₹' : '+ ₹'}{calculatedValues.taxAmount.toFixed(2)}
+                    {rateType === 'with_tax' && ' (included in rate)'}
+                  </span>
                 </div>
               )}
             </Col>
@@ -622,12 +696,21 @@ const ItemModal = ({
         </div>
       )}
     </div>
-  ), [localCurrentItem, validation.values.discountType, validation.values.discountValueType, updateLocalItem, serialNumbers, newSerialNumber, handleAddSerialNumber, handleRemoveSerialNumber, errors, handleKeyPress, calculatedValues, rateInput, discountRateInput]);
+  ), [localCurrentItem, validation.values.discountType, validation.values.discountValueType, updateLocalItem, serialNumbers, newSerialNumber, handleAddSerialNumber, handleRemoveSerialNumber, errors, handleKeyPress, calculatedValues, rateInput, discountRateInput, rateType]);
 
   const handleSave = useCallback(() => {
+    console.log('=== handleSave called ===');
+    console.log('localCurrentItem:', localCurrentItem);
+    console.log('rateInput:', rateInput);
+    console.log('discountRateInput:', discountRateInput);
+    console.log('calculatedValues:', calculatedValues);
+    
     if (!validateForm()) {
+      console.log('Validation failed, errors:', errors);
       return;
     }
+    
+    console.log('Validation passed, calling saveItem');
 
     const itemToSave = {
       ...localCurrentItem,
@@ -636,6 +719,8 @@ const ItemModal = ({
       serialNumbers: localCurrentItem?.isSerialized ? serialNumbers : undefined,
       quantity: localCurrentItem?.isSerialized ? serialNumbers.length : localCurrentItem?.quantity,
       rate: parseFloat(rateInput) || 0,
+      rateType: localCurrentItem?.rateType || 'without_tax', // Preserve rateType
+      taxRate: localCurrentItem?.taxRate || 0, // Preserve taxRate
       discountRate: parseFloat(discountRateInput) || 0,
       subtotal: calculatedValues.subtotal,
       discount: calculatedValues.discount,
@@ -643,8 +728,9 @@ const ItemModal = ({
       total: calculatedValues.total
     };
 
+    console.log('Item to save:', itemToSave);
     saveItem(itemToSave);
-  }, [localCurrentItem, serialNumbers, saveItem, validateForm, calculatedValues, rateInput, discountRateInput]);
+  }, [localCurrentItem, serialNumbers, saveItem, validateForm, calculatedValues, rateInput, discountRateInput, errors]);
 
   const isFormValid = useMemo(() => {
     return localCurrentItem?.productId &&

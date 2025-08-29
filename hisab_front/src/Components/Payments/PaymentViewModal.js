@@ -148,6 +148,38 @@ const PaymentViewModal = ({ isOpen, toggle, payment }) => {
                             </Col>
                         </Row>
 
+                        {/* Contact Billing Address */}
+                        {(payment.contactBillingAddress1 || payment.contactBillingCity || payment.contactBillingState) && (
+                            <Row>
+                                <Col md={12}>
+                                    <div className="mb-3">
+                                        <h6 className="text-muted">
+                                            <i className="ri-map-pin-line me-2"></i>
+                                            Contact Billing Address
+                                        </h6>
+                                        <div className="border rounded p-3 bg-light">
+                                            {payment.contactBillingAddress1 && (
+                                                <div className="mb-1">{payment.contactBillingAddress1}</div>
+                                            )}
+                                            {payment.contactBillingAddress2 && (
+                                                <div className="mb-1">{payment.contactBillingAddress2}</div>
+                                            )}
+                                            <div className="mb-1">
+                                                {[
+                                                    payment.contactBillingCity,
+                                                    payment.contactBillingState,
+                                                    payment.contactBillingPincode
+                                                ].filter(Boolean).join(', ')}
+                                            </div>
+                                            {payment.contactBillingCountry && (
+                                                <div>{payment.contactBillingCountry}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </Col>
+                            </Row>
+                        )}
+
                         <Row>
                             <Col md={6}>
                                 <div className="mb-3">

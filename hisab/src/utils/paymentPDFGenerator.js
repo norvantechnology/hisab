@@ -584,6 +584,17 @@ export const createPaymentInvoiceHTML = (paymentData) => {
             <span class="info-value">${contact.email}</span>
           </div>
           ` : ''}
+          ${(contact.billingAddress1 || contact.billingCity || contact.billingState) ? `
+          <div class="info-row">
+            <span class="info-label">Address:</span>
+            <span class="info-value">
+              ${contact.billingAddress1 ? contact.billingAddress1 + '<br>' : ''}
+              ${contact.billingAddress2 ? contact.billingAddress2 + '<br>' : ''}
+              ${[contact.billingCity, contact.billingState, contact.billingPincode].filter(Boolean).join(', ')}
+              ${contact.billingCountry ? '<br>' + contact.billingCountry : ''}
+            </span>
+          </div>
+          ` : ''}
         </div>
         
         <!-- Allocations Section -->

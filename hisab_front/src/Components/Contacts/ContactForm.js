@@ -68,7 +68,7 @@ const ContactForm = ({
       shippingState: selectedContact?.shippingState || '',
       shippingCountry: selectedContact?.shippingCountry || 'India',
       openingBalance: getNumericValue(selectedContact?.openingBalance, 0),
-      openingBalanceType: selectedContact?.openingBalanceType || 'none',
+      openingBalanceType: selectedContact?.openingBalanceType || 'receivable', // Default to receivable for new contacts
       enablePortal: selectedContact?.enablePortal || false,
       notes: selectedContact?.notes || ''
     },
@@ -108,7 +108,11 @@ const ContactForm = ({
         then: (schema) => schema.required('Shipping Country is required')
       }),
       openingBalance: Yup.number().min(0, 'Opening balance must be 0 or more'),
-      openingBalanceType: Yup.string().required('Balance type is required')
+      openingBalanceType: Yup.string().when('openingBalance', {
+        is: (balance) => balance > 0,
+        then: (schema) => schema.required('Please select balance type when amount is greater than 0').notOneOf(['none'], 'Please select Receivable or Payable when amount is greater than 0'),
+        otherwise: (schema) => schema.notRequired()
+      })
     }),
     onSubmit: async (values) => {
       await onSubmit(values);
@@ -120,14 +124,41 @@ const ContactForm = ({
   // Custom handler for numeric fields to ensure they stay as numbers
   const handleNumericChange = (fieldName) => (e) => {
     const value = e.target.value;
-    // Allow empty string for user to clear the field, but convert to 0 on blur
-    validation.setFieldValue(fieldName, value === '' ? '' : Number(value));
+    const numericValue = value === '' ? '' : Number(value);
+    validation.setFieldValue(fieldName, numericValue);
+    
+    // Special handling for opening balance
+    if (fieldName === 'openingBalance') {
+      const balance = value === '' ? 0 : Number(value);
+      // If balance becomes 0, automatically set to 'receivable'
+      // If balance > 0, reset to 'none' so user must select
+      if (balance === 0) {
+        validation.setFieldValue('openingBalanceType', 'receivable');
+      } else if (balance > 0 && validation.values.openingBalanceType === 'receivable') {
+        // Only reset if it was previously auto-set to receivable
+        validation.setFieldValue('openingBalanceType', 'none');
+      }
+    }
   };
 
   // Custom blur handler for numeric fields
   const handleNumericBlur = (fieldName) => (e) => {
     const value = e.target.value;
-    validation.setFieldValue(fieldName, value === '' ? 0 : Number(value));
+    const numericValue = value === '' ? 0 : Number(value);
+    validation.setFieldValue(fieldName, numericValue);
+    
+    // Special handling for opening balance
+    if (fieldName === 'openingBalance') {
+      // If balance is 0, automatically set to 'receivable'
+      // If balance > 0, reset to 'none' so user must select
+      if (numericValue === 0) {
+        validation.setFieldValue('openingBalanceType', 'receivable');
+      } else if (numericValue > 0 && validation.values.openingBalanceType === 'receivable') {
+        // Only reset if it was previously auto-set to receivable
+        validation.setFieldValue('openingBalanceType', 'none');
+      }
+    }
+    
     validation.handleBlur(e);
   };
 
@@ -147,6 +178,30 @@ const ContactForm = ({
         shippingState: validation.values.billingState,
         shippingCountry: validation.values.billingCountry
       });
+    }
+  };
+
+  // Custom form submit handler to show validation errors
+  const handleFormSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Touch all fields to show validation errors
+    const touchedFields = {};
+    Object.keys(validation.values).forEach(field => {
+      touchedFields[field] = true;
+    });
+    validation.setTouched(touchedFields);
+    
+    // Validate the form
+    const errors = await validation.validateForm();
+    
+    if (Object.keys(errors).length === 0) {
+      // No errors, submit the form
+      validation.handleSubmit();
+    } else {
+      // Show error toast for missing fields
+      const errorFields = Object.keys(errors);
+      toast.error(`Please fill in all required fields: ${errorFields.join(', ')}`);
     }
   };
 
@@ -210,7 +265,7 @@ An email has been sent to ${selectedContact.email}.`,
         {isEditMode ? 'Edit Contact' : 'Create Contact'}
       </ModalHeader>
       <ModalBody>
-        <Form onSubmit={validation.handleSubmit}>
+        <Form onSubmit={handleFormSubmit}>
           <Row>
             <Col md={6}>
               <FormGroup>
@@ -563,7 +618,11 @@ An email has been sent to ${selectedContact.email}.`,
             </Col>
             <Col md={6}>
               <FormGroup>
-                <Label>Balance Type <span className="text-danger">*</span></Label>
+                <Label>
+                  Balance Type 
+                  {validation.values.openingBalance > 0 && <span className="text-danger">*</span>}
+                  {validation.values.openingBalance === 0 && <small className="text-success"> (Auto: Receivable)</small>}
+                </Label>
                 <Input
                   type="select"
                   name="openingBalanceType"
@@ -573,13 +632,30 @@ An email has been sent to ${selectedContact.email}.`,
                   invalid={validation.touched.openingBalanceType && !!validation.errors.openingBalanceType}
                   disabled={isProcessing}
                 >
-                  {balanceTypes.map(balanceType => (
+                  {validation.values.openingBalance > 0 && (
+                    <option value="none" disabled>Please Select Balance Type</option>
+                  )}
+                  {balanceTypes
+                    .filter(balanceType => 
+                      validation.values.openingBalance === 0 || balanceType.value !== 'none'
+                    )
+                    .map(balanceType => (
                     <option key={balanceType.value} value={balanceType.value}>
                       {balanceType.label}
                     </option>
                   ))}
                 </Input>
                 <FormFeedback>{validation.errors.openingBalanceType}</FormFeedback>
+                {validation.values.openingBalance > 0 && (
+                  <small className="text-danger">
+                    Please select Receivable or Payable when amount is greater than 0
+                  </small>
+                )}
+                {validation.values.openingBalance === 0 && (
+                  <small className="text-success">
+                    Automatically set to Receivable when amount is 0
+                  </small>
+                )}
               </FormGroup>
             </Col>
           </Row>
@@ -679,7 +755,7 @@ An email has been sent to ${selectedContact.email}.`,
             <Button
               color="primary"
               type="submit"
-              disabled={isProcessing || !validation.isValid}
+              disabled={isProcessing}
             >
               {isProcessing ? (
                 <>

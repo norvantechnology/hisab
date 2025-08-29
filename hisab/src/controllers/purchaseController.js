@@ -1,6 +1,7 @@
 import { constrainedMemory } from "process";
 import pool from "../config/dbConnection.js";
-import { errorResponse, successResponse } from "../utils/index.js";
+import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "../utils/fastPurchaseInvoicePDFGenerator.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -9,6 +10,7 @@ export async function createPurchase(req, res) {
     invoiceNumber,
     date,
     taxType,
+    rateType = 'without_tax',
     discountType,
     discountValueType = 'percentage',
     discountValue = 0,
@@ -143,31 +145,33 @@ export async function createPurchase(req, res) {
 
     const purchaseRes = await client.query(
       `INSERT INTO hisab."purchases"
-       ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
-       "taxType", "discountType", "discountValueType", "discountValue", "roundOff", "internalNotes",
-       "basicAmount", "totalDiscount", "taxAmount", "netPayable", "status", "remaining_amount", "paid_amount")
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+       ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", 
+        "invoiceDate", "taxType", "rateType", "discountType", "discountValueType", 
+        "discountValue", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
+        "taxAmount", "netPayable", "status", "remaining_amount", "paid_amount")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
        RETURNING id`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, discountType, discountValueType, discountValue, roundOff, internalNotes,
-        basicAmount, totalDiscount, taxAmount, netPayable, status, remainingAmount, paidAmount
+        taxType, rateType, discountType, discountValueType, discountValue,
+        roundOff, internalNotes, basicAmount, totalDiscount, taxAmount, netPayable, status,
+        remainingAmount, paidAmount
       ]
     );
     const purchaseId = purchaseRes.rows[0].id;
 
     for (const item of items) {
-      const { productId, quantity: qty, rate, taxRate, taxAmount: itemTaxAmount,
+      const { productId, quantity: qty, rate, rateType: itemRateType, taxRate, taxAmount: itemTaxAmount,
         discount, discountRate, total, serialNumbers = [] } = item;
 
       const purchaseItemResult = await client.query(
         `INSERT INTO hisab."purchase_items"
-         ("purchaseId", "companyId", "productId", "qty", "rate", "discount", 
+         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discount", 
          "discountRate", "taxRate", "taxAmount", "total", "serialNumbers")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id`,
         [
-          purchaseId, companyId, productId, qty, rate, discount,
+          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, discount,
           discountRate, taxRate, itemTaxAmount, total,
           serialNumbers.length > 0 ? serialNumbers : null
         ]
@@ -262,6 +266,7 @@ export async function updatePurchase(req, res) {
     invoiceNumber,
     date,
     taxType,
+    rateType = 'without_tax',
     discountType,
     discountValueType = 'percentage',
     discountValue = 0,
@@ -503,26 +508,28 @@ export async function updatePurchase(req, res) {
            "invoiceNumber" = $3,
            "invoiceDate" = $4,
            "taxType" = $5,
-           "discountType" = $6,
-           "discountValue" = $7,
-           "discountValueType" = $8,
-           "roundOff" = $9,
-           "internalNotes" = $10,
-           "basicAmount" = $11,
-           "totalDiscount" = $12,
-           "taxAmount" = $13,
-           "netPayable" = $14,
-           "status" = $15,
-           "remaining_amount" = $16,
-           "paid_amount" = $17,
+           "rateType" = $6,
+           "discountType" = $7,
+           "discountValue" = $8,
+           "discountValueType" = $9,
+           "roundOff" = $10,
+           "internalNotes" = $11,
+           "basicAmount" = $12,
+           "totalDiscount" = $13,
+           "taxAmount" = $14,
+           "netPayable" = $15,
+           "status" = $16,
+           "remaining_amount" = $17,
+           "paid_amount" = $18,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $18 AND "companyId" = $19`,
+       WHERE "id" = $19 AND "companyId" = $20`,
       [
         bankAccountId,
         contactId,
         invoiceNumber,
         date,
         taxType,
+        rateType,
         discountType,
         discountValue,
         discountValueType,
@@ -546,6 +553,7 @@ export async function updatePurchase(req, res) {
         productId,
         quantity: qty,
         rate,
+        rateType: itemRateType,
         taxRate,
         taxAmount: itemTaxAmount,
         discount,
@@ -556,12 +564,12 @@ export async function updatePurchase(req, res) {
 
       const itemRes = await client.query(
         `INSERT INTO hisab."purchase_items"
-         ("purchaseId", "companyId", "productId", "qty", "rate", "discount", 
+         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discount", 
          "discountRate", "taxRate", "taxAmount", "total", "serialNumbers")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          RETURNING id`,
         [
-          purchaseId, companyId, productId, qty, rate, discount,
+          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, discount,
           discountRate, taxRate, itemTaxAmount, total,
           serialNumbers.length > 0 ? serialNumbers : null
         ]
@@ -852,8 +860,24 @@ export async function getPurchase(req, res) {
 
   try {
     const result = await client.query(
-      `SELECT * FROM hisab."purchases"
-       WHERE id = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
+      `SELECT 
+        p.*,
+        c."name" as "contactName",
+        c."email" as "contactEmail",
+        c."mobile" as "contactMobile",
+        c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
+        ba."accountName" as "bankAccountName",
+        ba."accountType" as "bankAccountType"
+       FROM hisab."purchases" p
+       LEFT JOIN hisab."contacts" c ON p."contactId" = c."id"
+       LEFT JOIN hisab."bankAccounts" ba ON p."bankAccountId" = ba."id"
+       WHERE p.id = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL`,
       [id, companyId]
     );
 
@@ -887,7 +911,20 @@ export async function getPurchase(req, res) {
         }
 
         return {
-          ...item,
+          id: item.id,
+          productId: item.productId,
+          name: item.productName,
+          code: item.productCode,
+          quantity: item.qty,
+          rate: parseFloat(item.rate || 0),
+          rateType: item.rateType || 'without_tax',
+          taxRate: parseFloat(item.taxRate || 0),
+          taxAmount: parseFloat(item.taxAmount || 0),
+          discount: parseFloat(item.discount || 0),
+          discountRate: parseFloat(item.discountRate || 0),
+          total: parseFloat(item.total || 0),
+          isSerialized: item.isSerialized || false,
+          isInventoryTracked: item.isInventoryTracked || false,
           serialNumbers
         };
       })
@@ -902,6 +939,146 @@ export async function getPurchase(req, res) {
     await client.query("ROLLBACK");
     console.error("Delete error:", error);
     return errorResponse(res, "Failed to delete purchase", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Generate Purchase Invoice PDF - Optimized for speed
+export async function generatePurchaseInvoicePDF(req, res) {
+  const { id } = req.query;
+  const companyId = req.currentUser?.companyId;
+
+  if (!id || !companyId) {
+    return errorResponse(res, "Purchase ID and Company ID are required", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Optimized: Fetch purchase details and items in parallel for faster response
+    const [purchaseResult, itemsResult] = await Promise.all([
+      client.query(`
+        SELECT 
+          p.*,
+          c."name" as "contactName",
+          c."email" as "contactEmail",
+          c."mobile" as "contactMobile",
+          c."gstin" as "contactGstin",
+          c."billingAddress1" as "contactBillingAddress1",
+          c."billingAddress2" as "contactBillingAddress2",
+          c."billingCity" as "contactBillingCity",
+          c."billingState" as "contactBillingState",
+          c."billingPincode" as "contactBillingPincode",
+          c."billingCountry" as "contactBillingCountry",
+          ba."accountName" as "bankAccountName",
+          ba."accountType" as "bankAccountType",
+          comp."name" as "companyName",
+          comp."logoUrl",
+          comp."address1",
+          comp."address2", 
+          comp."city",
+          comp."state",
+          comp."pincode",
+          comp."country",
+          comp."gstin" as "companyGstin"
+        FROM hisab."purchases" p
+        LEFT JOIN hisab."contacts" c ON p."contactId" = c.id
+        LEFT JOIN hisab."bankAccounts" ba ON p."bankAccountId" = ba.id
+        LEFT JOIN hisab."companies" comp ON p."companyId" = comp.id
+        WHERE p."id" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL
+      `, [id, companyId]),
+      
+      client.query(`
+        SELECT 
+          pi.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode"
+        FROM hisab."purchase_items" pi
+        LEFT JOIN hisab."products" p ON pi."productId" = p.id
+        WHERE pi."purchaseId" = $1 AND pi."companyId" = $2
+        ORDER BY pi.id
+      `, [id, companyId])
+    ]);
+
+    if (purchaseResult.rows.length === 0) {
+      return errorResponse(res, "Purchase not found", 404);
+    }
+
+    const purchase = purchaseResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare data for PDF generation
+    const pdfData = {
+      purchase: {
+        id: purchase.id,
+        invoiceNumber: purchase.invoiceNumber,
+        invoiceDate: purchase.invoiceDate,
+        status: purchase.status,
+        taxType: purchase.taxType,
+        discountType: purchase.discountType,
+        discountValue: purchase.discountValue,
+        basicAmount: purchase.basicAmount,
+        totalDiscount: purchase.totalDiscount,
+        taxAmount: purchase.taxAmount,
+        roundOff: purchase.roundOff,
+        netPayable: purchase.netPayable,
+        internalNotes: purchase.internalNotes
+      },
+      company: {
+        name: purchase.companyName,
+        logoUrl: purchase.logoUrl,
+        address1: purchase.address1,
+        address2: purchase.address2,
+        city: purchase.city,
+        state: purchase.state,
+        pincode: purchase.pincode,
+        country: purchase.country,
+        gstin: purchase.companyGstin
+      },
+      contact: {
+        name: purchase.contactName,
+        email: purchase.contactEmail,
+        mobile: purchase.contactMobile,
+        gstin: purchase.contactGstin,
+        billingAddress1: purchase.contactBillingAddress1,
+        billingAddress2: purchase.contactBillingAddress2,
+        billingCity: purchase.contactBillingCity,
+        billingState: purchase.contactBillingState,
+        billingPincode: purchase.contactBillingPincode,
+        billingCountry: purchase.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: purchase.bankAccountName,
+        accountType: purchase.bankAccountType
+      },
+      items: items
+    };
+
+    // Generate HTML content
+    const htmlContent = createFastPurchaseInvoiceHTML(pdfData);
+
+    // Generate unique filename
+    const pdfFileName = generateFastPurchaseInvoicePDFFileName(purchase.invoiceNumber, purchase.companyName);
+
+    // Ultra-fast: Generate PDF and upload in parallel
+    const [pdfBuffer] = await Promise.all([
+      generateFastPurchaseInvoicePDF(htmlContent)
+    ]);
+
+    // Upload to S3
+    const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+
+    return successResponse(res, {
+      message: "Purchase invoice PDF generated successfully",
+      pdfUrl: pdfUrl,
+      fileName: pdfFileName,
+      actionType: 'generated'
+    });
+
+  } catch (error) {
+    console.error("Error generating purchase invoice PDF:", error);
+    return errorResponse(res, "Failed to generate purchase invoice PDF", 500);
   } finally {
     client.release();
   }
@@ -991,6 +1168,7 @@ export async function listPurchases(req, res) {
         p."invoiceNumber",
         p."invoiceDate",
         p."taxType",
+        p."rateType",
         p."discountType",
         p."discountValueType",
         p."discountValue",
@@ -1017,6 +1195,12 @@ export async function listPurchases(req, res) {
         c."mobile" as "contactMobile",
         c."email" as "contactEmail",
         c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         
         -- User details
         u."name" as "createdByName",
@@ -1080,6 +1264,7 @@ export async function listPurchases(req, res) {
           pi."productId",
           pi."qty",
           pi."rate",
+          pi."rateType",
           pi."discount",
           pi."discountRate",
           pi."taxRate",
@@ -1156,10 +1341,11 @@ export async function listPurchases(req, res) {
         itemsByPurchase.get(item.purchaseId).push({
           id: item.id,
           productId: item.productId,
-          productName: item.productName,
-          productCode: item.productCode,
+          name: item.productName,
+          code: item.productCode,
           quantity: item.qty,
           rate: parseFloat(item.rate || 0),
+          rateType: item.rateType || 'without_tax',
           discount: parseFloat(item.discount || 0),
           discountRate: parseFloat(item.discountRate || 0),
           taxRate: parseFloat(item.taxRate || 0),
@@ -1181,6 +1367,7 @@ export async function listPurchases(req, res) {
           status: row.status,
           invoiceDate: row.invoiceDate,
           taxType: row.taxType,
+          rateType: row.rateType,
           discountType: row.discountType,
           discountValueType: row.discountValueType,
           discountValue: parseFloat(row.discountValue || 0),

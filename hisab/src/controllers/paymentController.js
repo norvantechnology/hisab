@@ -727,6 +727,9 @@ export async function updatePayment(req, res) {
 
     // Reverse old contact balance impact
     if (oldCurrentBalanceAmount > 0) {
+      let newCurrentBalance = currentBalanceValue;
+      let newCurrentBalanceType = currentBalanceType;
+      
       const oldCurrentBalanceAllocation = existingAllocations.find(
         allocation => allocation.allocationType === 'current-balance'
       );
@@ -754,6 +757,14 @@ export async function updatePayment(req, res) {
       if (newCurrentBalance === 0) {
         newCurrentBalanceType = 'payable';
       }
+
+      // Update contact balance with the reversed values
+      await client.query(
+        `UPDATE hisab."contacts" 
+         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $3 AND "companyId" = $4`,
+        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
+      );
     }
 
     // Reverse transaction impacts using the centralized function
@@ -950,6 +961,12 @@ export async function getPaymentDetails(req, res) {
         c."openingBalance" as "contactOpeningBalance",
         c."currentBalance" as "contactCurrentBalance",
         c."currentBalanceType" as "contactCurrentBalanceType",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         b."accountName" as "bankAccountName",
         b."currentBalance" as "bankCurrentBalance",
         u."name" as "createdByName"
@@ -1339,6 +1356,7 @@ export async function deletePayment(req, res) {
           newCurrentBalanceType = 'payable';
         }
 
+        // Update contact balance with the reversed values
         await client.query(
           `UPDATE hisab."contacts" 
            SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
@@ -1701,6 +1719,12 @@ export async function listPayments(req, res) {
         p."createdAt",
         p."updatedAt",
         c."name" as "contactName",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         b."accountName" as "bankName",
         b."accountType" as "bankAccountType",
         u."name" as "createdByName",
@@ -2072,6 +2096,12 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
         c."email" as "contactEmail", 
         c."mobile" as "contactMobile",
         c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
         ba."accountName", 
         ba."accountType",
         u."name" as "createdByName",
@@ -2241,7 +2271,13 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
         name: payment.contactName,
         email: payment.contactEmail,
         mobile: payment.contactMobile,
-        gstin: payment.contactGstin
+        gstin: payment.contactGstin,
+        billingAddress1: payment.contactBillingAddress1,
+        billingAddress2: payment.contactBillingAddress2,
+        billingCity: payment.contactBillingCity,
+        billingState: payment.contactBillingState,
+        billingPincode: payment.contactBillingPincode,
+        billingCountry: payment.contactBillingCountry
       },
       bankAccount: {
         accountName: payment.accountName,

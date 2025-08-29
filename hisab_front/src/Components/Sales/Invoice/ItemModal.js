@@ -17,6 +17,8 @@ import {
   Alert
 } from 'reactstrap';
 import { RiLoader4Line, RiSearchLine, RiCloseLine } from 'react-icons/ri';
+import { calculateItemTaxAndTotal } from '../../../utils/taxCalculations';
+import { TAX_TYPES } from './contant';
 
 const ItemModal = ({
   isOpen,
@@ -30,12 +32,14 @@ const ItemModal = ({
   filteredProducts,
   scrollContainerRef,
   updateCurrentItem,
-  saveItem
+  saveItem,
+  rateType
 }) => {
   const [serialNumbers, setSerialNumbers] = useState([]);
   const [newSerialNumber, setNewSerialNumber] = useState('');
   const [rateInput, setRateInput] = useState('');
   const [discountRateInput, setDiscountRateInput] = useState('');
+  const [itemDiscountType, setItemDiscountType] = useState('percentage'); // Local discount type for this item
   const [errors, setErrors] = useState({});
   const [localCurrentItem, setLocalCurrentItem] = useState(null); // Initialize as null instead of currentItem
 
@@ -63,6 +67,7 @@ const ItemModal = ({
       setNewSerialNumber('');
       setRateInput('');
       setDiscountRateInput('');
+      setItemDiscountType('percentage'); // Reset discount type to default
       setErrors({});
     }
   }, [isOpen, currentItem?.id]);
@@ -107,6 +112,14 @@ const ItemModal = ({
       } else {
         setDiscountRateInput('');
       }
+      
+      // Update discount type from item data or default to percentage
+      if (currentItem.discountType) {
+        console.log('Setting discount type:', currentItem.discountType);
+        setItemDiscountType(currentItem.discountType);
+      } else {
+        setItemDiscountType('percentage');
+      }
     }
   }, [currentItem?.id, isOpen]); // Only depend on currentItem.id and isOpen, not the entire currentItem object
 
@@ -119,6 +132,7 @@ const ItemModal = ({
       setNewSerialNumber('');
       setRateInput('');
       setDiscountRateInput('');
+      setItemDiscountType('percentage'); // Reset discount type to default
       setErrors({});
     }
   }, [isOpen]);
@@ -135,8 +149,6 @@ const ItemModal = ({
     if (!localCurrentItem?.isSerialized) {
       if (!localCurrentItem?.quantity || localCurrentItem.quantity <= 0) {
         newErrors.quantity = 'Quantity must be greater than 0';
-      } else if (localCurrentItem?.currentStock && localCurrentItem.quantity > localCurrentItem.currentStock) {
-        newErrors.quantity = `Quantity cannot exceed available stock (${localCurrentItem.currentStock})`;
       }
     } else {
       if (serialNumbers.length === 0) {
@@ -158,13 +170,28 @@ const ItemModal = ({
     }
 
     // Discount rate validation
-          if (discountRateInput !== '' && (isNaN(Number(discountRateInput)) || Number(discountRateInput) < 0 || (validation.values.discountValueType === 'percentage' && Number(discountRateInput) > 100))) {
-        newErrors.discountRate = validation.values.discountValueType === 'percentage' ? 'Discount rate must be between 0 and 100' : 'Discount rate cannot be negative';
+    if (discountRateInput !== '') {
+      const discountValue = Number(discountRateInput);
+      if (isNaN(discountValue) || discountValue < 0) {
+        newErrors.discountRate = 'Discount rate cannot be negative';
+      } else if (itemDiscountType === 'percentage') {
+        if (discountValue > 100) {
+          newErrors.discountRate = 'Discount rate must be between 0 and 100';
+        }
+      } else if (itemDiscountType === 'rupees') {
+        // Calculate subtotal for validation
+        const rate = parseFloat(rateInput) || 0;
+        const quantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0);
+        const subtotal = rate * quantity;
+        if (discountValue > subtotal) {
+          newErrors.discountRate = `Discount cannot exceed subtotal (₹${subtotal.toFixed(2)})`;
+        }
       }
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput]);
+  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, itemDiscountType]);
 
   const handleAddSerialNumber = useCallback(() => {
     const trimmedSerial = newSerialNumber.trim();
@@ -249,9 +276,9 @@ const ItemModal = ({
     const existingDiscountRate = parseFloat(discountRateInput) || 0;
     const subtotal = existingRate * existingQuantity;
     let discount = 0;
-    if (validation.values.discountValueType === 'percentage') {
+    if (itemDiscountType === 'percentage') {
       discount = (subtotal * existingDiscountRate) / 100;
-    } else if (validation.values.discountValueType === 'rupees') {
+    } else if (itemDiscountType === 'rupees') {
       discount = existingDiscountRate;
     }
     const afterDiscount = subtotal - discount;
@@ -288,7 +315,7 @@ const ItemModal = ({
     
     // Don't call updateCurrentItem here - let the parent get the updated item only when save is called
     // This prevents the circular update issue that was causing the selection to reset
-  }, [localCurrentItem, rateInput, discountRateInput, serialNumbers, validation.values.discountValueType]); // Removed updateCurrentItem from dependencies
+  }, [localCurrentItem, rateInput, discountRateInput, serialNumbers, itemDiscountType]); // Removed updateCurrentItem from dependencies
 
   // Handle clicking on available serial numbers
   const handleSelectSerialNumber = useCallback((serialNumber) => {
@@ -401,31 +428,28 @@ const ItemModal = ({
     const rate = parseFloat(rateInput);
     const validRate = !isNaN(rate) && rate >= 0 ? rate : 0;
     const quantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0);
-    const subtotal = quantity * validRate;
-
-    // Calculate discount
+    const taxRate = typeof localCurrentItem?.taxRate === 'number' && localCurrentItem.taxRate > 0 ? localCurrentItem.taxRate : 0;
     const discountRate = parseFloat(discountRateInput);
     const validDiscountRate = !isNaN(discountRate) && discountRate > 0 ? discountRate : 0;
-    let discount = 0;
-    if (validation.values.discountValueType === 'percentage') {
-      discount = (subtotal * validDiscountRate) / 100;
-    } else if (validation.values.discountValueType === 'rupees') {
-      discount = validDiscountRate;
-    }
-    const afterDiscount = subtotal - discount;
 
-    // Calculate tax
-    const taxRate = typeof localCurrentItem?.taxRate === 'number' && localCurrentItem.taxRate > 0 ? localCurrentItem.taxRate : 0;
-    const taxAmount = (afterDiscount * taxRate) / 100;
-    const total = afterDiscount + taxAmount;
+    // Use the common tax calculation function
+    const result = calculateItemTaxAndTotal({
+      rate: validRate,
+      quantity,
+      taxRate,
+      discountRate: validDiscountRate,
+      rateType,
+      discountValueType: itemDiscountType,
+      discountValue: validDiscountRate
+    });
 
     return {
-      subtotal,
-      discount,
-      taxAmount,
-      total
+      subtotal: result.subtotal,
+      discount: result.discount,
+      taxAmount: result.taxAmount,
+      total: result.total
     };
-  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, validation.values.discountValueType]);
+  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, rateType, itemDiscountType]);
 
   const renderItemDetails = useMemo(() => (
     <div className="border-top pt-3">
@@ -437,14 +461,6 @@ const ItemModal = ({
           <strong>Selected:</strong> {localCurrentItem.name} ({localCurrentItem.code || localCurrentItem.itemCode || localCurrentItem.productCode || 'N/A'})
           {localCurrentItem.isSerialized && (
             <Badge color="info" pill className="ms-2">Serialized</Badge>
-          )}
-          {localCurrentItem.currentStock !== undefined && (
-            <div className="mt-1">
-              <small className={`${localCurrentItem.currentStock <= 0 ? 'text-danger' : 'text-muted'}`}>
-                Stock: {localCurrentItem.currentStock}
-                {localCurrentItem.currentStock <= 0 && ' (Out of stock)'}
-              </small>
-            </div>
           )}
         </div>
       ) : (
@@ -471,25 +487,6 @@ const ItemModal = ({
                 if (!localCurrentItem?.isSerialized) {
                   const value = parseFloat(e.target.value) || 0;
                   updateLocalItem('quantity', value);
-                  
-                  // Clear quantity error when user starts typing
-                  if (errors.quantity) {
-                    setErrors(prev => ({ ...prev, quantity: '' }));
-                  }
-                  
-                  // Add real-time validation for stock limit
-                  if (localCurrentItem?.currentStock && value > localCurrentItem.currentStock) {
-                    const isEditMode = localCurrentItem?.originalQuantity > 0;
-                    const baseStock = isEditMode ? localCurrentItem.currentStock - localCurrentItem.originalQuantity : localCurrentItem.currentStock;
-                    const message = isEditMode 
-                      ? `Quantity cannot exceed available stock (${baseStock} available + ${localCurrentItem.originalQuantity} from this item = ${localCurrentItem.currentStock} total)`
-                      : `Quantity cannot exceed available stock (${localCurrentItem.currentStock})`;
-                    
-                    setErrors(prev => ({ 
-                      ...prev, 
-                      quantity: message
-                    }));
-                  }
                 }
               }}
               placeholder="Enter quantity"
@@ -516,7 +513,7 @@ const ItemModal = ({
         </Col>
         <Col md={6}>
           <FormGroup>
-            <Label>Rate (Without Tax) <span className="text-danger">*</span></Label>
+            <Label>Rate {rateType === 'with_tax' ? '(With Tax)' : '(Without Tax)'} <span className="text-danger">*</span></Label>
             <InputGroup>
               <InputGroupText>₹</InputGroupText>
               <Input
@@ -614,58 +611,144 @@ const ItemModal = ({
         </Row>
       )}
 
-      <Row>
-        <Col md={6}>
-          <FormGroup>
-            <Label>Tax Rate</Label>
-            <InputGroup>
+      {rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+        <Row className="mb-3">
+          <Col md={6}>
+            <FormGroup>
+              <Label>Tax Rate</Label>
+              <InputGroup>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={localCurrentItem?.taxRate || ''}
+                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
+                  placeholder="0.00"
+                  invalid={!!errors.taxRate}
+                />
+                <InputGroupText>%</InputGroupText>
+              </InputGroup>
+              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
+              <div className="form-text">
+                {localCurrentItem?.productId ? 'Product tax rate (editable)' : 'Manual tax rate'}
+              </div>
+            </FormGroup>
+          </Col>
+          <Col md={6}>
+            <FormGroup>
+              <Label>Calculated Values</Label>
+              <div className="border p-3 bg-light rounded">
+                <div className="d-flex justify-content-between mb-2">
+                  <span>Rate (Excluding Tax):</span>
+                  <span className="fw-semibold">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
+                    (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100))).toFixed(2) : '0.00'}</span>
+                </div>
+                <div className="d-flex justify-content-between mb-2">
+                  <span>Tax Amount:</span>
+                  <span className="fw-semibold text-success">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
+                    (localCurrentItem.rate - (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100)))).toFixed(2) : '0.00'}</span>
+                </div>
+                <div className="d-flex justify-content-between pt-2 border-top">
+                  <span className="fw-bold">Total Rate (With Tax):</span>
+                  <span className="fw-bold">₹{localCurrentItem?.rate ? localCurrentItem.rate.toFixed(2) : '0.00'}</span>
+                </div>
+              </div>
+            </FormGroup>
+          </Col>
+        </Row>
+      )}
+
+      {rateType === 'without_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+        <Row className="mb-3">
+          <Col md={6}>
+            <FormGroup>
+              <Label>Tax Rate <span className="text-danger">*</span></Label>
+              <InputGroup>
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={localCurrentItem?.taxRate || ''}
+                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
+                                      placeholder="0.00"
+                  invalid={!!errors.taxRate}
+                />
+                <InputGroupText>%</InputGroupText>
+              </InputGroup>
+              <div className="form-text text-muted">
+                Tax rate is required to calculate tax amount separately (rate is exclusive of tax)
+              </div>
+              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
+            </FormGroup>
+          </Col>
+        </Row>
+      )}
+
+        <Row className="mb-3">
+          <Col md={6}>
+            <FormGroup>
+              <Label>Discount Type</Label>
               <Input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={localCurrentItem?.taxRate || ''}
-                onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
-                placeholder="0.00"
-                invalid={!!errors.taxRate}
-              />
-              <InputGroupText>%</InputGroupText>
-            </InputGroup>
-            {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
-            <div className="form-text">
-              {localCurrentItem?.productId ? 'Product tax rate (editable)' : 'Manual tax rate'}
-            </div>
-          </FormGroup>
-        </Col>
-        <Col md={6}>
-          <FormGroup>
-            <Label>Discount Rate</Label>
-            <InputGroup>
-              <Input
-                type="text"
-                inputMode="decimal"
-                value={discountRateInput}
-                onChange={e => {
-                  setDiscountRateInput(e.target.value);
-                  if (errors.discountRate) setErrors(prev => ({ ...prev, discountRate: '' }));
-                }}
-                                  onBlur={e => {
+                type="select"
+                value={itemDiscountType}
+                onChange={e => setItemDiscountType(e.target.value)}
+              >
+                <option value="percentage">Percentage (%)</option>
+                <option value="rupees">Rupees (₹)</option>
+              </Input>
+            </FormGroup>
+          </Col>
+          <Col md={6}>
+            <FormGroup>
+              <Label>Discount Rate</Label>
+              <InputGroup>
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={discountRateInput}
+                  onChange={e => {
+                    setDiscountRateInput(e.target.value);
+                    if (errors.discountRate) setErrors(prev => ({ ...prev, discountRate: '' }));
+                  }}
+                  onBlur={e => {
                     const value = parseFloat(e.target.value);
-                    if (!isNaN(value) && value >= 0 && (validation.values.discountValueType === 'percentage' ? value <= 100 : true)) {
-                      updateLocalItem('discountRate', value);
+                    if (!isNaN(value) && value >= 0) {
+                      let isValid = true;
+                      if (itemDiscountType === 'percentage') {
+                        isValid = value <= 100;
+                      } else if (itemDiscountType === 'rupees') {
+                        // Calculate subtotal for validation
+                        const rate = parseFloat(rateInput) || 0;
+                        const quantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0);
+                        const subtotal = rate * quantity;
+                        isValid = value <= subtotal;
+                      }
+                      if (isValid) {
+                        updateLocalItem('discountRate', value);
+                      }
                     }
                   }}
-                placeholder="0.00"
-                invalid={!!errors.discountRate}
-              />
-              <InputGroupText>
-                {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
-              </InputGroupText>
-            </InputGroup>
-            {errors.discountRate && <div className="text-danger small mt-1">{errors.discountRate}</div>}
-          </FormGroup>
-        </Col>
-      </Row>
+                  placeholder={itemDiscountType === 'percentage' ? '0-100' : '0.00'}
+                  invalid={!!errors.discountRate}
+                />
+                <InputGroupText>
+                  {itemDiscountType === 'percentage' ? '%' : '₹'}
+                </InputGroupText>
+              </InputGroup>
+              {errors.discountRate && <div className="text-danger small mt-1">{errors.discountRate}</div>}
+              {!errors.discountRate && localCurrentItem?.rate && localCurrentItem?.quantity > 0 && (
+                <div className="text-muted small mt-1">
+                  {itemDiscountType === 'percentage' ? 
+                    'Enter value between 0-100%' : 
+                    `Max discount: ₹${((parseFloat(rateInput) || 0) * (localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0))).toFixed(2)}`
+                  }
+                </div>
+              )}
+            </FormGroup>
+          </Col>
+        </Row>
 
       {/* Calculation Summary */}
       {localCurrentItem?.rate && (localCurrentItem?.quantity > 0 || serialNumbers.length > 0) && (
@@ -679,14 +762,19 @@ const ItemModal = ({
               </div>
               {calculatedValues.discount > 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Item Discount ({localCurrentItem?.discountRate || 0}{validation.values.discountValueType === 'percentage' ? '%' : '₹'}):</span>
+                  <span>Item Discount ({localCurrentItem?.discountRate || 0}{itemDiscountType === 'percentage' ? '%' : '₹'}):</span>
                   <span className="text-danger">- ₹{calculatedValues.discount.toFixed(2)}</span>
                 </div>
               )}
-              {calculatedValues.taxAmount > 0 && (
+              {calculatedValues.taxAmount > 0 && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                 <div className="d-flex justify-content-between mb-2">
-                  <span>Tax ({localCurrentItem?.taxRate || 0}%):</span>
-                  <span className="text-success">+ ₹{calculatedValues.taxAmount.toFixed(2)}</span>
+                  <span>
+                    {rateType === 'with_tax' ? 'Tax Included' : 'Tax'} ({localCurrentItem?.taxRate || 0}%):
+                  </span>
+                  <span className={rateType === 'with_tax' ? 'text-info' : 'text-success'}>
+                    {rateType === 'with_tax' ? '₹' : '+ ₹'}{calculatedValues.taxAmount.toFixed(2)}
+                    {rateType === 'with_tax' && ' (included in rate)'}
+                  </span>
                 </div>
               )}
             </Col>
@@ -702,7 +790,7 @@ const ItemModal = ({
         </div>
       )}
     </div>
-  ), [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.rate, localCurrentItem?.discountRate, localCurrentItem?.currentStock, localCurrentItem?.name, localCurrentItem?.code, serialNumbers, newSerialNumber, errors, calculatedValues, rateInput, discountRateInput, validation.values.discountValueType]);
+  ), [localCurrentItem, itemDiscountType, updateLocalItem, serialNumbers, newSerialNumber, handleAddSerialNumber, handleRemoveSerialNumber, errors, handleKeyPress, calculatedValues, rateInput, discountRateInput, rateType]);
 
   const handleSave = useCallback(() => {
     if (!validateForm()) {
@@ -716,7 +804,10 @@ const ItemModal = ({
       serialNumbers: localCurrentItem?.isSerialized ? serialNumbers : undefined,
       quantity: localCurrentItem?.isSerialized ? serialNumbers.length : localCurrentItem?.quantity,
       rate: parseFloat(rateInput) || 0,
+      rateType: localCurrentItem?.rateType || 'without_tax', // Preserve rateType
+      taxRate: localCurrentItem?.taxRate || 0, // Preserve taxRate
       discountRate: parseFloat(discountRateInput) || 0,
+      discountType: itemDiscountType, // Store the item-level discount type
       subtotal: calculatedValues.subtotal,
       discount: calculatedValues.discount,
       taxAmount: calculatedValues.taxAmount,
@@ -724,22 +815,33 @@ const ItemModal = ({
     };
 
     saveItem(itemToSave);
-  }, [localCurrentItem?.id, localCurrentItem?.isSerialized, localCurrentItem?.name, localCurrentItem?.code, localCurrentItem?.quantity, serialNumbers, rateInput, discountRateInput, calculatedValues, saveItem, validation.values.discountValueType]);
+  }, [localCurrentItem, serialNumbers, saveItem, validateForm, calculatedValues, rateInput, discountRateInput, itemDiscountType]);
 
   const isFormValid = useMemo(() => {
-    const hasValidProduct = localCurrentItem?.productId;
-    const hasValidRate = Number(rateInput) >= 0;
-    const hasValidQuantity = localCurrentItem?.isSerialized ? 
-      serialNumbers.length > 0 : 
-      (localCurrentItem?.quantity > 0 && (!localCurrentItem?.currentStock || localCurrentItem.quantity <= localCurrentItem.currentStock));
-    const hasValidDiscountRate = discountRateInput === '' || 
-      (!isNaN(Number(discountRateInput)) && Number(discountRateInput) >= 0 && (validation.values.discountValueType === 'percentage' ? Number(discountRateInput) <= 100 : true));
+    if (!localCurrentItem?.productId || Number(rateInput) < 0) return false;
+    if (localCurrentItem?.isSerialized ? serialNumbers.length === 0 : localCurrentItem?.quantity <= 0) return false;
     
-    return hasValidProduct && hasValidRate && hasValidQuantity && hasValidDiscountRate;
-  }, [localCurrentItem?.productId, localCurrentItem?.isSerialized, localCurrentItem?.quantity, localCurrentItem?.currentStock, serialNumbers.length, rateInput, discountRateInput, validation.values.discountValueType]);
+    // Discount validation
+    if (discountRateInput !== '') {
+      const discountValue = Number(discountRateInput);
+      if (isNaN(discountValue) || discountValue < 0) return false;
+      
+      if (itemDiscountType === 'percentage') {
+        if (discountValue > 100) return false;
+      } else if (itemDiscountType === 'rupees') {
+        // Calculate subtotal for validation
+        const rate = parseFloat(rateInput) || 0;
+        const quantity = localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || 0);
+        const subtotal = rate * quantity;
+        if (discountValue > subtotal) return false;
+      }
+    }
+    
+    return true;
+  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, itemDiscountType]);
 
   return (
-    <Modal isOpen={isOpen} toggle={toggle} size="lg" key={`item-modal-${isOpen ? 'open' : 'closed'}-${currentItem?.id || 'new'}`}>
+    <Modal isOpen={isOpen} toggle={toggle} size="lg">
       <ModalHeader toggle={toggle}>
         {localCurrentItem?.id ? 'Edit Item' : 'Add New Item'}
       </ModalHeader>

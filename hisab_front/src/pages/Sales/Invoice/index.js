@@ -11,7 +11,8 @@ import DeleteModal from "../../../Components/Common/DeleteModal";
 import ExportCSVModal from '../../../Components/Common/ExportCSVModal';
 import Loader from '../../../Components/Common/Loader';
 import { getCurrentMonthRange } from '../../../utils/dateUtils';
-import { listSales, createSale, updateSales, deleteSale, getSale } from '../../../services/salesInvoice';
+import { listSales, createSale, updateSales, deleteSale, getSale, generateSalesInvoicePDF, downloadSalesPDF } from '../../../services/salesInvoice';
+import useCompanySelectionState from '../../../hooks/useCompanySelection';
 
 const SalesInvoicePage = () => {
     const currentMonthRange = getCurrentMonthRange();
@@ -43,7 +44,8 @@ const SalesInvoicePage = () => {
         },
         selectedInvoice: null,
         isEditMode: false,
-        apiLoading: false
+        apiLoading: false,
+        pdfLoading: null
     });
 
     const {
@@ -54,10 +56,20 @@ const SalesInvoicePage = () => {
         modals,
         selectedInvoice,
         isEditMode,
-        apiLoading
+        apiLoading,
+        pdfLoading
     } = state;
 
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
+
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping sales invoices fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
@@ -98,7 +110,9 @@ const SalesInvoicePage = () => {
     };
 
     useEffect(() => {
+        if (selectedCompanyId) {
         fetchData();
+        }
     }, [
         pagination.page,
         filters.search,
@@ -106,7 +120,8 @@ const SalesInvoicePage = () => {
         filters.startDate,
         filters.endDate,
         filters.customerId,
-        filters.invoiceNumber
+        filters.invoiceNumber,
+        selectedCompanyId
     ]);
 
     const toggleModal = (modalName, value) => {
@@ -157,6 +172,7 @@ const SalesInvoicePage = () => {
                     taxAmount: item.taxAmount,
                     discount: item.discount,
                     discountRate: item.discountRate,
+                    discountType: item.discountType,
                     total: item.total,
                     isSerialized: item.isSerialized,
                     serialNumbers: item.serialNumbers || [],
@@ -175,12 +191,28 @@ const SalesInvoicePage = () => {
         }
     };
 
-    const handleViewClick = (invoice) => {
+    const handleViewClick = async (invoice) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+            
+            // Fetch detailed invoice data including billing address
+            const response = await getSale({ id: invoice.id });
+            
+            if (response.success) {
         setState(prev => ({
             ...prev,
-            selectedInvoice: invoice,
-            modals: { ...prev.modals, view: true }
+                    selectedInvoice: response.sale,
+                    modals: { ...prev.modals, view: true },
+                    apiLoading: false
         }));
+            } else {
+                throw new Error(response.message || "Failed to fetch invoice details");
+            }
+        } catch (error) {
+            console.error("Error fetching invoice details:", error);
+            toast.error(error.message || "Failed to load invoice details");
+            setState(prev => ({ ...prev, apiLoading: false }));
+        }
     };
 
     const handleDeleteClick = (invoice) => {
@@ -214,6 +246,25 @@ const SalesInvoicePage = () => {
         } catch (error) {
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.message);
+        }
+    };
+
+    const handleGeneratePDF = async (invoice) => {
+        try {
+            setState(prev => ({ ...prev, pdfLoading: invoice.id }));
+            const response = await generateSalesInvoicePDF(invoice.id);
+
+            if (response.success) {
+                toast.success("Sales invoice PDF generated successfully!");
+                downloadSalesPDF(response.pdfUrl, response.fileName);
+            } else {
+                throw new Error(response.message || "Failed to generate PDF");
+            }
+        } catch (error) {
+            console.error("PDF generation error:", error);
+            toast.error(error.message || "Failed to generate sales invoice PDF");
+        } finally {
+            setState(prev => ({ ...prev, pdfLoading: null }));
         }
     };
 
@@ -328,6 +379,8 @@ const SalesInvoicePage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onGeneratePDF={handleGeneratePDF}
+                        pdfLoading={pdfLoading}
                     />
                 )}
 
@@ -345,6 +398,8 @@ const SalesInvoicePage = () => {
                     isOpen={modals.view}
                     toggle={() => toggleModal('view')}
                     invoice={selectedInvoice}
+                    onGeneratePDF={handleGeneratePDF}
+                    pdfLoading={pdfLoading}
                 />
 
                 <DeleteModal

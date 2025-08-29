@@ -7,6 +7,8 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import ParticlesAuth from "../AuthenticationInner/ParticlesAuth";
 import { login } from "../../services/auth";
+import { getAllCompanies } from "../../services/company";
+import { setSelectedCompany } from "../../utils/companyEvents";
 import logoLight from "../../assets/images/logo-light.png";
 
 const Login = () => {
@@ -30,6 +32,18 @@ const Login = () => {
                 // Store token and user data in session storage
                 sessionStorage.setItem('authToken', token);
                 sessionStorage.setItem('userData', JSON.stringify(user));
+
+                // Fetch companies and auto-select first one
+                try {
+                    const companiesResponse = await getAllCompanies();
+                    if (companiesResponse?.success && companiesResponse.companies?.length > 0) {
+                        const firstCompany = companiesResponse.companies[0];
+                        setSelectedCompany(firstCompany.id, firstCompany);
+                    }
+                } catch (companyError) {
+                    console.log("Error fetching companies after login:", companyError);
+                    // Don't fail the login if company fetch fails
+                }
 
                 // Show success message from API
                 toast.success(message || "Login successful!");

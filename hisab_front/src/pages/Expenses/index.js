@@ -16,6 +16,7 @@ import { createExpense, getExpenses, updateExpense, deleteExpense } from '../../
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
+import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const ExpensesPage = () => {
     const currentMonthRange = getCurrentMonthRange();
@@ -60,8 +61,17 @@ const ExpensesPage = () => {
         newCategoryName, apiLoading
     } = state;
 
+    // Use the modern company selection hook
+    const { selectedCompanyId } = useCompanySelectionState();
+
     // API calls with loading states
     const fetchData = async () => {
+        // Don't proceed if no company is selected
+        if (!selectedCompanyId) {
+            console.log('No company selected, skipping expenses fetch');
+            return;
+        }
+
         try {
             setState(prev => ({ ...prev, loading: true, apiLoading: true }));
 
@@ -107,8 +117,10 @@ const ExpensesPage = () => {
     };
 
     useEffect(() => {
+        if (selectedCompanyId) {
         fetchData();
-    }, [pagination.page, filters.categoryId, filters.status, filters.startDate, filters.endDate]);
+        }
+    }, [pagination.page, filters.categoryId, filters.status, filters.startDate, filters.endDate, selectedCompanyId]);
 
     // Modal handlers
     const toggleModal = (modalName, value) => {

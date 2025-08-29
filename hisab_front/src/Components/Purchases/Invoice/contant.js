@@ -9,6 +9,11 @@ export const TAX_TYPES = [
   { value: 'merchant_export_outstate', label: 'Merchant export outstate', rate: 0 }
 ];
 
+export const TAX_TYPES_SIMPLE = [
+  { value: 'no_tax', label: 'No Tax' },
+  { value: 'with_tax', label: 'With Tax' }
+];
+
 export const DISCOUNT_TYPES = [
   { value: 'none', label: 'None' },
   { value: 'per_item', label: 'Per Item' },
@@ -24,4 +29,9 @@ export const DISCOUNT_VALUE_TYPES = [
 export const STATUS_OPTIONS = [
   { value: 'pending', label: 'Pending' },
   { value: 'paid', label: 'Paid' },
+];
+
+export const ITEM_RATE_TYPES = [
+  { value: 'without_tax', label: 'Without Tax' },
+  { value: 'with_tax', label: 'With Tax' }
 ];
