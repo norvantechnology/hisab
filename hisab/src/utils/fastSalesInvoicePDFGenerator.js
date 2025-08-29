@@ -22,16 +22,9 @@ export const createFastSalesInvoiceHTML = (data) => {
   
 
   
-  // Safely calculate amounts with fallbacks
-  const totalAmount = items && items.length > 0 ? 
-    items.reduce((sum, item) => {
-      const qty = parseFloat(item.qty || 0);
-      const rate = parseFloat(item.rate || 0);
-      const itemTotal = qty * rate;
-      return sum + itemTotal;
-    }, 0) : 0;
+  // Use pre-calculated amounts from database (already includes correct discount calculations)
   const taxAmount = parseFloat(sale?.taxAmount || 0);
-  const grandTotal = parseFloat(sale?.netPayable || 0) || (totalAmount + taxAmount);
+  const grandTotal = parseFloat(sale?.netReceivable || 0);
 
   return `
     <!DOCTYPE html>
@@ -267,9 +260,9 @@ export const createFastSalesInvoiceHTML = (data) => {
           ${items && items.length > 0 ? items.map(item => `
             <tr>
               <td>${item?.productName || ''}</td>
-              <td>${item?.qty || 0}</td>
-              <td>₹${item?.rate || 0}</td>
-              <td>${parseFloat(item?.discount || 0) > 0 ? `₹${parseFloat(item?.discount || 0).toFixed(2)}` : '-'}</td>
+              <td>${parseFloat(item?.quantity || 0).toFixed(2)}</td>
+              <td>₹${parseFloat(item?.rate || 0).toFixed(2)}</td>
+              <td>${parseFloat(item?.discount || 0) > 0 ? `₹${parseFloat(item?.discount || 0).toFixed(2)}${item?.discountType === 'percentage' ? `<br><small>(${parseFloat(item?.discountRate || 0)}%)</small>` : ''}` : '-'}</td>
               <td>₹${parseFloat(item?.taxAmount || 0).toFixed(2)}</td>
               <td>₹${parseFloat(item?.total || 0).toFixed(2)}</td>
             </tr>

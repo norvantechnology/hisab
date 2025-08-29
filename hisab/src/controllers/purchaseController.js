@@ -949,8 +949,12 @@ export async function generatePurchaseInvoicePDF(req, res) {
   const { id } = req.query;
   const companyId = req.currentUser?.companyId;
 
-  if (!id || !companyId) {
-    return errorResponse(res, "Purchase ID and Company ID are required", 400);
+  if (!id) {
+    return errorResponse(res, "Purchase ID is required", 400);
+  }
+  
+  if (!companyId) {
+    return errorResponse(res, "Company ID is required. Please ensure you are authenticated.", 401);
   }
 
   const client = await pool.connect();
@@ -993,7 +997,10 @@ export async function generatePurchaseInvoicePDF(req, res) {
         SELECT 
           pi.*,
           p."name" as "productName",
-          p."itemCode" as "productCode"
+          p."itemCode" as "productCode",
+          p."currentStock",
+          p."isInventoryTracked",
+          p."isSerialized"
         FROM hisab."purchase_items" pi
         LEFT JOIN hisab."products" p ON pi."productId" = p.id
         WHERE pi."purchaseId" = $1 AND pi."companyId" = $2
@@ -1061,10 +1068,8 @@ export async function generatePurchaseInvoicePDF(req, res) {
     // Generate unique filename
     const pdfFileName = generateFastPurchaseInvoicePDFFileName(purchase.invoiceNumber, purchase.companyName);
 
-    // Ultra-fast: Generate PDF and upload in parallel
-    const [pdfBuffer] = await Promise.all([
-      generateFastPurchaseInvoicePDF(htmlContent)
-    ]);
+    // Generate PDF buffer
+    const pdfBuffer = await generateFastPurchaseInvoicePDF(htmlContent);
 
     // Upload to S3
     const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
@@ -1078,7 +1083,17 @@ export async function generatePurchaseInvoicePDF(req, res) {
 
   } catch (error) {
     console.error("Error generating purchase invoice PDF:", error);
-    return errorResponse(res, "Failed to generate purchase invoice PDF", 500);
+    
+    // Handle specific error types
+    if (error.message?.includes('not found')) {
+      return errorResponse(res, "Purchase or related data not found", 404);
+    } else if (error.message?.includes('PDF generation failed')) {
+      return errorResponse(res, "Failed to generate PDF document", 500);
+    } else if (error.message?.includes('upload failed')) {
+      return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
+    } else {
+      return errorResponse(res, "Failed to generate purchase invoice PDF", 500);
+    }
   } finally {
     client.release();
   }

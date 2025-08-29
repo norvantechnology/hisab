@@ -48,7 +48,7 @@ scp -i $EC2_KEY_PATH deploy.tar.gz $EC2_USER@$EC2_HOST:~/
 
 # Execute deployment commands on EC2
 echo -e "${YELLOW}🔧 Executing deployment on EC2...${NC}"
-ssh -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST << 'ENDSSH'
+ssh -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST << ENDSSH
     # Create apps directory if it doesn't exist
     mkdir -p $REMOTE_DIR
     
@@ -77,7 +77,7 @@ ssh -i $EC2_KEY_PATH $EC2_USER@$EC2_HOST << 'ENDSSH'
     
     # Start application with PM2
     echo "🚀 Starting application..."
-    pm2 start ecosystem.config.js --env production
+    pm2 start ecosystem.config.cjs --env production
     
     # Save PM2 configuration
     pm2 save

@@ -1,5 +1,12 @@
 import pool from "../config/dbConnection.js";
-import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { 
+  errorResponse, 
+  successResponse, 
+  uploadFileToS3, 
+  generateFastSalesInvoicePDF, 
+  generateFastSalesInvoicePDFFileName, 
+  createFastSalesInvoiceHTML 
+} from "../utils/index.js";
 import { generateSalesInvoicePDFFromHTML, generateSalesInvoicePDFFileName, createSalesInvoiceHTML } from "../utils/salesInvoicePDFGenerator.js";
 
 export async function createSale(req, res) {
@@ -699,8 +706,12 @@ export async function generateSalesInvoicePDF(req, res) {
   const { id } = req.query;
   const companyId = req.currentUser?.companyId;
 
-  if (!id || !companyId) {
-    return errorResponse(res, "Sale ID and Company ID are required", 400);
+  if (!id) {
+    return errorResponse(res, "Sale ID is required", 400);
+  }
+  
+  if (!companyId) {
+    return errorResponse(res, "Company ID is required. Please ensure you are authenticated.", 401);
   }
 
   const client = await pool.connect();
@@ -745,7 +756,10 @@ export async function generateSalesInvoicePDF(req, res) {
         SELECT 
           si.*,
           p."name" as "productName",
-          p."itemCode" as "productCode"
+          p."itemCode" as "productCode",
+          p."currentStock",
+          p."isInventoryTracked",
+          p."isSerialized"
         FROM hisab."sale_items" si
         LEFT JOIN hisab."products" p ON si."productId" = p.id
         WHERE si."saleId" = $1
@@ -813,10 +827,8 @@ export async function generateSalesInvoicePDF(req, res) {
     // Generate unique filename
     const pdfFileName = generateFastSalesInvoicePDFFileName(sale.invoiceNumber, sale.companyName);
 
-    // Ultra-fast: Generate PDF and upload in parallel
-    const [pdfBuffer] = await Promise.all([
-      generateFastSalesInvoicePDF(htmlContent)
-    ]);
+    // Generate PDF buffer
+    const pdfBuffer = await generateFastSalesInvoicePDF(htmlContent);
 
     // Upload to S3
     const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
@@ -830,7 +842,17 @@ export async function generateSalesInvoicePDF(req, res) {
 
   } catch (error) {
     console.error("Error generating sales invoice PDF:", error);
-    return errorResponse(res, "Failed to generate sales invoice PDF", 500);
+    
+    // Handle specific error types
+    if (error.message?.includes('not found')) {
+      return errorResponse(res, "Sale or related data not found", 404);
+    } else if (error.message?.includes('PDF generation failed')) {
+      return errorResponse(res, "Failed to generate PDF document", 500);
+    } else if (error.message?.includes('upload failed')) {
+      return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
+    } else {
+      return errorResponse(res, "Failed to generate sales invoice PDF", 500);
+    }
   } finally {
     client.release();
   }

@@ -1586,19 +1586,21 @@ const PurchaseInvoiceForm = ({
             <Row className="mb-4">
               <Col md={6}>
                 <div className="border p-3 bg-light">
-                  <h5>Summary</h5>
+                  <h5 className="mb-3">Summary</h5>
+                  
                   <div className="d-flex justify-content-between mb-2">
-                    <span>Basic Amount:</span>
+                    <span>Basic Amount</span>
                     <span>₹ {calculatedTotals.basicAmount.toFixed(2)}</span>
                   </div>
-                  {(validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && calculatedTotals.totalDiscount > 0 && (
+                  
+                  {calculatedTotals.totalDiscount > 0 && (
                     <div className="d-flex justify-content-between mb-2">
-                      <span>Invoice Discount ({validation.values.discountValue}{validation.values.discountValueType === 'percentage' ? '%' : '₹'}):</span>
-                      <span className="text-danger">- ₹ {calculatedTotals.totalDiscount.toFixed(2)}</span>
+                      <span>Discount</span>
+                      <span className="text-danger">(-) ₹ {calculatedTotals.totalDiscount.toFixed(2)}</span>
                     </div>
                   )}
-                    <div className="d-flex justify-content-between mb-2">
-                      <span>Round Off:</span>
+                  <div className="d-flex justify-content-between mb-2">
+                    <span>Round Off</span>
                     <div className="d-flex align-items-center gap-2">
                       {isEditingRoundOff ? (
                         <div className="d-flex align-items-center gap-1">
@@ -1631,7 +1633,7 @@ const PurchaseInvoiceForm = ({
                             autoFocus
                             disabled={isProcessing}
                           />
-                                                     <Button
+                          <Button
                              color="outline-secondary"
                              size="sm"
                              onClick={() => {
@@ -1679,8 +1681,8 @@ const PurchaseInvoiceForm = ({
                       ) : (
                         <div className="d-flex align-items-center gap-1">
                           <span className={(validation.values.roundOff || 0) > 0 ? 'text-success' : (validation.values.roundOff || 0) < 0 ? 'text-danger' : ''}>
-                        {(validation.values.roundOff || 0) > 0 ? '+' : ''} ₹ {(validation.values.roundOff || 0).toFixed(2)}
-                      </span>
+                            ₹ {Math.abs(validation.values.roundOff || 0).toFixed(2)}
+                          </span>
                           <RiEditLine
                             className="text-muted cursor-pointer"
                             size={14}
@@ -1691,12 +1693,13 @@ const PurchaseInvoiceForm = ({
                             title="Edit round off"
                             style={{ cursor: 'pointer' }}
                           />
-                    </div>
-                  )}
+                        </div>
+                      )}
                     </div>
                   </div>
+                  
                   <div className="d-flex justify-content-between mt-3 pt-2 border-top">
-                    <span className="fw-bold">Net Payable:</span>
+                    <span className="fw-bold">Net Payable</span>
                     <span className="fw-bold">₹ {calculatedTotals.netPayable.toFixed(2)}</span>
                   </div>
                 </div>
