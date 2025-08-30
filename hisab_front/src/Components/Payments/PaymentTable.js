@@ -207,6 +207,7 @@ const PaymentTable = ({
                     serverSide={true}
                     divClass="table-responsive payment-table"
                     loading={loading}
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

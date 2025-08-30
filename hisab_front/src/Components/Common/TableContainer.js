@@ -100,6 +100,8 @@ const TableContainer = ({
   pagination,
   handlePageChange,
   serverSide = false,
+  // Double-click handler for rows
+  onRowDoubleClick,
 }) => {
   const [columnFilters, setColumnFilters] = useState([]);
   const [globalFilter, setGlobalFilter] = useState('');
@@ -296,7 +298,11 @@ const TableContainer = ({
             {getRowModel().rows.length > 0 ? (
               getRowModel().rows.map((row) => {
                 return (
-                  <tr key={row.id}>
+                  <tr 
+                    key={row.id}
+                    onDoubleClick={() => onRowDoubleClick && onRowDoubleClick(row.original)}
+                    style={{ cursor: onRowDoubleClick ? 'pointer' : 'default' }}
+                  >
                     {row.getVisibleCells().map((cell) => {
                       return (
                         <td key={cell.id}>

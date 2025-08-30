@@ -177,6 +177,16 @@ const PurchaseInvoiceForm = ({
   const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState('');
   const [isEditingRoundOff, setIsEditingRoundOff] = useState(false);
   const [tempRoundOff, setTempRoundOff] = useState('');
+  const [selectedContact, setSelectedContact] = useState(null);
+
+  // Initialize selected contact for edit mode
+  useEffect(() => {
+    if (isEditMode && selectedInvoice?.contact) {
+      setSelectedContact(selectedInvoice.contact);
+    } else if (!isEditMode) {
+      setSelectedContact(null);
+    }
+  }, [isEditMode, selectedInvoice?.contact]);
 
   const fetchProductsRef = useRef(false);
   const lastSearchTermRef = useRef('');
@@ -490,6 +500,10 @@ const PurchaseInvoiceForm = ({
     // Only clear billFromBank if the selected option is not a contact
     if (!selectedOption?.value?.startsWith('contact_')) {
       validation.setFieldValue('billFromBank', '');
+      setSelectedContact(null);
+    } else {
+      // Store the selected contact information for billing address display
+      setSelectedContact(selectedOption?.contact || null);
     }
   }, []);
 
@@ -850,12 +864,8 @@ const PurchaseInvoiceForm = ({
     fetchNextInvoiceNumber();
   }, [fetchNextInvoiceNumber]);
 
-  // Auto-populate invoice number when suggestion is available
-  useEffect(() => {
-    if (suggestedInvoiceNumber && !validation.values.invoiceNumber && !isEditMode) {
-      validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber);
-    }
-  }, [suggestedInvoiceNumber, isEditMode]);
+  // Don't auto-populate invoice number - let user choose to use suggested number via button
+  // This ensures consistent behavior where users manually click "Use" button
 
   // Set default status when contact is selected
   useEffect(() => {
@@ -1193,26 +1203,57 @@ const PurchaseInvoiceForm = ({
 
   return (
     <>
-      <Modal isOpen={isOpen} toggle={toggle} size="xl">
+      <style>
+        {`
+          .compact-invoice-form .form-group {
+            margin-bottom: 0.5rem;
+          }
+          .compact-invoice-form .form-label {
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .form-control {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .react-datepicker-wrapper {
+            width: 100%;
+          }
+          .compact-invoice-form .react-datepicker__input-container input {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .table th,
+          .compact-invoice-form .table td {
+            padding: 0.5rem 0.75rem;
+            vertical-align: middle;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .input-group .btn {
+            font-size: 0.75rem;
+            padding: 0.375rem 0.75rem;
+          }
+        `}
+      </style>
+      <Modal isOpen={isOpen} toggle={toggle} size="lg" className="compact-invoice-form">
         <ModalHeader toggle={toggle}>
           {isEditMode ? 'Edit Purchase Invoice' : 'New Purchase Invoice'}
         </ModalHeader>
-        <ModalBody>
+        <ModalBody className="py-3">
           <Form onSubmit={(e) => {
             e.preventDefault();
             validation.handleSubmit();
           }}>
-            <Row className="mb-4">
-              <Col md={6}>
-                <h4>Purchase Invoice</h4>
-                <div className="text-muted">{new Date().toLocaleDateString('en-GB')}</div>
-              </Col>
-            </Row>
+            <div className="mb-3">
+              <h5 className="mb-1">Purchase Invoice</h5>
+              <small className="text-muted">{new Date().toLocaleDateString('en-GB')}</small>
+            </div>
 
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Date</Label>
+            <Row className="mb-2">
+              <Col md={5}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Date</Label>
                   <DatePicker
                     selected={selectedDate}
                     onChange={handleDateChange}
@@ -1221,53 +1262,53 @@ const PurchaseInvoiceForm = ({
                   />
                 </FormGroup>
               </Col>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Invoice Number</Label>
-                  <Input
-                    type="text"
-                    name="invoiceNumber"
-                    value={validation.values.invoiceNumber}
-                    onChange={validation.handleChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
-                    disabled={isProcessing}
-                    placeholder="Enter invoice number"
-                  />
-                  {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
-                    <div className="mt-2">
-                      <small className="text-muted me-2">Suggested: {suggestedInvoiceNumber}</small>
+              <Col md={7}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label d-flex justify-content-between align-items-center">
+                    Invoice Number
+                    {!suggestedInvoiceNumber && !isEditMode && (
                       <button 
                         type="button" 
-                        className="btn btn-outline-primary btn-sm"
-                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
-                        disabled={isProcessing}
-                      >
-                        Use Suggested
-                      </button>
-                    </div>
-                  )}
-                  {!suggestedInvoiceNumber && !isEditMode && (
-                    <small className="text-muted">
-                      <button 
-                        type="button" 
-                        className="btn btn-link btn-sm p-0" 
+                        className="btn btn-link btn-sm p-0 text-decoration-none" 
                         onClick={fetchNextInvoiceNumber}
                         disabled={isProcessing}
                       >
-                        Click to generate invoice number
+                        <small>Generate</small>
                       </button>
-                    </small>
-                  )}
+                    )}
+                  </Label>
+                  <div className="input-group">
+                    <Input
+                      type="text"
+                      name="invoiceNumber"
+                      value={validation.values.invoiceNumber}
+                      onChange={validation.handleChange}
+                      onBlur={validation.handleBlur}
+                      invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
+                      disabled={isProcessing}
+                      placeholder="Enter invoice number"
+                    />
+                    {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
+                        disabled={isProcessing}
+                        title={`Use suggested: ${suggestedInvoiceNumber}`}
+                      >
+                        Use {suggestedInvoiceNumber}
+                      </button>
+                    )}
+                  </div>
                   <FormFeedback>{validation.errors.invoiceNumber}</FormFeedback>
                 </FormGroup>
               </Col>
             </Row>
 
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Bill From</Label>
+            <Row className="mb-2">
+              <Col md={shouldShowStatusDropdown ? 6 : 8}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Bill From</Label>
                   <BankAccountContactDropdown
                     value={validation.values.billFrom}
                     onChange={handleBillFromChange}
@@ -1282,8 +1323,8 @@ const PurchaseInvoiceForm = ({
               </Col>
               {shouldShowStatusDropdown && (
                 <Col md={6}>
-                  <FormGroup>
-                    <Label>Status</Label>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Status</Label>
                     <Input
                       type="select"
                       name="status"
@@ -1303,11 +1344,37 @@ const PurchaseInvoiceForm = ({
               )}
             </Row>
 
+            {/* Contact Billing Address Display */}
+            {selectedContact && (
+              selectedContact.billingAddress1 || 
+              selectedContact.billingCity || 
+              selectedContact.billingState
+            ) && (
+              <Row className="mb-1">
+                <Col md={12}>
+                  <div className="border rounded px-2 py-1 bg-light">
+                    <small className="text-muted d-flex align-items-center">
+                      <i className="ri-map-pin-line me-1"></i>
+                      <strong>Address:</strong>
+                      <span className="ms-1">
+                        {[
+                          selectedContact.billingAddress1,
+                          selectedContact.billingAddress2,
+                          [selectedContact.billingCity, selectedContact.billingState, selectedContact.billingPincode].filter(Boolean).join(', '),
+                          selectedContact.billingCountry
+                        ].filter(Boolean).join(', ')}
+                      </span>
+                    </small>
+                  </div>
+                </Col>
+              </Row>
+            )}
+
             {shouldShowBankAccountDropdown && (
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Payment Bank Account <span className="text-danger">*</span></Label>
+              <Row className="mb-2">
+                <Col md={8}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Payment Bank Account <span className="text-danger">*</span></Label>
                     <BankAccountDropdown
                       value={validation.values.billFromBank}
                       onChange={handleBillFromBankChange}
@@ -1325,10 +1392,10 @@ const PurchaseInvoiceForm = ({
               </Row>
             )}
 
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Tax Type</Label>
+            <Row className="mb-2">
+              <Col md={3}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Tax Type</Label>
                   <Input
                     type="select"
                     name="taxType"
@@ -1346,14 +1413,9 @@ const PurchaseInvoiceForm = ({
                   <FormFeedback>{validation.errors.taxType}</FormFeedback>
                 </FormGroup>
               </Col>
-            </Row>
-
-
-
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Discount Type</Label>
+              <Col md={3}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Discount Type</Label>
                   <Input
                     type="select"
                     name="discountType"
@@ -1363,7 +1425,7 @@ const PurchaseInvoiceForm = ({
                     invalid={validation.touched.discountType && !!validation.errors.discountType}
                     disabled={isProcessing}
                   >
-                    <option value="">Select Discount Type</option>
+                    <option value="">Select Type</option>
                     {DISCOUNT_TYPES.map(discount => (
                       <option key={discount.value} value={discount.value}>{discount.label}</option>
                     ))}
@@ -1372,9 +1434,9 @@ const PurchaseInvoiceForm = ({
                 </FormGroup>
               </Col>
               {validation.values.discountType && validation.values.discountType !== 'none' && (
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Discount Value Type</Label>
+                <Col md={3}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Value Type</Label>
                     <Input
                       type="select"
                       name="discountValueType"
@@ -1384,7 +1446,7 @@ const PurchaseInvoiceForm = ({
                       invalid={validation.touched.discountValueType && !!validation.errors.discountValueType}
                       disabled={isProcessing}
                     >
-                      <option value="">Select Discount Value Type</option>
+                      <option value="">Select Type</option>
                       {DISCOUNT_VALUE_TYPES.map(type => (
                         <option key={type.value} value={type.value}>{type.label}</option>
                       ))}
@@ -1393,13 +1455,10 @@ const PurchaseInvoiceForm = ({
                   </FormGroup>
                 </Col>
               )}
-            </Row>
-
-            {validation.values.discountType && validation.values.discountType !== 'none' && (validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && (
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Discount Value</Label>
+              {validation.values.discountType && validation.values.discountType !== 'none' && (validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice') && (
+                <Col md={3}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Discount Value</Label>
                     <InputGroup>
                       <Input
                         type="number"
@@ -1411,7 +1470,7 @@ const PurchaseInvoiceForm = ({
                         onBlur={validation.handleBlur}
                         invalid={validation.touched.discountValue && !!validation.errors.discountValue}
                         disabled={isProcessing}
-                        placeholder={validation.values.discountValueType === 'percentage' ? 'Enter discount percentage' : 'Enter discount amount'}
+                        placeholder="0"
                       />
                       <InputGroupText>
                         {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
@@ -1420,14 +1479,14 @@ const PurchaseInvoiceForm = ({
                     <FormFeedback>{validation.errors.discountValue}</FormFeedback>
                   </FormGroup>
                 </Col>
-              </Row>
-            )}
+              )}
+            </Row>
 
             {validation.values.taxType && validation.values.taxType !== 'no_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Item Rate Type</Label>
+              <Row className="mb-2">
+                <Col md={8}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Item Rate Type</Label>
                     <div className="d-flex gap-3">
                       {ITEM_RATE_TYPES.map(type => (
                         <div key={type.value} className="form-check">
@@ -1449,9 +1508,9 @@ const PurchaseInvoiceForm = ({
                     {validation.touched.rateType && validation.errors.rateType && (
                       <div className="text-danger small">{validation.errors.rateType}</div>
                     )}
-                    <div className="form-text text-muted">
-                      Changing the rate type will automatically recalculate tax amounts and totals for all items.
-                    </div>
+                    <small className="form-text text-muted">
+                      Rate type affects tax calculations.
+                    </small>
                   </FormGroup>
                 </Col>
               </Row>
@@ -1562,44 +1621,40 @@ const PurchaseInvoiceForm = ({
               </Table>
             </div>
 
-            <Row className="mb-4">
+            <Row className="mb-2">
               <Col md={6}>
                 <FormGroup>
                   <Label>Internal Notes</Label>
                   <Input
                     type="textarea"
                     name="internalNotes"
-                    rows="3"
+                    rows="2"
                     value={validation.values.internalNotes}
                     onChange={validation.handleChange}
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.internalNotes && !!validation.errors.internalNotes}
                     disabled={isProcessing}
-                    placeholder="Enter any internal notes (optional)"
+                    placeholder="Add internal notes..."
                   />
                   <FormFeedback>{validation.errors.internalNotes}</FormFeedback>
                 </FormGroup>
               </Col>
-
-            </Row>
-
-            <Row className="mb-4">
               <Col md={6}>
-                <div className="border p-3 bg-light">
-                  <h5 className="mb-3">Summary</h5>
+                <div className="border p-2 bg-light">
+                  <h6 className="mb-2">Summary</h6>
                   
-                  <div className="d-flex justify-content-between mb-2">
+                  <div className="d-flex justify-content-between mb-1">
                     <span>Basic Amount</span>
                     <span>₹ {calculatedTotals.basicAmount.toFixed(2)}</span>
                   </div>
                   
                   {calculatedTotals.totalDiscount > 0 && (
-                    <div className="d-flex justify-content-between mb-2">
+                    <div className="d-flex justify-content-between mb-1">
                       <span>Discount</span>
                       <span className="text-danger">(-) ₹ {calculatedTotals.totalDiscount.toFixed(2)}</span>
                     </div>
                   )}
-                  <div className="d-flex justify-content-between mb-2">
+                    <div className="d-flex justify-content-between mb-1">
                     <span>Round Off</span>
                     <div className="d-flex align-items-center gap-2">
                       {isEditingRoundOff ? (
@@ -1633,7 +1688,7 @@ const PurchaseInvoiceForm = ({
                             autoFocus
                             disabled={isProcessing}
                           />
-                          <Button
+                                                     <Button
                              color="outline-secondary"
                              size="sm"
                              onClick={() => {
@@ -1682,7 +1737,7 @@ const PurchaseInvoiceForm = ({
                         <div className="d-flex align-items-center gap-1">
                           <span className={(validation.values.roundOff || 0) > 0 ? 'text-success' : (validation.values.roundOff || 0) < 0 ? 'text-danger' : ''}>
                             ₹ {Math.abs(validation.values.roundOff || 0).toFixed(2)}
-                          </span>
+                      </span>
                           <RiEditLine
                             className="text-muted cursor-pointer"
                             size={14}
@@ -1693,8 +1748,8 @@ const PurchaseInvoiceForm = ({
                             title="Edit round off"
                             style={{ cursor: 'pointer' }}
                           />
-                        </div>
-                      )}
+                    </div>
+                  )}
                     </div>
                   </div>
                   

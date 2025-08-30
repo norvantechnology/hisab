@@ -196,10 +196,50 @@ export async function createCompany(req, res) {
       logoUrl,
     ]);
 
+    const newCompany = result.rows[0];
+    const companyId = newCompany.id;
+
+    // Create default "Cash On Hand" bank account for the new company
+    const bankAccountInsertQuery = `
+      INSERT INTO hisab."bankAccounts" 
+        ("userId", "companyId", "accountType", "accountName", "currentBalance", "openingBalance", "isActive")
+      VALUES 
+        ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id, "accountName", "accountType"
+    `;
+
+    try {
+      const bankAccountResult = await client.query(bankAccountInsertQuery, [
+        userId,
+        companyId,
+        'cash',
+        'Cash On Hand',
+        0,
+        0,
+        true
+      ]);
+
+      console.log('Default bank account created:', bankAccountResult.rows[0]);
+
     return successResponse(res, {
-      message: gstin ? "Company created successfully with GST details" : "Company created successfully",
-      company: result.rows[0],
-    });
+        message: gstin ? "Company created successfully with GST details and default cash account" : "Company created successfully with default cash account",
+        company: newCompany,
+        defaultBankAccount: bankAccountResult.rows[0]
+      });
+
+    } catch (bankAccountError) {
+      console.error("Error creating default bank account:", bankAccountError);
+      
+      // Company was created successfully, but default bank account creation failed
+      // Log the error but don't fail the entire operation
+      console.warn(`Company ${companyId} created, but default bank account creation failed:`, bankAccountError.message);
+      
+      return successResponse(res, {
+        message: gstin ? "Company created successfully with GST details (default bank account creation failed)" : "Company created successfully (default bank account creation failed)",
+        company: newCompany,
+        warning: "Default bank account could not be created automatically"
+      });
+    }
 
   } catch (error) {
     console.error("Error creating company:", error);

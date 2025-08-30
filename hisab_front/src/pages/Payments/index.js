@@ -188,11 +188,11 @@ const PaymentsPage = () => {
                 amount: parseFloat(allocation.amount),
                 paidAmount: parseFloat(allocation.paidAmount)
             }));
-
+console.log('🚀 Submitting payment with values:', values);              
             const payload = {
                 id: values.id,
                 contactId: values.contactId,
-                bankAccountId: values.bankId,
+                bankAccountId: values.bankAccountId,
                 date: values.date,
                 description: values.description || '',
                 adjustmentType: values.adjustmentType,

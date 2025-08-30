@@ -851,7 +851,7 @@ export async function generateSalesInvoicePDF(req, res) {
     } else if (error.message?.includes('upload failed')) {
       return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
     } else {
-      return errorResponse(res, "Failed to generate sales invoice PDF", 500);
+    return errorResponse(res, "Failed to generate sales invoice PDF", 500);
     }
   } finally {
     client.release();
@@ -993,9 +993,54 @@ export async function listSales(req, res) {
         );
 
         return {
-          ...sale,
+          id: sale.id,
+          invoiceNumber: sale.invoiceNumber,
+          status: sale.status,
+          invoiceDate: sale.invoiceDate,
+          taxType: sale.taxType,
+          rateType: sale.rateType,
+          discountType: sale.discountType,
+          discountValueType: sale.discountValueType,
+          discountValue: parseFloat(sale.discountValue || 0),
+          roundOff: parseFloat(sale.roundOff || 0),
+          internalNotes: sale.internalNotes,
+          basicAmount: parseFloat(sale.basicAmount || 0),
+          totalDiscount: parseFloat(sale.totalDiscount || 0),
+          taxAmount: parseFloat(sale.taxAmount || 0),
+          netReceivable: parseFloat(sale.netReceivable || 0),
           remainingAmount: parseFloat(sale.remaining_amount || 0),
           paidAmount: parseFloat(sale.paid_amount || 0),
+          createdAt: sale.createdAt,
+          updatedAt: sale.updatedAt,
+
+          // Payment details
+          paymentMethod: sale.bankAccountId ? 'bank' : 'credit',
+          bankAccount: sale.bankAccountId ? {
+            id: sale.bankAccountId,
+            name: sale.accountName,
+            type: sale.accountType
+          } : null,
+          contact: sale.contactId ? {
+            id: sale.contactId,
+            name: sale.contactName,
+            mobile: sale.contactMobile,
+            email: sale.contactEmail,
+            gstin: sale.contactGstin,
+            billingAddress1: sale.contactBillingAddress1,
+            billingAddress2: sale.contactBillingAddress2,
+            billingCity: sale.contactBillingCity,
+            billingState: sale.contactBillingState,
+            billingPincode: sale.contactBillingPincode,
+            billingCountry: sale.contactBillingCountry
+          } : null,
+
+          // Creator details
+          createdBy: {
+            name: sale.createdByName
+          },
+
+          // Items
+          itemsCount: itemsWithSerialNumbers.length,
           items: itemsWithSerialNumbers
         };
       })

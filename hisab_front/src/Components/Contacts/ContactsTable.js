@@ -187,6 +187,7 @@ const ContactsTable = ({
                     serverSide={true}
                     divClass="table-responsive contacts-table"
                     loading={loading}
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

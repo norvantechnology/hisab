@@ -155,6 +155,7 @@ const ProductTable = ({
                     serverSide={true}
                     divClass="table-responsive product-table"
                     loading={loading}
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

@@ -129,6 +129,7 @@ const BankTransferTable = ({
                     serverSide={true}
                     divClass="table-responsive bank-transfer-table"
                     loading={loading}
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

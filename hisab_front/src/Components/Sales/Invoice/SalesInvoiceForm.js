@@ -61,9 +61,9 @@ const SalesInvoiceForm = ({
         rateType,
         discountValueType: item.discountType || 'percentage',
         discountValue: (item.discountType === 'rupees') ? discountRate : 0
-              });
-        
-        // For edit mode: Add the original quantity back to current stock for validation
+      });
+      
+      // For edit mode: Add the original quantity back to current stock for validation
       // This allows the user to edit the quantity within the available stock + the quantity they already have
       const originalQuantity = parseFloat(item.quantity || 0);
       const availableStock = parseFloat(item.currentStock || 0);
@@ -129,6 +129,16 @@ const SalesInvoiceForm = ({
   const [suggestedInvoiceNumber, setSuggestedInvoiceNumber] = useState('');
   const [isEditingRoundOff, setIsEditingRoundOff] = useState(false);
   const [tempRoundOff, setTempRoundOff] = useState('');
+  const [selectedContact, setSelectedContact] = useState(null);
+
+  // Initialize selected contact for edit mode
+  useEffect(() => {
+    if (isEditMode && selectedInvoice?.contact) {
+      setSelectedContact(selectedInvoice.contact);
+    } else if (!isEditMode) {
+      setSelectedContact(null);
+    }
+  }, [isEditMode, selectedInvoice?.contact]);
 
   const fetchProductsRef = useRef(false);
   const lastSearchTermRef = useRef('');
@@ -328,10 +338,13 @@ const SalesInvoiceForm = ({
     // When a contact is selected, automatically set status to 'pending'
     if (selectedOption?.value?.startsWith('contact_')) {
       validation.setFieldValue('status', 'pending');
+      // Store the selected contact information for billing address display
+      setSelectedContact(selectedOption?.contact || null);
     } else {
       // Clear status and billToBank if not a contact
       validation.setFieldValue('status', '');
       validation.setFieldValue('billToBank', '');
+      setSelectedContact(null);
     }
   };
 
@@ -772,10 +785,8 @@ const SalesInvoiceForm = ({
         netReceivable: calculatedTotals.netReceivable
       }), false);
 
-      // Auto-populate invoice number if it's empty
-      if (!validation.values.invoiceNumber && suggestedInvoiceNumber && !isEditMode) {
-        validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber);
-      }
+      // Don't auto-populate invoice number - let user choose to use suggested number via button
+      // This matches the purchase form behavior where suggested number appears as a button
     }
   }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netReceivable, items, isOpen, suggestedInvoiceNumber, isEditMode]); // Removed validation from dependencies
 
@@ -1046,22 +1057,75 @@ const SalesInvoiceForm = ({
 
   return (
     <>
+      <style>
+        {`
+          .compact-form .form-group {
+            margin-bottom: 0.5rem;
+          }
+          .compact-form .form-label {
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+          }
+          .compact-form .table th,
+          .compact-form .table td {
+            padding: 0.5rem 0.75rem;
+            vertical-align: middle;
+          }
+        `}
+      </style>
+      <style>
+        {`
+          .compact-invoice-form .form-group {
+            margin-bottom: 0.5rem;
+          }
+          .compact-invoice-form .form-label {
+            margin-bottom: 0.25rem;
+            font-weight: 500;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .form-control {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .react-datepicker-wrapper {
+            width: 100%;
+          }
+          .compact-invoice-form .react-datepicker__input-container input {
+            padding: 0.375rem 0.75rem;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .table th,
+          .compact-invoice-form .table td {
+            padding: 0.5rem 0.75rem;
+            vertical-align: middle;
+            font-size: 0.875rem;
+          }
+          .compact-invoice-form .input-group .btn {
+            font-size: 0.75rem;
+            padding: 0.375rem 0.75rem;
+          }
+        `}
+      </style>
       <Modal
         isOpen={isOpen}
         toggle={toggle}
-        size="xl"
-        className="sales-invoice-modal"
+        size="lg"
+        className="compact-invoice-form sales-invoice-modal"
         backdrop="static"
       >
         <ModalHeader toggle={toggle}>
           {isEditMode ? 'Edit Sales Invoice' : 'Create Sales Invoice'}
         </ModalHeader>
-        <ModalBody>
+        <ModalBody className="py-3">
           <Form onSubmit={validation.handleSubmit}>
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Date</Label>
+            <div className="mb-3">
+              <h5 className="mb-1">Sales Invoice</h5>
+              <small className="text-muted">{new Date().toLocaleDateString('en-GB')}</small>
+            </div>
+            <Row className="mb-2">
+              <Col md={5}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Date</Label>
                   <DatePicker
                     selected={selectedDate}
                     onChange={handleDateChange}
@@ -1070,53 +1134,53 @@ const SalesInvoiceForm = ({
                   />
                 </FormGroup>
               </Col>
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Invoice Number</Label>
-                  <Input
-                    type="text"
-                    name="invoiceNumber"
-                    value={validation.values.invoiceNumber}
-                    onChange={validation.handleChange}
-                    onBlur={validation.handleBlur}
-                    invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
-                    disabled={isProcessing}
-                    placeholder="Enter invoice number"
-                  />
-                  {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
-                    <div className="mt-2">
-                      <small className="text-muted me-2">Suggested: {suggestedInvoiceNumber}</small>
+              <Col md={7}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label d-flex justify-content-between align-items-center">
+                    Invoice Number
+                    {!suggestedInvoiceNumber && !isEditMode && (
                       <button 
                         type="button" 
-                        className="btn btn-outline-primary btn-sm"
-                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
-                        disabled={isProcessing}
-                      >
-                        Use Suggested
-                      </button>
-                    </div>
-                  )}
-                  {!suggestedInvoiceNumber && !isEditMode && (
-                    <small className="text-muted">
-                      <button 
-                        type="button" 
-                        className="btn btn-link btn-sm p-0" 
+                        className="btn btn-link btn-sm p-0 text-decoration-none" 
                         onClick={fetchNextInvoiceNumber}
                         disabled={isProcessing}
                       >
-                        Click to generate invoice number
+                        <small>Generate</small>
                       </button>
-                    </small>
-                  )}
+                    )}
+                  </Label>
+                  <div className="input-group">
+                    <Input
+                      type="text"
+                      name="invoiceNumber"
+                      value={validation.values.invoiceNumber}
+                      onChange={validation.handleChange}
+                      onBlur={validation.handleBlur}
+                      invalid={validation.touched.invoiceNumber && !!validation.errors.invoiceNumber}
+                      disabled={isProcessing}
+                      placeholder="Enter invoice number"
+                    />
+                    {suggestedInvoiceNumber && !validation.values.invoiceNumber && (
+                      <button 
+                        type="button" 
+                        className="btn btn-outline-secondary btn-sm"
+                        onClick={() => validation.setFieldValue('invoiceNumber', suggestedInvoiceNumber)}
+                        disabled={isProcessing}
+                        title={`Use suggested: ${suggestedInvoiceNumber}`}
+                      >
+                        Use {suggestedInvoiceNumber}
+                      </button>
+                    )}
+                  </div>
                   <FormFeedback>{validation.errors.invoiceNumber}</FormFeedback>
                 </FormGroup>
               </Col>
             </Row>
 
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Bill To</Label>
+            <Row className="mb-2">
+              <Col md={shouldShowStatusDropdown ? 6 : 8}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Bill To</Label>
                   <BankAccountContactDropdown
                     value={validation.values.billTo}
                     onChange={handleBillToChange}
@@ -1131,8 +1195,8 @@ const SalesInvoiceForm = ({
               </Col>
               {shouldShowStatusDropdown && (
                 <Col md={6}>
-                  <FormGroup>
-                    <Label>Status</Label>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Status</Label>
                     <Input
                       type="select"
                       name="status"
@@ -1153,11 +1217,37 @@ const SalesInvoiceForm = ({
               )}
             </Row>
 
+            {/* Contact Billing Address Display */}
+            {selectedContact && (
+              selectedContact.billingAddress1 || 
+              selectedContact.billingCity || 
+              selectedContact.billingState
+            ) && (
+              <Row className="mb-1">
+                <Col md={12}>
+                  <div className="border rounded px-2 py-1 bg-light">
+                    <small className="text-muted d-flex align-items-center">
+                      <i className="ri-map-pin-line me-1"></i>
+                      <strong>Address:</strong>
+                      <span className="ms-1">
+                        {[
+                          selectedContact.billingAddress1,
+                          selectedContact.billingAddress2,
+                          [selectedContact.billingCity, selectedContact.billingState, selectedContact.billingPincode].filter(Boolean).join(', '),
+                          selectedContact.billingCountry
+                        ].filter(Boolean).join(', ')}
+                      </span>
+                    </small>
+                  </div>
+                </Col>
+              </Row>
+            )}
+
             {shouldShowBankAccountDropdown && (
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Payment Bank Account <span className="text-danger">*</span></Label>
+            <Row className="mb-2">
+              <Col md={8}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Payment Bank Account <span className="text-danger">*</span></Label>
                   <BankAccountDropdown
                     value={validation.values.billToBank}
                     onChange={handleBillToBankChange}
@@ -1175,10 +1265,10 @@ const SalesInvoiceForm = ({
             </Row>
             )}
 
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Tax Type</Label>
+              <Row className="mb-2">
+                <Col md={4}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label">Tax Type</Label>
                     <Input
                       type="select"
                       name="taxType"
@@ -1196,47 +1286,42 @@ const SalesInvoiceForm = ({
                     <FormFeedback>{validation.errors.taxType}</FormFeedback>
                   </FormGroup>
                 </Col>
+                {validation.values.taxType && validation.values.taxType !== 'no_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
+                  <Col md={8}>
+                    <FormGroup className="mb-2">
+                      <Label className="form-label">Item Rate Type</Label>
+                      <div className="d-flex gap-3">
+                        {ITEM_RATE_TYPES.map(type => (
+                          <div key={type.value} className="form-check">
+                            <Input
+                              type="radio"
+                              name="rateType"
+                              id={`rateType_${type.value}`}
+                              value={type.value}
+                              checked={validation.values.rateType === type.value}
+                              onChange={handleRateTypeChange}
+                              disabled={isProcessing}
+                            />
+                            <Label className="form-check-label" htmlFor={`rateType_${type.value}`}>
+                              {type.label}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      {validation.touched.rateType && validation.errors.rateType && (
+                        <div className="text-danger small">{validation.errors.rateType}</div>
+                      )}
+                      <small className="form-text text-muted">
+                        Rate type affects tax calculations.
+                      </small>
+                    </FormGroup>
+                  </Col>
+                )}
               </Row>
 
-
-
-            {validation.values.taxType && validation.values.taxType !== 'no_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
-              <Row className="mb-4">
-                <Col md={6}>
-                  <FormGroup>
-                    <Label>Item Rate Type</Label>
-                    <div className="d-flex gap-3">
-                      {ITEM_RATE_TYPES.map(type => (
-                        <div key={type.value} className="form-check">
-                          <Input
-                            type="radio"
-                            name="rateType"
-                            id={`rateType_${type.value}`}
-                            value={type.value}
-                            checked={validation.values.rateType === type.value}
-                            onChange={handleRateTypeChange}
-                            disabled={isProcessing}
-                          />
-                          <Label className="form-check-label" htmlFor={`rateType_${type.value}`}>
-                            {type.label}
-                          </Label>
-                        </div>
-                      ))}
-                    </div>
-                    {validation.touched.rateType && validation.errors.rateType && (
-                      <div className="text-danger small">{validation.errors.rateType}</div>
-                    )}
-                    <div className="form-text text-muted">
-                      Changing the rate type will automatically recalculate tax amounts and totals for all items.
-                    </div>
-                  </FormGroup>
-                </Col>
-              </Row>
-            )}
-
-            <div className="mb-4">
-              <div className="d-flex justify-content-between align-items-center mb-3">
-                <h5 className="mb-0">Items</h5>
+            <div className="mb-2">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h6 className="mb-0">Items</h6>
                 <Button
                   color="primary"
                   size="sm"
@@ -1324,44 +1409,44 @@ const SalesInvoiceForm = ({
               </Table>
             </div>
 
-            <Row className="mb-4">
-              <Col md={6}>
-                <FormGroup>
-                  <Label>Internal Notes</Label>
+            <Row className="mb-2">
+              <Col md={5}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label">Internal Notes</Label>
                   <Input
                     type="textarea"
                     name="internalNotes"
-                    rows="3"
+                    rows="2"
                     value={validation.values.internalNotes}
                     onChange={validation.handleChange}
                     onBlur={validation.handleBlur}
                     invalid={validation.touched.internalNotes && !!validation.errors.internalNotes}
                     disabled={isProcessing}
-                    placeholder="Enter any internal notes (optional)"
+                    placeholder="Add internal notes..."
                   />
                   <FormFeedback>{validation.errors.internalNotes}</FormFeedback>
                 </FormGroup>
               </Col>
-              <Col md={6}>
-                <div className="border p-3 bg-light">
-                  <h5>Summary</h5>
-                  <div className="d-flex justify-content-between mb-2">
+              <Col md={7}>
+                <div className="border p-2 bg-light">
+                  <h6 className="mb-2">Summary</h6>
+                  <div className="d-flex justify-content-between mb-1">
                     <span>Basic Amount:</span>
                     <span>₹ {calculatedTotals.basicAmount.toFixed(2)}</span>
                   </div>
                   {calculatedTotals.totalDiscount > 0 && (
-                    <div className="d-flex justify-content-between mb-2">
+                    <div className="d-flex justify-content-between mb-1">
                       <span>Total Discount:</span>
                       <span className="text-danger">- ₹ {calculatedTotals.totalDiscount.toFixed(2)}</span>
                     </div>
                   )}
                   {calculatedTotals.totalTax > 0 && (
-                    <div className="d-flex justify-content-between mb-2">
+                    <div className="d-flex justify-content-between mb-1">
                       <span>Total Tax:</span>
                       <span className="text-success">+ ₹ {calculatedTotals.totalTax.toFixed(2)}</span>
                     </div>
                   )}
-                    <div className="d-flex justify-content-between mb-2">
+                    <div className="d-flex justify-content-between mb-1">
                       <span>Round Off:</span>
                     <div className="d-flex align-items-center gap-2">
                       {isEditingRoundOff ? (

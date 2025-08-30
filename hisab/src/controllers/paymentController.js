@@ -19,6 +19,8 @@ async function checkNewColumnsExist(client) {
 }
 
 export async function createPayment(req, res) {
+  console.log('💳 createPayment received request body:', req.body);
+  
   const {
     contactId,
     bankAccountId,
@@ -29,11 +31,30 @@ export async function createPayment(req, res) {
     transactionAllocations
   } = req.body;
 
+  console.log('📋 Extracted fields:', {
+    contactId,
+    bankAccountId,
+    date,
+    description,
+    adjustmentType,
+    adjustmentValue,
+    transactionAllocationsLength: transactionAllocations?.length
+  });
+
   const { companyId, id: currentUserId } = req.currentUser || {};
 
   if (!companyId || !currentUserId) return errorResponse(res, "Unauthorized access", 401);
-  if (!contactId || !bankAccountId || !date || !transactionAllocations?.length) {
-    return errorResponse(res, "Required fields are missing", 400);
+  
+  // Enhanced validation with specific field checking
+  const missingFields = [];
+  if (!contactId) missingFields.push('contactId');
+  if (!bankAccountId) missingFields.push('bankAccountId');
+  if (!date) missingFields.push('date');
+  if (!transactionAllocations?.length) missingFields.push('transactionAllocations');
+  
+  if (missingFields.length > 0) {
+    console.log('❌ Missing fields:', missingFields);
+    return errorResponse(res, `Required fields are missing: ${missingFields.join(', ')}`, 400);
   }
   if (adjustmentType && !['discount', 'extra_receipt', 'surcharge', 'none'].includes(adjustmentType)) {
     return errorResponse(res, "Invalid adjustment type", 400);

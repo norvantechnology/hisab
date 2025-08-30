@@ -1092,7 +1092,7 @@ export async function generatePurchaseInvoicePDF(req, res) {
     } else if (error.message?.includes('upload failed')) {
       return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
     } else {
-      return errorResponse(res, "Failed to generate purchase invoice PDF", 500);
+    return errorResponse(res, "Failed to generate purchase invoice PDF", 500);
     }
   } finally {
     client.release();
@@ -1409,7 +1409,13 @@ export async function listPurchases(req, res) {
             name: row.contactName,
             mobile: row.contactMobile,
             email: row.contactEmail,
-            gstin: row.contactGstin
+            gstin: row.contactGstin,
+            billingAddress1: row.contactBillingAddress1,
+            billingAddress2: row.contactBillingAddress2,
+            billingCity: row.contactBillingCity,
+            billingState: row.contactBillingState,
+            billingPincode: row.contactBillingPincode,
+            billingCountry: row.contactBillingCountry
           } : null,
 
           // Creator details

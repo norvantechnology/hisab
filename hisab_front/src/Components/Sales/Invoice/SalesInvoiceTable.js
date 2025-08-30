@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiWalletLine } from 'react-icons/ri';
 import TableContainer from '../../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Button } from 'reactstrap';
 
@@ -21,9 +21,10 @@ const SalesInvoiceTable = ({
     pagination,
     onPageChange,
     onView,
-    onEdit,
+    onEdit,                                                                                                                                                                 
     onDelete,
     onGeneratePDF,
+    onCreatePayment,
     pdfLoading = null
 }) => {
     const columns = useMemo(() => [
@@ -72,58 +73,6 @@ const SalesInvoiceTable = ({
                         )}
                     </div>
                 );
-            },
-            enableColumnFilter: false
-        },
-        {
-            header: "Payment Method",
-            accessorKey: "paymentMethod",
-            cell: (cell) => {
-                const hasContact = cell.row.original.contactName || cell.row.original.contactId;
-                const hasBank = cell.row.original.accountName || cell.row.original.bankAccountId;
-                
-                                        if (hasContact && hasBank) {
-                            return (
-                                <div>
-                                    <span className="badge bg-primary-subtle text-primary">
-                                        <i className="ri-user-line me-1"></i>
-                                        Contact
-                                    </span>
-                                    <br />
-                                    <small className="text-muted">
-                                        <i className="ri-arrow-right-line me-1"></i>
-                                        via {cell.row.original.accountName}
-                                    </small>
-                                </div>
-                            );
-                        } else if (hasBank && !hasContact) {
-                            return (
-                                <div>
-                                    <span className="badge bg-success-subtle text-success">
-                                        <i className="ri-bank-line me-1"></i>
-                                        Bank
-                                    </span>
-                                </div>
-                            );
-                        } else if (hasContact && !hasBank) {
-                            return (
-                                <div>
-                                    <span className="badge bg-warning-subtle text-warning">
-                                        <i className="ri-user-line me-1"></i>
-                                        Contact
-                                    </span>
-                                </div>
-                            );
-                        } else {
-                            return (
-                                <div>
-                                    <span className="badge bg-secondary-subtle text-secondary">
-                                        <i className="ri-question-line me-1"></i>
-                                        Unknown
-                                    </span>
-                                </div>
-                            );
-                        }
             },
             enableColumnFilter: false
         },
@@ -226,42 +175,64 @@ const SalesInvoiceTable = ({
         {
             header: "Action",
             accessorKey: "action",
-            cell: (cell) => (
-                <div className="d-flex align-items-center gap-2">
-                    <Button
-                        color="success"
-                        size="sm"
-                        onClick={() => onGeneratePDF && onGeneratePDF(cell.row.original)}
-                        title="Generate Invoice PDF"
-                        disabled={pdfLoading === cell.row.original.id}
-                    >
-                        {pdfLoading === cell.row.original.id ? (
-                            <i className="ri-loader-4-line spin"></i>
-                        ) : (
-                            <RiFilePdfLine />
+            cell: (cell) => {
+                const invoice = cell.row.original;
+                const isPending = invoice.status === 'pending';
+                const hasRemainingAmount = parseFloat(invoice.remainingAmount || 0) > 0;
+                
+                return (
+                    <div className="d-flex align-items-center gap-2">
+                        {/* Show payment button for pending invoices with remaining amount */}
+                        {isPending && hasRemainingAmount && onCreatePayment && (
+                            <Button
+                                color="primary"
+                                size="sm"
+                                onClick={() => onCreatePayment(invoice)}
+                                title="Create Payment"
+                            >
+                                <RiWalletLine />
+                            </Button>
                         )}
-                    </Button>
-                    <UncontrolledDropdown direction="start">
-                        <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
-                            <RiMoreFill />
-                        </DropdownToggle>
-                        <DropdownMenu className="dropdown-menu-end">
-                            <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                                <RiEyeLine className="me-2 align-middle text-muted" /> View
-                            </DropdownItem>
-                            <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
-                                <RiPencilLine className="me-2 align-middle text-muted" /> Edit
-                            </DropdownItem>
-                            <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
-                                <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
-                            </DropdownItem>
-                        </DropdownMenu>
-                    </UncontrolledDropdown>
-                </div>
-            ),
+                        <Button
+                            color="success"
+                            size="sm"
+                            onClick={() => onGeneratePDF && onGeneratePDF(invoice)}
+                            title="Generate Invoice PDF"
+                            disabled={pdfLoading === invoice.id}
+                        >
+                            {pdfLoading === invoice.id ? (
+                                <i className="ri-loader-4-line spin"></i>
+                            ) : (
+                                <RiFilePdfLine />
+                            )}
+                        </Button>
+                        <UncontrolledDropdown direction="start">
+                            <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
+                                <RiMoreFill />
+                            </DropdownToggle>
+                            <DropdownMenu className="dropdown-menu-end">
+                                <DropdownItem onClick={() => onView(invoice)} className="py-2">
+                                    <RiEyeLine className="me-2 align-middle text-muted" /> View
+                                </DropdownItem>
+                                <DropdownItem onClick={() => onEdit(invoice)} className="py-2">
+                                    <RiPencilLine className="me-2 align-middle text-muted" /> Edit
+                                </DropdownItem>
+                                {isPending && hasRemainingAmount && onCreatePayment && (
+                                    <DropdownItem onClick={() => onCreatePayment(invoice)} className="py-2">
+                                        <RiWalletLine className="me-2 align-middle text-muted" /> Create Payment
+                                    </DropdownItem>
+                                )}
+                                <DropdownItem onClick={() => onDelete(invoice)} className="py-2">
+                                    <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
+                                </DropdownItem>
+                            </DropdownMenu>
+                        </UncontrolledDropdown>
+                    </div>
+                );
+            },
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete, onGeneratePDF, pdfLoading]);
+    ], [onView, onEdit, onDelete, onGeneratePDF, onCreatePayment, pdfLoading]);
 
     return (
         <>
@@ -281,6 +252,7 @@ const SalesInvoiceTable = ({
                     serverSide={true}
                     divClass="table-responsive sales-invoices-table"
                     loading={loading}
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

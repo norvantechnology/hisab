@@ -55,24 +55,24 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
   };
 
   const getPaymentMethodDisplay = () => {
-    const hasContact = invoice.contactName || invoice.contactId;
-    const hasBank = invoice.bankAccountName || invoice.accountName || invoice.bankAccountId;
+    const hasContact = invoice.contact?.name;
+    const hasBank = invoice.bankAccount?.name;
 
     if (hasContact && hasBank) {
       return (
         <div className="d-flex align-items-center">
           <RiUserLine className="text-primary me-2" size={20} />
-          <span className="fw-bold">{invoice.contactName}</span>
+          <span className="fw-bold">{invoice.contact.name}</span>
           <RiArrowRightLine className="text-muted mx-2" />
           <RiBankLine className="text-success me-2" size={20} />
-          <span className="text-success">{invoice.bankAccountName || invoice.accountName}</span>
+          <span className="text-success">{invoice.bankAccount.name}</span>
         </div>
       );
     } else if (hasBank && !hasContact) {
       return (
         <div className="d-flex align-items-center">
           <RiBankLine className="text-success me-2" size={20} />
-          <span className="fw-bold text-success">{invoice.bankAccountName || invoice.accountName}</span>
+          <span className="fw-bold text-success">{invoice.bankAccount.name}</span>
           <small className="text-muted ms-2">(Direct Bank Purchase)</small>
         </div>
       );
@@ -80,7 +80,7 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
       return (
         <div className="d-flex align-items-center">
           <RiUserLine className="text-primary me-2" size={20} />
-          <span className="fw-bold">{invoice.contactName}</span>
+          <span className="fw-bold">{invoice.contact.name}</span>
           <small className="text-muted ms-2">(No Payment Bank)</small>
         </div>
       );
@@ -93,16 +93,44 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
     return null;
   }
 
+  // Get items from the invoice
+  const invoiceItems = invoice.items || [];
+
 
 
   return (
     <>
-      <style>{spinnerStyle}</style>
-    <Modal isOpen={isOpen} toggle={toggle} size="xl" className="modal-dialog-centered">
-      <ModalHeader toggle={toggle} className="bg-light">
+      <style>
+        {`
+          ${spinnerStyle}
+          .compact-view-modal .card {
+            margin-bottom: 1rem;
+          }
+          .compact-view-modal .card-body {
+            padding: 0.75rem;
+          }
+          .compact-view-modal .card-title {
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+          }
+          .compact-view-modal .table th,
+          .compact-view-modal .table td {
+            padding: 0.5rem;
+            font-size: 0.875rem;
+            vertical-align: middle;
+          }
+          .compact-view-modal .border-top {
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+          }
+        `}
+      </style>
+    <Modal isOpen={isOpen} toggle={toggle} size="lg" className="compact-view-modal modal-dialog-centered">
+      <ModalHeader toggle={toggle} className="bg-light py-2">
         <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center w-100 gap-2">
           <div className="flex-grow-1">
-            <h5 className="mb-0">Invoice #{invoice.invoiceNumber}</h5>
+            <h6 className="mb-0">Invoice #{invoice.invoiceNumber}</h6>
             <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
           </div>
           <div className="flex-shrink-0">
@@ -111,78 +139,66 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
         </div>
       </ModalHeader>
       
-      <ModalBody className="p-4">
+      <ModalBody className="p-2">
         {/* Vendor & Payment Section */}
-        <Card className="mb-4 border-0 shadow-sm">
+        <Card className="border-0 shadow-sm">
           <CardBody>
-            <h6 className="card-title mb-3">
+            <h6 className="card-title mb-2">
               <RiUserLine className="me-2" />
               Vendor & Payment
             </h6>
-            {getPaymentMethodDisplay()}
+            <div className="mb-2">
+              {getPaymentMethodDisplay()}
+            </div>
             
-            {/* Additional vendor details if available */}
-            {(invoice.contactEmail || invoice.contactMobile || invoice.contactGstin) && (
-              <div className="mt-3 pt-3 border-top">
-                <Row>
-                  {invoice.contactEmail && (
-                    <Col md={4}>
-                      <small className="text-muted d-block">Email</small>
-                      <span>{invoice.contactEmail}</span>
-                    </Col>
-                  )}
-                  {invoice.contactMobile && (
-                    <Col md={4}>
-                      <small className="text-muted d-block">Mobile</small>
-                      <span>{invoice.contactMobile}</span>
-                    </Col>
-                  )}
-                  {invoice.contactGstin && (
-                    <Col md={4}>
-                      <small className="text-muted d-block">GSTIN</small>
-                      <span>{invoice.contactGstin}</span>
-                    </Col>
-                  )}
-                </Row>
+            {/* Additional vendor details and billing address in same section */}
+            {invoice.contact && (
+              <div className="row g-2">
+                {invoice.contact.email && (
+                  <div className="col-md-4">
+                    <small className="text-muted d-block">Email</small>
+                    <span className="small">{invoice.contact.email}</span>
+                  </div>
+                )}
+                {invoice.contact.mobile && (
+                  <div className="col-md-4">
+                    <small className="text-muted d-block">Mobile</small>
+                    <span className="small">{invoice.contact.mobile}</span>
+                  </div>
+                )}
+                {invoice.contact.gstin && (
+                  <div className="col-md-4">
+                    <small className="text-muted d-block">GSTIN</small>
+                    <span className="small">{invoice.contact.gstin}</span>
+                  </div>
+                )}
               </div>
             )}
 
-
-
-            {/* Contact Billing Address */}
-            {(invoice.contactBillingAddress1 || invoice.contactBillingCity || invoice.contactBillingState) && (
-              <div className="mt-3 pt-3 border-top">
-                <h6 className="text-muted mb-2">
-                  <i className="ri-map-pin-line me-2"></i>
-                  Billing Address
-                </h6>
-                <div className="border rounded p-3 bg-light">
-                  {invoice.contactBillingAddress1 && (
-                    <div className="mb-1">{invoice.contactBillingAddress1}</div>
-                  )}
-                  {invoice.contactBillingAddress2 && (
-                    <div className="mb-1">{invoice.contactBillingAddress2}</div>
-                  )}
-                  <div className="mb-1">
+            {/* Compact Billing Address */}
+            {invoice.contact && (invoice.contact.billingAddress1 || invoice.contact.billingCity || invoice.contact.billingState) && (
+              <div className="mt-2 pt-2 border-top">
+                <small className="text-muted d-flex align-items-center">
+                  <i className="ri-map-pin-line me-1"></i>
+                  <strong>Address:</strong>
+                  <span className="ms-1">
                     {[
-                      invoice.contactBillingCity,
-                      invoice.contactBillingState,
-                      invoice.contactBillingPincode
+                      invoice.contact.billingAddress1,
+                      invoice.contact.billingAddress2,
+                      [invoice.contact.billingCity, invoice.contact.billingState, invoice.contact.billingPincode].filter(Boolean).join(', '),
+                      invoice.contact.billingCountry
                     ].filter(Boolean).join(', ')}
-                  </div>
-                  {invoice.contactBillingCountry && (
-                    <div>{invoice.contactBillingCountry}</div>
-                  )}
-                </div>
+                  </span>
+                </small>
               </div>
             )}
           </CardBody>
         </Card>
 
         {/* Items Section */}
-        <Card className="mb-4 border-0 shadow-sm">
+        <Card className="border-0 shadow-sm">
           <CardBody>
-            <h6 className="card-title mb-3">Items ({invoice.items?.length || 0})</h6>
+            <h6 className="card-title mb-2">Items ({invoiceItems.length})</h6>
             <div className="table-responsive">
               <Table className="table-sm">
                 <thead className="table-light">
@@ -190,38 +206,50 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
                     <th>Product</th>
                     <th className="text-center">Qty</th>
                     <th className="text-end">Rate</th>
+                    <th className="text-end">Discount</th>
                     <th className="text-end">Tax</th>
                     <th className="text-end">Total</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {invoice.items?.map((item, index) => (
-                    <tr key={item.id || index}>
-                      <td>
-                        <div>
-                          <strong>{item.productName || item.name}</strong>
-                          {item.productCode && (
-                            <small className="text-muted d-block">{item.productCode}</small>
-                          )}
-                          {item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0 && (
-                            <div className="mt-1">
-                              {item.serialNumbers.map((serial, idx) => (
-                                <Badge key={idx} color="info" size="sm" className="me-1">
-                                  {serial}
-                                </Badge>
-                              ))}
-                            </div>
-                          )}
-                        </div>
+                  {invoiceItems && invoiceItems.length > 0 ? (
+                    invoiceItems.map((item, index) => (
+                      <tr key={item.id || index}>
+                        <td>
+                          <div>
+                            <strong>{item.name}</strong>
+                            {item.code && (
+                              <small className="text-muted d-block">{item.code}</small>
+                            )}
+                            {item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0 && (
+                              <div className="mt-1">
+                                {item.serialNumbers.map((serial, idx) => (
+                                  <Badge key={idx} color="info" size="sm" className="me-1">
+                                    {serial}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="text-center">{item.quantity}</td>
+                        <td className="text-end">{formatCurrency(item.rate)}</td>
+                        <td className="text-end">
+                          {item.discountRate > 0 ? `${item.discountRate}% (${formatCurrency(item.discount)})` : '0%'}
+                        </td>
+                        <td className="text-end">
+                          {item.taxRate}% ({formatCurrency(item.taxAmount)})
+                        </td>
+                        <td className="text-end fw-bold">{formatCurrency(item.total)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="text-center text-muted py-3">
+                        No items found
                       </td>
-                      <td className="text-center">{item.quantity}</td>
-                      <td className="text-end">{formatCurrency(item.rate)}</td>
-                      <td className="text-end">
-                        {item.taxRate}% ({formatCurrency(item.taxAmount)})
-                      </td>
-                      <td className="text-end fw-bold">{formatCurrency(item.total)}</td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </Table>
             </div>
@@ -229,43 +257,43 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
         </Card>
 
         {/* Summary Section */}
-        <Row>
-          <Col md={8}>
+        <Row className="g-2">
+          <Col md={5}>
             {invoice.internalNotes && (
-              <Card className="border-0 shadow-sm">
+              <Card className="border-0 shadow-sm h-100">
                 <CardBody>
-                  <h6 className="card-title">Notes</h6>
-                  <p className="mb-0 text-muted">{invoice.internalNotes}</p>
+                  <h6 className="card-title mb-2">Notes</h6>
+                  <p className="mb-0 text-muted small">{invoice.internalNotes}</p>
                 </CardBody>
               </Card>
             )}
           </Col>
-          <Col md={4}>
+          <Col md={7}>
             <Card className="border-0 shadow-sm">
               <CardBody>
-                <h6 className="card-title">Summary</h6>
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Basic Amount:</span>
-                  <span>{formatCurrency(invoice.basicAmount)}</span>
+                <h6 className="card-title mb-2">Summary</h6>
+                <div className="d-flex justify-content-between mb-1">
+                  <span className="small">Basic Amount:</span>
+                  <span className="small">{formatCurrency(invoice.basicAmount)}</span>
                 </div>
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Tax:</span>
-                  <span>{formatCurrency(invoice.taxAmount)}</span>
+                <div className="d-flex justify-content-between mb-1">
+                  <span className="small">Tax:</span>
+                  <span className="small">{formatCurrency(invoice.taxAmount)}</span>
                 </div>
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Discount:</span>
-                  <span>{formatCurrency(invoice.totalDiscount)}</span>
+                <div className="d-flex justify-content-between mb-1">
+                  <span className="small">Discount:</span>
+                  <span className="small text-danger">{formatCurrency(invoice.totalDiscount)}</span>
                 </div>
                 {invoice.roundOff && (
-                  <div className="d-flex justify-content-between mb-2">
-                    <span>Round Off:</span>
-                    <span>{formatCurrency(invoice.roundOff)}</span>
+                  <div className="d-flex justify-content-between mb-1">
+                    <span className="small">Round Off:</span>
+                    <span className="small">{formatCurrency(invoice.roundOff)}</span>
                   </div>
                 )}
-                <hr />
+                <hr className="my-2" />
                 <div className="d-flex justify-content-between">
-                  <strong>Total:</strong>
-                  <strong className="text-primary fs-5">{formatCurrency(invoice.netPayable)}</strong>
+                  <strong className="small">Total:</strong>
+                  <strong className="text-primary">{formatCurrency(invoice.netPayable)}</strong>
                 </div>
               </CardBody>
             </Card>
@@ -273,12 +301,13 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
         </Row>
       </ModalBody>
       
-      <ModalFooter className="bg-light">
-        <Button color="secondary" onClick={toggle}>
+      <ModalFooter className="bg-light py-2">
+        <Button color="secondary" size="sm" onClick={toggle}>
           <RiCloseLine className="me-1" /> Close
         </Button>
         <Button 
           color="primary"
+          size="sm"
           onClick={() => onGeneratePDF && onGeneratePDF(invoice)}
           disabled={pdfLoading === invoice.id}
         >

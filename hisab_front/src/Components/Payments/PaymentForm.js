@@ -15,12 +15,16 @@ const PaymentForm = ({
     bankAccounts = [],
     contacts = [],
     selectedPayment = null,
+    selectedInvoice = null,
+    invoiceType = null,
     onSubmit,
     isLoading = false
 }) => {
     const [pendingTransactions, setPendingTransactions] = useState([]);
     const [isLoadingTransactions, setIsLoadingTransactions] = useState(false);
     const [transactionAllocations, setTransactionAllocations] = useState({});
+    const [isEditModeInitialized, setIsEditModeInitialized] = useState(false);
+    const [hasAutoSelected, setHasAutoSelected] = useState(false);
 
     const parseAmount = useCallback((amount) => {
         const parsed = parseFloat(amount);
@@ -107,8 +111,11 @@ const PaymentForm = ({
             const transactionId = allocation.transactionId || 
                 (allocation.allocationType === 'current-balance' ? 'current-balance' : 
                  allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id);
-            ids.push(transactionId);
-            allocations[transactionId] = parseAmount(allocation.paidAmount || allocation.amount);
+            
+            // Ensure transaction ID is always a string for consistency
+            const transactionIdStr = transactionId.toString();
+            ids.push(transactionIdStr);
+            allocations[transactionIdStr] = parseAmount(allocation.paidAmount || allocation.amount);
         });
         return { ids, allocations };
     }, [parseAmount]);
@@ -117,13 +124,14 @@ const PaymentForm = ({
         setPendingTransactions([]);
         setTransactionAllocations({});
         setIsLoadingTransactions(false);
+        setHasAutoSelected(false);
+        setIsEditModeInitialized(false);
     }, []);
 
     // Check if any allocation exceeds pending amount
     const hasOverAllocation = useCallback(() => {
         return pendingTransactions.some(transaction => {
-            console.log("transaction",transaction)
-            const allocatedAmount = parseAmount(transactionAllocations[transaction.id] || 0);
+            const allocatedAmount = parseAmount(transactionAllocations[transaction.id.toString()] || 0);
             // Check if this transaction was part of the original payment
             const isOriginalTransaction = selectedPayment?.allocations?.some(allocation => 
                 allocation.transactionId === transaction.id || 
@@ -160,30 +168,111 @@ const PaymentForm = ({
         initialValues: {
             id: selectedPayment?.id || '',
             date: selectedPayment?.date?.split('T')[0] || new Date().toISOString().split('T')[0],
-            contactId: selectedPayment?.contactId || '',
+            contactId: selectedPayment?.contactId || selectedInvoice?.contactId || selectedInvoice?.contact?.id || '',
             bankId: selectedPayment?.bankId || '',
-            description: selectedPayment?.description || '',
+            description: selectedPayment?.description || 
+                (selectedInvoice ? `Payment for ${invoiceType === 'sale' ? 'Sales' : 'Purchase'} Invoice #${selectedInvoice.invoiceNumber}` : ''),
             adjustmentType: selectedPayment?.adjustmentType || 'none',
             adjustmentValue: selectedPayment?.adjustmentValue || 0,
-            transactionIds: extractTransactionData(selectedPayment).ids
+            transactionIds: isEditMode && selectedPayment ? extractTransactionData(selectedPayment).ids : []
         },
         validationSchema,
         onSubmit: async (values) => {
-            const bankImpact = calculations.bankImpact();
-            const transactionAllocationsData = values.transactionIds.map(id => {
-                const transaction = pendingTransactions.find(t => t.id === id);
+            console.log('🚀 Submitting payment with values:', values);
+            console.log('🏦 Bank Account Debug:', {
+                bankId: values.bankId,
+                bankIdType: typeof values.bankId,
+                bankIdExists: !!values.bankId,
+                availableBankAccounts: bankAccounts.length,
+                selectedBankAccount: bankAccounts.find(b => b.id === values.bankId)
+            });
+            
+            // Transform allocations to match the regular payment page structure
+            const allocations = values.transactionIds.map(id => {
+                const transaction = pendingTransactions.find(t => t.id.toString() === id);
+                
+                console.log('💰 Processing transaction allocation:', {
+                    id,
+                    transaction: transaction ? {
+                        id: transaction.id,
+                        type: transaction.type,
+                        invoiceNumber: transaction.invoiceNumber,
+                        balanceType: transaction.balanceType
+                    } : null,
+                    allocationAmount: transactionAllocations[id]
+                });
+                
                 return {
                     transactionId: id,
-                    transactionType: transaction?.type || 'purchase', // Include transaction type
-                    amount: transaction?.pendingAmount || 0,
-                    paidAmount: transactionAllocations[id] || 0,
-                    type: transaction?.balanceType || 'receivable'
+                    transactionType: transaction?.type || (invoiceType || 'purchase'),
+                    type: transaction?.balanceType || 'receivable',
+                    amount: parseFloat(transaction?.pendingAmount || 0),
+                    paidAmount: parseFloat(transactionAllocations[id] || 0)
                 };
             });
-            await onSubmit({
-                ...values,
-                transactionAllocations: transactionAllocationsData
+
+            // Debug form values before validation
+            console.log('🔍 Pre-validation debug:', {
+                'values.bankId': values.bankId,
+                'values.contactId': values.contactId,
+                'values.date': values.date,
+                'bankIdType': typeof values.bankId,
+                'bankIdParsed': parseInt(values.bankId),
+                'bankIdParsedType': typeof parseInt(values.bankId)
             });
+            
+            // Validate required fields before sending
+            if (!values.bankId) {
+                console.error('❌ Bank account not selected! values.bankId:', values.bankId);
+                return;
+            }
+            
+            if (!values.contactId) {
+                console.error('❌ Contact not selected! values.contactId:', values.contactId);
+                return;
+            }
+            
+            // Structure payload exactly like regular payment page  
+            const payload = {
+                contactId: parseInt(values.contactId),
+                bankAccountId: parseInt(values.bankId),
+                date: values.date,
+                description: values.description || '',
+                adjustmentType: values.adjustmentType || 'none',
+                adjustmentValue: values.adjustmentType !== 'none' ? parseFloat(values.adjustmentValue) : 0,
+                transactionAllocations: allocations
+            };
+            
+            console.log('🛠️ Payload after creation (before cleanup):', payload);
+            
+            // Only remove null/undefined fields, not zero values or NaN
+            Object.keys(payload).forEach(key => {
+                const value = payload[key];
+                // Don't remove if it's a valid number (including 0) or valid string
+                if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+                    console.log('🗑️ Removing invalid field:', key, value);
+                    delete payload[key];
+                }
+            });
+            
+            // Ensure bankAccountId is always present if bankId was selected
+            if (values.bankId && !payload.hasOwnProperty('bankAccountId')) {
+                payload.bankAccountId = parseInt(values.bankId);
+                console.log('🔧 Force-added missing bankAccountId:', payload.bankAccountId);
+            }
+            
+            console.log('🔍 Final payload validation:', {
+                'values.bankId': values.bankId,
+                'payload.bankAccountId': payload.bankAccountId,
+                'contactId': payload.contactId,
+                'date': payload.date,
+                'hasAllRequiredFields': !!(payload.contactId && payload.bankAccountId && payload.date && payload.transactionAllocations?.length),
+                'transactionAllocations.length': payload.transactionAllocations.length
+            });
+            
+            console.log('📤 FINAL PAYLOAD being sent to API:', payload);
+            
+            await onSubmit(payload);
         }
     });
 
@@ -217,14 +306,14 @@ const PaymentForm = ({
     const calculations = {
         totalReceivable: () => {
             return validation.values.transactionIds.reduce((sum, id) => {
-                const transaction = pendingTransactions.find(t => t.id === id);
+                const transaction = pendingTransactions.find(t => t.id.toString() === id);
                 const allocatedAmount = parseAmount(transactionAllocations[id] || 0);
                 return transaction?.balanceType === 'receivable' ? sum + allocatedAmount : sum;
             }, 0);
         },
         totalPayable: () => {
             return validation.values.transactionIds.reduce((sum, id) => {
-                const transaction = pendingTransactions.find(t => t.id === id);
+                const transaction = pendingTransactions.find(t => t.id.toString() === id);
                 const allocatedAmount = parseAmount(transactionAllocations[id] || 0);
                 return transaction?.balanceType === 'payable' ? sum + allocatedAmount : sum;
             }, 0);
@@ -309,7 +398,7 @@ const PaymentForm = ({
             (allocation.allocationType === 'current-balance' ? 'current-balance' : 
              allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id)
         ) : [];
-    }, [selectedPayment]);
+    }, [selectedPayment?.id]);
 
     const fetchPendingTransactions = useCallback(async (contactId) => {
         if (!contactId) return;
@@ -326,6 +415,18 @@ const PaymentForm = ({
             // Step 2: Get fresh pending transactions from API
             const response = await getPendingTransactions(contactId);
             const freshTransactions = response.transactions || [];
+            
+            console.log('📊 API Response for contactId', contactId, ':', {
+                success: response.success,
+                transactionCount: freshTransactions.length,
+                transactions: freshTransactions.map(t => ({
+                    id: t.id,
+                    type: t.type,
+                    invoiceNumber: t.invoiceNumber,
+                    pendingAmount: t.pendingAmount
+                }))
+            });
+
 
             // Step 3: Get IDs of existing transactions to avoid duplicates
             const existingIds = isEditMode ? getExistingTransactionIds() : [];
@@ -362,13 +463,27 @@ const PaymentForm = ({
             // Step 6: Combine existing (updated) and new transactions
             allTransactions = [...allTransactions, ...newTransactions];
             
-            console.log("Merged transactions:", {
-                existing: isEditMode ? getExistingTransactionIds() : [],
-                fresh: freshTransactions.map(t => ({ id: t.id, pendingAmount: t.pendingAmount })),
-                final: allTransactions.map(t => ({ id: t.id, pendingAmount: t.pendingAmount }))
-            });
-            
             setPendingTransactions(allTransactions);
+            
+            // Step 7: In edit mode, ensure transaction allocations are preserved
+            if (isEditMode && selectedPayment?.allocations) {
+                const preservedAllocations = {};
+                selectedPayment.allocations.forEach(allocation => {
+                    const transactionId = (allocation.transactionId || 
+                        (allocation.allocationType === 'current-balance' ? 'current-balance' : 
+                         allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id)).toString();
+                    
+                    preservedAllocations[transactionId] = parseAmount(allocation.paidAmount || allocation.amount);
+                });
+                
+                // Merge with any existing allocations to avoid overwriting user changes
+                setTransactionAllocations(prev => ({
+                    ...prev,
+                    ...preservedAllocations
+                }));
+                
+                console.log('💾 Preserved existing allocations:', preservedAllocations);
+            }
         } catch (error) {
             console.error('Error fetching pending transactions:', error);
             setPendingTransactions([]);
@@ -377,34 +492,59 @@ const PaymentForm = ({
         } finally {
             setIsLoadingTransactions(false);
         }
-    }, [isEditMode, selectedPayment, getExistingTransactionIds, transformAllocationsToPendingTransactions]);
+    }, [isEditMode, selectedPayment?.id]);
 
     const initializeEditMode = useCallback(() => {
-        if (selectedPayment?.allocations) {
-            const initialAllocations = {};
-            selectedPayment.allocations.forEach(allocation => {
-                const transactionId = allocation.transactionId || 
-                    (allocation.allocationType === 'current-balance' ? 'current-balance' : 
-                     allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.id);
-                
-                // Use the paid amount from the allocation as the initial value
-                const paidAmount = parseAmount(allocation.paidAmount || allocation.amount);
-                initialAllocations[transactionId] = paidAmount;
+        if (selectedPayment?.allocations && pendingTransactions.length > 0) {
+            const { ids: initialTransactionIds, allocations: initialAllocations } = extractTransactionData(selectedPayment);
+            
+            console.log('🔧 Edit mode initializing with:', {
+                selectedPaymentId: selectedPayment.id,
+                allocations: initialAllocations,
+                transactionIds: initialTransactionIds,
+                pendingTransactionsCount: pendingTransactions.length
             });
+            
+            // Set both allocations and selected transaction IDs
             setTransactionAllocations(initialAllocations);
+            validation.setFieldValue('transactionIds', initialTransactionIds);
         }
-    }, [selectedPayment, parseAmount]);
+    }, [selectedPayment?.id, pendingTransactions.length]);
 
     useEffect(() => {
         if (isOpen) {
-            resetStates();
             if (isEditMode && selectedPayment) {
-                initializeEditMode();
+                // For edit mode, first fetch transactions then initialize
                 const contactId = selectedPayment.contactId;
                 if (contactId) {
+                    // Don't call initializeEditMode here - let the useEffect handle it after transactions load
                     fetchPendingTransactions(contactId);
                 }
+            } else if (selectedInvoice) {
+                resetStates();
+                // Handle invoice-based payment creation
+                // Handle both flat contactId and nested contact.id structures
+                const contactId = selectedInvoice.contactId?.toString() || selectedInvoice.contact?.id?.toString();
+                
+                console.log('🔍 Invoice payment setup:', {
+                    selectedInvoice,
+                    flatContactId: selectedInvoice.contactId,
+                    nestedContactId: selectedInvoice.contact?.id,
+                    resolvedContactId: contactId
+                });
+                
+                if (contactId) {
+                    // Force set the contact ID in the form
+                    validation.setFieldValue('contactId', contactId);
+                    
+                    // Fetch pending transactions
+                    fetchPendingTransactions(contactId);
+                } else {
+                    console.warn('⚠️ No contact ID found in selectedInvoice:', selectedInvoice);
+                }
             } else {
+                resetStates();
+                // Regular payment creation
                 const contactId = validation.values.contactId;
                 if (contactId) {
                     fetchPendingTransactions(contactId);
@@ -414,36 +554,197 @@ const PaymentForm = ({
             validation.resetForm();
             resetStates();
         }
-    }, [isOpen, isEditMode, selectedPayment, resetStates, initializeEditMode, fetchPendingTransactions]);
+    }, [isOpen, isEditMode, selectedPayment?.id, selectedInvoice?.id, invoiceType]);
 
     useEffect(() => {
-        if (isOpen && !isEditMode) {
+        if (isOpen && !isEditMode && !selectedInvoice) {
+            // Only for regular payment creation (not invoice-based)
             const contactId = validation.values.contactId;
-            if (contactId) fetchPendingTransactions(contactId);
+            if (contactId) {
+                fetchPendingTransactions(contactId);
+            }
         }
-    }, [isOpen, isEditMode, validation.values.contactId, fetchPendingTransactions]);
+    }, [isOpen, isEditMode, selectedInvoice, validation.values.contactId]);
+
+    // Additional useEffect to ensure edit mode data is properly set after pending transactions are loaded
+    useEffect(() => {
+        if (isEditMode && selectedPayment && pendingTransactions.length > 0 && !isEditModeInitialized) {
+            const existingTransactionIds = extractTransactionData(selectedPayment).ids;
+            const existingAllocations = extractTransactionData(selectedPayment).allocations;
+            
+            console.log('🔧 Initializing form with existing payment data (one-time):', {
+                existingIds: existingTransactionIds,
+                existingAllocations,
+                currentIds: validation.values.transactionIds,
+                currentAllocations: transactionAllocations,
+                pendingTransactionsLoaded: pendingTransactions.length
+            });
+            
+            // Set transaction IDs in form
+            validation.setFieldValue('transactionIds', existingTransactionIds);
+            
+            // Set allocation amounts
+            setTransactionAllocations(existingAllocations);
+            
+            // Mark as initialized to prevent multiple calls
+            setIsEditModeInitialized(true);
+            
+            // Validate that the pending transactions include our selected transactions
+            const missingTransactions = existingTransactionIds.filter(id => 
+                !pendingTransactions.some(t => t.id.toString() === id)
+            );
+            
+            if (missingTransactions.length > 0) {
+                console.warn('⚠️ Some transactions from payment not found in pending transactions:', missingTransactions);
+            }
+        }
+    }, [isEditMode, selectedPayment?.id, pendingTransactions.length, isEditModeInitialized]);
+
+    // Auto-select the invoice transaction after pending transactions are loaded
+    useEffect(() => {
+        console.log('🔍 Auto-selection check:', {
+            isOpen,
+            hasSelectedInvoice: !!selectedInvoice,
+            isEditMode,
+            pendingTransactionsCount: pendingTransactions.length,
+            hasAutoSelected,
+            selectedInvoiceId: selectedInvoice?.id
+        });
+        
+        if (isOpen && selectedInvoice && !isEditMode && pendingTransactions.length > 0 && !hasAutoSelected) {
+            console.log('🎯 Starting auto-selection for invoice:', selectedInvoice.invoiceNumber);
+            
+            // Find the specific invoice in the pending transactions
+            const invoiceId = selectedInvoice.id.toString();
+            
+            console.log('📋 Available transactions for matching:', pendingTransactions.map(t => ({ 
+                id: t.id, 
+                type: t.type,
+                invoiceNumber: t.invoiceNumber,
+                description: t.description,
+                pendingAmount: t.pendingAmount
+            })));
+            
+            // Try different matching strategies since transaction structure might vary
+            let matchingTransaction = pendingTransactions.find(t => {
+                console.log('🔍 Testing match for transaction:', {
+                    transactionId: t.id,
+                    transactionIdStr: t.id.toString(),
+                    targetId: invoiceId,
+                    idMatch: t.id.toString() === invoiceId,
+                    transactionType: t.type,
+                    targetType: invoiceType,
+                    typeMatch: t.type === invoiceType,
+                    transactionInvoiceNumber: t.invoiceNumber,
+                    targetInvoiceNumber: selectedInvoice.invoiceNumber,
+                    invoiceNumberMatch: t.invoiceNumber === selectedInvoice.invoiceNumber
+                });
+                
+                // Try exact ID match
+                if (t.id.toString() === invoiceId) {
+                    console.log('✅ MATCH FOUND - Exact ID match!');
+                    return true;
+                }
+                
+                // Try matching by transaction type and ID
+                if (invoiceType === 'sale' && t.type === 'sale' && t.transactionId?.toString() === invoiceId) {
+                    console.log('✅ MATCH FOUND - Sale type + ID match!');
+                    return true;
+                }
+                if (invoiceType === 'purchase' && t.type === 'purchase' && t.transactionId?.toString() === invoiceId) {
+                    console.log('✅ MATCH FOUND - Purchase type + ID match!');
+                    return true;
+                }
+                
+                // Try matching by invoice number
+                if (t.invoiceNumber === selectedInvoice.invoiceNumber) {
+                    console.log('✅ MATCH FOUND - Invoice number match!');
+                    return true;
+                }
+                
+                return false;
+            });
+            
+            if (matchingTransaction) {
+                const transactionId = matchingTransaction.id.toString();
+                
+                console.log('📝 Setting form values:', {
+                    transactionId,
+                    currentTransactionIds: validation.values.transactionIds,
+                    settingTo: [transactionId]
+                });
+                
+                // Auto-select the specific invoice using the toggle function for proper state management
+                toggleTransactionSelection(transactionId);
+                
+                // Override the default amount with the specific remaining amount from the invoice  
+                const remainingAmount = parseFloat(selectedInvoice.remainingAmount || 0);
+                setTransactionAllocations(prev => ({
+                    ...prev,
+                    [transactionId]: remainingAmount
+                }));
+                
+                setHasAutoSelected(true);
+                
+                console.log('✅ Auto-selection complete for transaction:', transactionId);
+            } else {
+                console.warn('❌ Selected invoice not found in pending transactions:', {
+                    invoiceId,
+                    invoiceType,
+                    invoiceNumber: selectedInvoice.invoiceNumber,
+                    availableTransactions: pendingTransactions.map(t => ({ 
+                        id: t.id, 
+                        type: t.type, 
+                        transactionId: t.transactionId,
+                        invoiceNumber: t.invoiceNumber
+                    }))
+                });
+            }
+        }
+    }, [isOpen, selectedInvoice, isEditMode, pendingTransactions, invoiceType, hasAutoSelected]);
 
     const toggleTransactionSelection = (transactionId) => {
+        // Ensure transactionId is always a string for consistency
+        const transactionIdStr = transactionId.toString();
+        
         const currentIds = [...validation.values.transactionIds];
-        const index = currentIds.indexOf(transactionId);
+        const index = currentIds.indexOf(transactionIdStr);
+        
+        console.log('🔄 Toggling transaction selection:', {
+            transactionId: transactionIdStr,
+            currentIds,
+            index,
+            action: index === -1 ? 'ADD' : 'REMOVE'
+        });
+        
         if (index === -1) {
-            currentIds.push(transactionId);
-            const transaction = pendingTransactions.find(t => t.id === transactionId);
+            currentIds.push(transactionIdStr);
+            const transaction = pendingTransactions.find(t => t.id.toString() === transactionIdStr);
             if (transaction) {
                 // Always use the fresh pending amount from the API
                 const defaultAmount = transaction.pendingAmount;
                 setTransactionAllocations(prev => ({
                     ...prev,
-                    [transactionId]: parseAmount(defaultAmount)
+                    [transactionIdStr]: parseAmount(defaultAmount)
                 }));
+                
+                console.log('✅ Transaction added to selection:', {
+                    transactionId: transactionIdStr,
+                    defaultAmount,
+                    newCurrentIds: currentIds
+                });
+            } else {
+                console.error('❌ Transaction not found in pendingTransactions:', transactionIdStr);
             }
         } else {
             currentIds.splice(index, 1);
             setTransactionAllocations(prev => {
                 const newAllocations = { ...prev };
-                delete newAllocations[transactionId];
+                delete newAllocations[transactionIdStr];
                 return newAllocations;
             });
+            
+            console.log('➖ Transaction removed from selection:', transactionIdStr);
         }
         validation.setFieldValue('transactionIds', currentIds);
     };
@@ -462,23 +763,18 @@ const PaymentForm = ({
         !hasOverAllocation() &&
         !hasZeroAllocation();
 
-    // Debug validation status
-    const debugValidation = {
+    console.log('PaymentForm Debug:', {
         isValid: validation.isValid,
         hasTransactions: validation.values.transactionIds.length > 0,
-        noOverAllocation: !hasOverAllocation(),
-        noZeroAllocation: !hasZeroAllocation(),
-        transactionIds: validation.values.transactionIds,
-        allocations: transactionAllocations,
-        errors: validation.errors,
-        touched: validation.touched,
-        values: validation.values,
-        adjustmentType: validation.values.adjustmentType,
-        adjustmentValue: validation.values.adjustmentValue,
-        isAdjustmentValid: validation.values.adjustmentType === 'none' || (validation.values.adjustmentValue > 0)
-    };
-
-    console.log('PaymentForm Debug:', debugValidation);
+        contactId: validation.values.contactId,
+        bankId: validation.values.bankId,
+        selectedTransactions: validation.values.transactionIds,
+        pendingTransactionsCount: pendingTransactions.length,
+        selectedInvoiceId: selectedInvoice?.id,
+        hasAutoSelected,
+        bankAccountsCount: bankAccounts.length,
+        bankAccountsAvailable: bankAccounts.map(b => ({ id: b.id, name: b.accountName }))
+    });
 
     return (
         <Modal isOpen={isOpen} toggle={toggle} size="xl">
@@ -699,8 +995,8 @@ const PaymentForm = ({
                                     </thead>
                                     <tbody>
                                         {pendingTransactions.map((transaction) => {
-                                            const isSelected = validation.values.transactionIds.includes(transaction.id);
-                                            const allocatedAmount = parseAmount(transactionAllocations[transaction.id] || 0);
+                                            const isSelected = validation.values.transactionIds.includes(transaction.id.toString());
+                                            const allocatedAmount = parseAmount(transactionAllocations[transaction.id.toString()] || 0);
                                             // Check if this transaction was part of the original payment
                                             const isOriginalTransaction = selectedPayment?.allocations?.some(allocation => 
                                                 allocation.transactionId === transaction.id || 

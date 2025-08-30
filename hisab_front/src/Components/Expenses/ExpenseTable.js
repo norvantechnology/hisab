@@ -256,6 +256,7 @@ const ExpenseTable = ({ expenses, loading, pagination, onPageChange, onView, onE
                     handlePageChange={onPageChange}
                     serverSide={true}
                     divClass="table-responsive expense-table"
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

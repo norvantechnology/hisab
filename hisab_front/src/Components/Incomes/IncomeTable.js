@@ -237,6 +237,7 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
                     handlePageChange={onPageChange}
                     serverSide={true}
                     divClass="table-responsive income-table"
+                    onRowDoubleClick={onView}
                 />
             </CardBody>
         </Card>

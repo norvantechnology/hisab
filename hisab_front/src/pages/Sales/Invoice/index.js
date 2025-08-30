@@ -7,11 +7,15 @@ import SalesInvoiceFilter from '../../../Components/Sales/Invoice/SalesInvoiceFi
 import SalesInvoiceTable from '../../../Components/Sales/Invoice/SalesInvoiceTable';
 import SalesInvoiceForm from '../../../Components/Sales/Invoice/SalesInvoiceForm';
 import SalesInvoiceViewModal from '../../../Components/Sales/Invoice/SalesInvoiceViewModal';
+import PaymentForm from '../../../Components/Payments/PaymentForm';
 import DeleteModal from "../../../Components/Common/DeleteModal";
 import ExportCSVModal from '../../../Components/Common/ExportCSVModal';
 import Loader from '../../../Components/Common/Loader';
 import { getCurrentMonthRange } from '../../../utils/dateUtils';
 import { listSales, createSale, updateSales, deleteSale, getSale, generateSalesInvoicePDF, downloadSalesPDF } from '../../../services/salesInvoice';
+import { createPayment } from '../../../services/payment';
+import { getBankAccounts } from '../../../services/bankAccount';
+import { getContacts } from '../../../services/contacts';
 import useCompanySelectionState from '../../../hooks/useCompanySelection';
 
 const SalesInvoicePage = () => {
@@ -40,12 +44,16 @@ const SalesInvoicePage = () => {
             delete: false,
             main: false,
             view: false,
-            export: false
+            export: false,
+            payment: false
         },
         selectedInvoice: null,
         isEditMode: false,
         apiLoading: false,
-        pdfLoading: null
+        pdfLoading: null,
+        bankAccounts: [],
+        contacts: [],
+        selectedInvoiceForPayment: null
     });
 
     const {
@@ -57,11 +65,33 @@ const SalesInvoicePage = () => {
         selectedInvoice,
         isEditMode,
         apiLoading,
-        pdfLoading
+        pdfLoading,
+        bankAccounts,
+        contacts,
+        selectedInvoiceForPayment
     } = state;
 
     // Use the modern company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
+
+    const fetchBankAccountsAndContacts = async () => {
+        if (!selectedCompanyId) return;
+
+        try {
+            const [bankAccountsResponse, contactsResponse] = await Promise.all([
+                getBankAccounts({}),
+                getContacts({})
+            ]);
+
+            setState(prev => ({
+                ...prev,
+                bankAccounts: bankAccountsResponse?.success ? bankAccountsResponse.accounts || [] : [],
+                contacts: contactsResponse?.success ? contactsResponse.contacts || [] : []
+            }));
+        } catch (error) {
+            console.error('Error fetching bank accounts and contacts:', error);
+        }
+    };
 
     const fetchData = async () => {
         // Don't proceed if no company is selected
@@ -112,6 +142,7 @@ const SalesInvoicePage = () => {
     useEffect(() => {
         if (selectedCompanyId) {
         fetchData();
+            fetchBankAccountsAndContacts();
         }
     }, [
         pagination.page,
@@ -191,28 +222,13 @@ const SalesInvoicePage = () => {
         }
     };
 
-    const handleViewClick = async (invoice) => {
-        try {
-            setState(prev => ({ ...prev, apiLoading: true }));
-            
-            // Fetch detailed invoice data including billing address
-            const response = await getSale({ id: invoice.id });
-            
-            if (response.success) {
+    const handleViewClick = (invoice) => {
+        // Use the existing invoice data from the list API - no need for additional API call
         setState(prev => ({
             ...prev,
-                    selectedInvoice: response.sale,
-                    modals: { ...prev.modals, view: true },
-                    apiLoading: false
+            selectedInvoice: invoice,
+            modals: { ...prev.modals, view: true }
         }));
-            } else {
-                throw new Error(response.message || "Failed to fetch invoice details");
-            }
-        } catch (error) {
-            console.error("Error fetching invoice details:", error);
-            toast.error(error.message || "Failed to load invoice details");
-            setState(prev => ({ ...prev, apiLoading: false }));
-        }
     };
 
     const handleDeleteClick = (invoice) => {
@@ -265,6 +281,46 @@ const SalesInvoicePage = () => {
             toast.error(error.message || "Failed to generate sales invoice PDF");
         } finally {
             setState(prev => ({ ...prev, pdfLoading: null }));
+        }
+    };
+
+    const handleCreatePayment = (invoice) => {
+        // Only allow payment for pending invoices with remaining amount
+        if (invoice.status !== 'pending' || parseFloat(invoice.remainingAmount || 0) <= 0) {
+            toast.error("Payment can only be created for pending invoices with remaining amount");
+            return;
+        }
+
+        setState(prev => ({
+            ...prev,
+            selectedInvoiceForPayment: invoice,
+            modals: { ...prev.modals, payment: true }
+        }));
+    };
+
+    const handleSubmitPayment = async (paymentData) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+
+            const response = await createPayment(paymentData);
+
+            if (response.success) {
+                toast.success("Payment created successfully");
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, payment: false },
+                    selectedInvoiceForPayment: null,
+                    apiLoading: false
+                }));
+                
+                // Refresh the data to show updated amounts
+                fetchData();
+            } else {
+                throw new Error(response.message || "Failed to create payment");
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(error.message || "Failed to create payment");
         }
     };
 
@@ -380,6 +436,7 @@ const SalesInvoicePage = () => {
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
                         onGeneratePDF={handleGeneratePDF}
+                        onCreatePayment={handleCreatePayment}
                         pdfLoading={pdfLoading}
                     />
                 )}
@@ -414,6 +471,17 @@ const SalesInvoicePage = () => {
                     onCloseClick={() => toggleModal('export', false)}
                     data={prepareExportData()}
                     filename="sales_invoices"
+                />
+
+                <PaymentForm
+                    isOpen={modals.payment}
+                    toggle={() => toggleModal('payment', false)}
+                    bankAccounts={bankAccounts}
+                    contacts={contacts}
+                    onSubmit={handleSubmitPayment}
+                    isLoading={apiLoading}
+                    selectedInvoice={selectedInvoiceForPayment}
+                    invoiceType="sale"
                 />
             </Container>
         </div>
