@@ -9,12 +9,21 @@ import ParticlesAuth from "../AuthenticationInner/ParticlesAuth";
 import { login } from "../../services/auth";
 import { getAllCompanies } from "../../services/company";
 import { setSelectedCompany } from "../../utils/companyEvents";
+import { setAuthData } from "../../utils/authUtils";
+import { debugAuthState } from "../../utils/authDebug";
 import logoLight from "../../assets/images/logo-light.png";
 
 const Login = () => {
     const navigate = useNavigate();
     const [passwordShow, setPasswordShow] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [rememberMe, setRememberMe] = useState(false);
+
+    // Make debug function available globally for troubleshooting
+    React.useEffect(() => {
+        window.debugAuthState = debugAuthState;
+        console.log('Debug function available: window.debugAuthState()');
+    }, []);
 
     const validation = useFormik({
         initialValues: {
@@ -28,10 +37,19 @@ const Login = () => {
         onSubmit: async (values) => {
             setLoading(true);
             try {
-                const { token, user, message } = await login(values);
-                // Store token and user data in session storage
-                sessionStorage.setItem('authToken', token);
-                sessionStorage.setItem('userData', JSON.stringify(user));
+                console.log('Login attempt with remember me:', rememberMe);
+                const { token, user, message, expiresIn } = await login({
+                    ...values,
+                    rememberMe
+                });
+                
+                console.log('Login response:', { token: !!token, user, message, expiresIn, rememberMe });
+                
+                // Use utility function to set auth data
+                setAuthData(token, user, rememberMe);
+                
+                console.log('Auth data stored. Remember me:', rememberMe);
+                console.log('Token stored in:', rememberMe ? 'localStorage' : 'sessionStorage');
 
                 // Fetch companies and auto-select first one
                 try {
@@ -39,20 +57,29 @@ const Login = () => {
                     if (companiesResponse?.success && companiesResponse.companies?.length > 0) {
                         const firstCompany = companiesResponse.companies[0];
                         setSelectedCompany(firstCompany.id, firstCompany);
+                        console.log('Company selected:', firstCompany.name);
                     }
                 } catch (companyError) {
                     console.log("Error fetching companies after login:", companyError);
                     // Don't fail the login if company fetch fails
                 }
 
-                // Show success message from API
-                toast.success(message || "Login successful!");
+                // Show success message with expiration info
+                const successMessage = rememberMe 
+                    ? `${message || "Login successful!"} You'll stay logged in for 30 days.`
+                    : message || "Login successful!";
+                toast.success(successMessage);
 
-                // Redirect to bank accounts
-                navigate('/bank-accounts');
+                console.log('About to redirect to business-dashboard...');
+                
+                // Small delay to ensure auth data is properly set
+                setTimeout(() => {
+                    console.log('Executing navigation to business-dashboard');
+                    navigate('/business-dashboard');
+                }, 100);
 
             } catch (error) {
-                console.log("error>>", error)
+                console.log("Login error:", error)
                 // Show error message from API response or default message
                 const errorMessage = error.message || "Login failed";
                 toast.error(errorMessage);
@@ -146,8 +173,17 @@ const Login = () => {
                                                 </div>
 
                                                 <div className="form-check">
-                                                    <Input className="form-check-input" type="checkbox" id="auth-remember-check" />
-                                                    <Label className="form-check-label" htmlFor="auth-remember-check">Remember me</Label>
+                                                    <Input 
+                                                        className="form-check-input" 
+                                                        type="checkbox" 
+                                                        id="auth-remember-check"
+                                                        checked={rememberMe}
+                                                        onChange={(e) => setRememberMe(e.target.checked)}
+                                                    />
+                                                    <Label className="form-check-label" htmlFor="auth-remember-check">
+                                                        <span>Remember me for 30 days</span>
+                                                        <small className="text-muted d-block">Keep me signed in on this device</small>
+                                                    </Label>
                                                 </div>
 
                                                 <div className="mt-4">

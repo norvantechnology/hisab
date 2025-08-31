@@ -94,11 +94,56 @@ class APIClient {
   };
 }
 const getLoggedinUser = () => {
-  const user = sessionStorage.getItem("authUser");
-  if (!user) {
+  // Check for remember me authentication in localStorage first
+  let token = localStorage.getItem('authToken');
+  let userData = localStorage.getItem('userData');
+  let isRemembered = localStorage.getItem('rememberMe') === 'true';
+  
+  // If remember me was used, check if token is still valid
+  if (isRemembered && token) {
+    const tokenExpiry = localStorage.getItem('tokenExpiry');
+    if (tokenExpiry && new Date() > new Date(tokenExpiry)) {
+      // Token expired, clear localStorage
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('userData');
+      localStorage.removeItem('rememberMe');
+      localStorage.removeItem('tokenExpiry');
+      token = null;
+      userData = null;
+    }
+  }
+  
+  // If no token in localStorage or it expired, check sessionStorage
+  if (!token) {
+    token = sessionStorage.getItem('authToken');
+    userData = sessionStorage.getItem('userData');
+  }
+  
+  // Legacy support - check for old authUser format
+  if (!token && !userData) {
+    const legacyUser = sessionStorage.getItem("authUser");
+    if (legacyUser) {
+      try {
+        const parsed = JSON.parse(legacyUser);
+        return parsed;
+      } catch (e) {
+        return null;
+      }
+    }
+  }
+  
+  if (!token || !userData) {
     return null;
-  } else {
-    return JSON.parse(user);
+  }
+  
+  try {
+    const user = JSON.parse(userData);
+    return {
+      token,
+      ...user
+    };
+  } catch (e) {
+    return null;
   }
 };
 

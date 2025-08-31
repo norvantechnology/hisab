@@ -216,7 +216,7 @@ export async function verifyEmail(req, res) {
 }
 
 export async function login(req, res) {
-  const { email, password } = req.body;
+  const { email, password, rememberMe } = req.body;
 
   if (!email || !password) {
     return errorResponse(res, "Email and password are required", 400);
@@ -258,7 +258,8 @@ export async function login(req, res) {
     // Remove sensitive data
     delete user.password;
 
-    const token = generateToken(user);
+    // Generate token with remember me preference
+    const token = generateToken(user, rememberMe);
 
     return successResponse(res, {
       message: "Login successful",
@@ -268,6 +269,8 @@ export async function login(req, res) {
         email: user.email,
         role: user.role,
       },
+      rememberMe: rememberMe || false,
+      expiresIn: rememberMe ? '30 days' : '7 days'
     });
 
   } catch (error) {

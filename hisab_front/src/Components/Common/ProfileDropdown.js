@@ -3,12 +3,30 @@ import { Dropdown, DropdownItem, DropdownMenu, DropdownToggle } from 'reactstrap
 import { Link } from 'react-router-dom';
 
 const ProfileDropdown = () => {
-    // Get user data from session storage
-    const userData = JSON.parse(sessionStorage.getItem("userData")) || {
-        name: "User",
-        email: "",
-        role: "user"
+    // Get user data from both storages (localStorage for remember me, sessionStorage for regular login)
+    const getUserData = () => {
+        let userData = sessionStorage.getItem("userData") || localStorage.getItem("userData");
+        
+        if (userData) {
+            try {
+                return JSON.parse(userData);
+            } catch (e) {
+                return {
+                    name: "User",
+                    email: "",
+                    role: "user"
+                };
+            }
+        }
+        
+        return {
+            name: "User",
+            email: "",
+            role: "user"
+        };
     };
+
+    const userData = getUserData();
 
     // Dropdown Toggle State
     const [isProfileDropdown, setIsProfileDropdown] = useState(false);

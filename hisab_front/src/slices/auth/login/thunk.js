@@ -4,6 +4,7 @@ import {
   postFakeLogin,
   postJwtLogin,
 } from "../../../helpers/fakebackend_helper";
+import { clearAllAuthData } from "../../../utils/authUtils";
 
 import { loginSuccess, logoutUserSuccess, apiError, reset_login_flag } from './reducer';
 
@@ -39,13 +40,13 @@ export const loginUser = (user, history) => async (dispatch) => {
         data = finallogin.data;
         if (finallogin.status === "success") {
           dispatch(loginSuccess(data));
-          history('/dashboard')
+          history('/business-dashboard')
         } else {
           dispatch(apiError(finallogin));
         }
       } else {
         dispatch(loginSuccess(data));
-        history('/dashboard')
+        history('/business-dashboard')
       }
     }
   } catch (error) {
@@ -55,7 +56,9 @@ export const loginUser = (user, history) => async (dispatch) => {
 
 export const logoutUser = () => async (dispatch) => {
   try {
-    sessionStorage.removeItem("authUser");
+    // Use utility function to clear all auth data
+    clearAllAuthData();
+    
     let fireBaseBackend = getFirebaseBackend();
     if (process.env.REACT_APP_DEFAULTAUTH === "firebase") {
       const response = fireBaseBackend.logout;

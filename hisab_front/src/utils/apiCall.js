@@ -112,17 +112,30 @@ export const apiCall = async ({
 
 apiClient.interceptors.request.use(
   (config) => {
-    // Check for regular user token first
-    let token = sessionStorage.getItem('authToken');
+    // Check for regular user token in both storages (localStorage for remember me, sessionStorage for regular login)
+    let token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
+    
+    // Debug logging
+    console.log('API Request Interceptor:', {
+      hasSessionToken: !!sessionStorage.getItem('authToken'),
+      hasLocalToken: !!localStorage.getItem('authToken'),
+      finalToken: !!token,
+      url: config.url
+    });
     
     // If no regular token, check for portal token
     if (!token) {
       token = localStorage.getItem('portalToken');
+      console.log('Using portal token:', !!token);
     }
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+      console.log('Authorization header set for request to:', config.url);
+    } else {
+      console.log('No token available for request to:', config.url);
     }
+    
     return config;
   },
   (error) => {

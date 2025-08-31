@@ -49,7 +49,7 @@ const VerifyEmail = () => {
                 }
 
                 setTimeout(() => {
-                    navigate('/bank-accounts');
+                    navigate('/business-dashboard');
                 }, 3000);
             } catch (error) {
                 setStatus('error');

@@ -482,9 +482,9 @@ const authProtectedRoutes = [
   {
     path: "/",
     exact: true,
-    component: <Navigate to="/bank-accounts" />,
+    component: <Navigate to="/business-dashboard" />,
   },
-  { path: "*", component: <Navigate to="/bank-accounts" /> },
+  { path: "*", component: <Navigate to="/business-dashboard" /> },
   //Job pages
   { path: "/apps-job-statistics", component: <Statistics /> },
   { path: "/apps-job-lists", component: <JobList /> },
