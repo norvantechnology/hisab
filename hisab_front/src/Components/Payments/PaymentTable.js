@@ -141,6 +141,16 @@ const PaymentTable = ({
             enableColumnFilter: false
         },
         {
+            header: "Notes",
+            accessorKey: "notes",
+            cell: (cell) => (
+                <div className="text-truncate" style={{ maxWidth: '150px' }} title={cell.row.original.description || ''}>
+                    {cell.row.original.description || '—'}
+                </div>
+            ),
+            enableColumnFilter: false
+        },
+        {
             header: "Action",
             accessorKey: "action",
             cell: (cell) => (

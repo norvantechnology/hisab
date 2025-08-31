@@ -16,6 +16,7 @@ import * as salesController from "./salesController.js";
 import * as stockCategoryController from "./stockCategoryController.js";
 import * as taxCategoryController from "./taxCategoryController.js";
 import * as unitOfMeasurements from "./unitOfMeasurements.js";
+import * as dashboardController from "./dashboardController.js";
 
 export {
   authController,
@@ -35,5 +36,6 @@ export {
   salesController,
   stockCategoryController,
   taxCategoryController,
-  unitOfMeasurements
+  unitOfMeasurements,
+  dashboardController
 };

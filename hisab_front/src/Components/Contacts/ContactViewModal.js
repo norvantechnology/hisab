@@ -313,89 +313,147 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                         <TabContent activeTab={activeTab}>
                             <TabPane tabId="1">
                                 <div className="mt-3">
-                        <Row className="mb-4">
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted">Name</h6>
-                                    <h5>{contact.name}</h5>
-                                </div>
-                                <div className="mb-3">
-                                    <h6 className="text-muted">GSTIN</h6>
-                                    <p>{contact.gstin || 'N/A'}</p>
-                                </div>
-                                <div className="mb-3">
-                                                <h6 className="text-muted">Current Balance</h6>
-                                    <p>{getBalanceBadge()}</p>
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted">Contact Information</h6>
-                                    <p>
-                                        <strong>Mobile:</strong> {contact.mobile || 'N/A'}<br />
-                                        <strong>Email:</strong> {contact.email || 'N/A'}<br />
-                                        <strong>Due Days:</strong> {contact.dueDays ? `${contact.dueDays} days` : 'N/A'}
-                                    </p>
-                                </div>
-                            </Col>
-                        </Row>
+                                    {/* Header Card with Key Information */}
+                                    <Card className="border-0 shadow-sm mb-3">
+                                        <CardBody className="bg-light">
+                                            <Row className="align-items-center">
+                                                <Col md={6}>
+                                                    <div>
+                                                        <h6 className="text-muted mb-1">Contact Name</h6>
+                                                        <h4 className="mb-2 text-dark">{contact.name}</h4>
+                                                        <div className="d-flex gap-2 flex-wrap">
+                                                            {getContactTypeBadge()}
+                                                        </div>
+                                                    </div>
+                                                </Col>
+                                                <Col md={3}>
+                                                    <div className="text-center">
+                                                        <h6 className="text-muted mb-1">GSTIN</h6>
+                                                        <div className="fw-medium">{contact.gstin || 'N/A'}</div>
+                                                    </div>
+                                                </Col>
+                                                <Col md={3}>
+                                                    <div className="text-center">
+                                                        <h6 className="text-muted mb-1">Current Balance</h6>
+                                                        <div>{getBalanceBadge()}</div>
+                                                    </div>
+                                                </Col>
+                                            </Row>
+                                        </CardBody>
+                                    </Card>
 
-                        <Row>
-                            <Col md={6}>
-                                <div className="card mb-4">
-                                    <div className="card-header bg-light">
-                                        <h6 className="mb-0">Billing Address</h6>
-                                    </div>
-                                    <div className="card-body">
-                                        <address>
-                                            {contact.billingAddress1 || 'N/A'}<br />
-                                            {contact.billingAddress2 && <>{contact.billingAddress2}<br /></>}
-                                            {contact.billingCity}, {contact.billingState}<br />
-                                            {contact.billingPincode}<br />
-                                            {contact.billingCountry}
-                                        </address>
-                                    </div>
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="card mb-4">
-                                    <div className="card-header bg-light">
-                                        <h6 className="mb-0">Shipping Address</h6>
-                                    </div>
-                                    <div className="card-body">
-                                        <address>
-                                            {contact.shippingAddress1 || 'N/A'}<br />
-                                            {contact.shippingAddress2 && <>{contact.shippingAddress2}<br /></>}
-                                            {contact.shippingCity}, {contact.shippingState}<br />
-                                            {contact.shippingPincode}<br />
-                                            {contact.shippingCountry}
-                                        </address>
-                                    </div>
-                                </div>
-                            </Col>
-                        </Row>
+                                    {/* Contact Information Card */}
+                                    <Card className="border-0 shadow-sm mb-3">
+                                        <CardBody>
+                                            <h6 className="card-title text-muted mb-3">
+                                                <i className="ri-phone-line me-2"></i>
+                                                Contact Information
+                                            </h6>
+                                            <Row>
+                                                <Col md={3}>
+                                                    <div className="text-center">
+                                                        <label className="form-label text-muted small">Mobile</label>
+                                                        <div className="fw-medium">{contact.mobile || 'N/A'}</div>
+                                                    </div>
+                                                </Col>
+                                                <Col md={4}>
+                                                    <div className="text-center">
+                                                        <label className="form-label text-muted small">Email</label>
+                                                        <div className="fw-medium">{contact.email || 'N/A'}</div>
+                                                    </div>
+                                                </Col>
+                                                <Col md={3}>
+                                                    <div className="text-center">
+                                                        <label className="form-label text-muted small">Due Days</label>
+                                                        <div className="fw-medium">{contact.dueDays ? `${contact.dueDays} days` : 'N/A'}</div>
+                                                    </div>
+                                                </Col>
+                                                <Col md={2}>
+                                                    <div className="text-center">
+                                                        <label className="form-label text-muted small">Created</label>
+                                                        <div className="fw-medium">
+                                                            <small>
+                                                                {new Date(contact.createdAt).toLocaleDateString('en-US', {
+                                                                    month: 'short',
+                                                                    day: 'numeric',
+                                                                    year: 'numeric'
+                                                                })}
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                </Col>
+                                            </Row>
+                                        </CardBody>
+                                    </Card>
 
-                        <div className="mb-3">
-                            <h6 className="text-muted">Notes</h6>
-                            <p className="text-muted">{contact.notes || 'No notes available'}</p>
-                        </div>
+                                    {/* Addresses Card */}
+                                    <Card className="border-0 shadow-sm mb-3">
+                                        <CardBody>
+                                            <h6 className="card-title text-muted mb-3">
+                                                <i className="ri-map-pin-line me-2"></i>
+                                                Addresses
+                                            </h6>
+                                            <Row>
+                                                <Col md={6}>
+                                                    <div className="border rounded p-3 bg-light h-100">
+                                                        <h6 className="text-primary mb-2">Billing Address</h6>
+                                                        <address className="mb-0 small">
+                                                            {contact.billingAddress1 || 'N/A'}<br />
+                                                            {contact.billingAddress2 && <>{contact.billingAddress2}<br /></>}
+                                                            {contact.billingCity && contact.billingState && (
+                                                                <>{contact.billingCity}, {contact.billingState}<br /></>
+                                                            )}
+                                                            {contact.billingPincode && <>{contact.billingPincode}<br /></>}
+                                                            {contact.billingCountry}
+                                                        </address>
+                                                    </div>
+                                                </Col>
+                                                <Col md={6}>
+                                                    <div className="border rounded p-3 bg-light h-100">
+                                                        <h6 className="text-success mb-2">Shipping Address</h6>
+                                                        <address className="mb-0 small">
+                                                            {contact.shippingAddress1 || 'N/A'}<br />
+                                                            {contact.shippingAddress2 && <>{contact.shippingAddress2}<br /></>}
+                                                            {contact.shippingCity && contact.shippingState && (
+                                                                <>{contact.shippingCity}, {contact.shippingState}<br /></>
+                                                            )}
+                                                            {contact.shippingPincode && <>{contact.shippingPincode}<br /></>}
+                                                            {contact.shippingCountry}
+                                                        </address>
+                                                    </div>
+                                                </Col>
+                                            </Row>
+                                        </CardBody>
+                                    </Card>
 
-                        <hr />
+                                    {/* Notes Section - Only show if notes exist */}
+                                    {contact.notes && (
+                                        <Card className="border-0 shadow-sm mb-3">
+                                            <CardBody>
+                                                <h6 className="card-title text-muted mb-3">
+                                                    <i className="ri-file-text-line me-2"></i>
+                                                    Notes
+                                                </h6>
+                                                <div className="bg-light rounded p-3">
+                                                    <p className="mb-0">{contact.notes}</p>
+                                                </div>
+                                            </CardBody>
+                                        </Card>
+                                    )}
 
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted">Created By</h6>
-                                    <p>{contact.createdByName || 'System'}</p>
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted">Created At</h6>
-                                    <p>{new Date(contact.createdAt).toLocaleString()}</p>
-                                </div>
-                            </Col>
-                        </Row>
+                                    {/* Created By Information */}
+                                    <Card className="border-0 shadow-sm">
+                                        <CardBody className="bg-light">
+                                            <h6 className="card-title text-muted mb-2">
+                                                <i className="ri-user-line me-2"></i>
+                                                Record Information
+                                            </h6>
+                                            <div className="text-center">
+                                                <label className="form-label text-muted small">Created By</label>
+                                                <div className="fw-medium">{contact.createdByName || 'System'}</div>
+                                            </div>
+                                        </CardBody>
+                                    </Card>
                                 </div>
                             </TabPane>
 

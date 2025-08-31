@@ -13,6 +13,7 @@ import Invoice from "../pages/Purchases/Invoice";
 import SalesInvoice from "../pages/Sales/Invoice";
 import Payments from "../pages/Payments";
 import WelcomePage from "../pages/Welcome/WelcomePage";
+import BusinessDashboard from "../pages/BusinessDashboard";
 
 // Portal Pages
 import PortalLogin from "../pages/Portal/PortalLogin";
@@ -268,6 +269,7 @@ import Permissions from "../pages/UserManagement/Permissions";
 
 const authProtectedRoutes = [
   { path: "/welcome", component: <WelcomePage /> },
+  { path: "/business-dashboard", component: <BusinessDashboard /> },
   { path: "/bank-accounts", component: <BankAccounts /> },
   { path: "/expenses", component: <Expenses /> },
   { path: "/income", component: <Incomes /> },

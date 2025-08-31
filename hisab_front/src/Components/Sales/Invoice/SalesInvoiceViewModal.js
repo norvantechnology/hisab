@@ -12,7 +12,7 @@ import {
   Card,
   CardBody
 } from 'reactstrap';
-import { RiCloseLine, RiDownload2Line, RiUserLine, RiBankLine, RiArrowRightLine } from 'react-icons/ri';
+import { RiCloseLine, RiDownload2Line, RiUserLine, RiBankLine, RiArrowRightLine, RiStoreLine } from 'react-icons/ri';
 
 // Add CSS for spinner animation
 const spinnerStyle = `
@@ -104,7 +104,7 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoad
         {`
           ${spinnerStyle}
           .compact-view-modal .card {
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
           }
           .compact-view-modal .card-body {
             padding: 0.75rem;
@@ -116,8 +116,8 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoad
           }
           .compact-view-modal .table th,
           .compact-view-modal .table td {
-            padding: 0.5rem;
-            font-size: 0.875rem;
+            padding: 0.4rem;
+            font-size: 0.8rem;
             vertical-align: middle;
           }
           .compact-view-modal .border-top {
@@ -126,54 +126,67 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoad
           }
         `}
       </style>
-    <Modal isOpen={isOpen} toggle={toggle} size="lg" className="compact-view-modal modal-dialog-centered">
+    <Modal isOpen={isOpen} toggle={toggle} size="xl" className="compact-view-modal modal-dialog-centered">
       <ModalHeader toggle={toggle} className="bg-light py-2">
         <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center w-100 gap-2">
           <div className="flex-grow-1">
-            <h6 className="mb-0">Invoice #{invoice.invoiceNumber}</h6>
-            <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
+            <div className="d-flex align-items-center">
+              <RiStoreLine className="text-success me-2" size={20} />
+              <div>
+                <h6 className="mb-0">Sales Invoice #{invoice.invoiceNumber}</h6>
+                <small className="text-muted">{formatDate(invoice.invoiceDate)}</small>
+              </div>
+            </div>
           </div>
-          <div className="flex-shrink-0">
+          <div className="flex-shrink-0 d-flex align-items-center gap-2">
             {getStatusBadge(invoice.status)}
+            <Badge color="success" className="badge-soft-success">
+              {formatCurrency(invoice.netReceivable)}
+            </Badge>
           </div>
         </div>
       </ModalHeader>
       
       <ModalBody className="p-2">
-        {/* Customer & Payment Section */}
+        {/* Customer & Payment Section - More Compact */}
         <Card className="border-0 shadow-sm">
           <CardBody>
-            <h6 className="card-title mb-2">
-              <RiUserLine className="me-2" />
-              Customer & Payment
-            </h6>
-            <div className="mb-2">
-              {getPaymentMethodDisplay()}
-            </div>
-            
-            {/* Additional customer details and billing address in same section */}
-            {invoice.contact && (
-              <div className="row g-2">
-                {invoice.contact.email && (
-                  <div className="col-md-4">
-                    <small className="text-muted d-block">Email</small>
-                    <span className="small">{invoice.contact.email}</span>
+            <Row className="align-items-center">
+              <Col md={6}>
+                <h6 className="card-title mb-2 text-muted">
+                  <RiUserLine className="me-2" />
+                  Customer & Payment
+                </h6>
+                <div className="mb-2">
+                  {getPaymentMethodDisplay()}
+                </div>
+              </Col>
+              <Col md={6}>
+                {/* Customer details in compact format */}
+                {invoice.contact && (
+                  <div className="row g-1 small">
+                    {invoice.contact.email && (
+                      <div className="col-4">
+                        <div className="text-muted">Email:</div>
+                        <div className="fw-medium">{invoice.contact.email}</div>
+                      </div>
+                    )}
+                    {invoice.contact.mobile && (
+                      <div className="col-4">
+                        <div className="text-muted">Mobile:</div>
+                        <div className="fw-medium">{invoice.contact.mobile}</div>
+                      </div>
+                    )}
+                    {invoice.contact.gstin && (
+                      <div className="col-4">
+                        <div className="text-muted">GSTIN:</div>
+                        <div className="fw-medium">{invoice.contact.gstin}</div>
+                      </div>
+                    )}
                   </div>
                 )}
-                {invoice.contact.mobile && (
-                  <div className="col-md-4">
-                    <small className="text-muted d-block">Mobile</small>
-                    <span className="small">{invoice.contact.mobile}</span>
-                  </div>
-                )}
-                {invoice.contact.gstin && (
-                  <div className="col-md-4">
-                    <small className="text-muted d-block">GSTIN</small>
-                    <span className="small">{invoice.contact.gstin}</span>
-                  </div>
-                )}
-              </div>
-            )}
+              </Col>
+            </Row>
 
             {/* Compact Billing Address */}
             {invoice.contact && (invoice.contact.billingAddress1 || invoice.contact.billingCity || invoice.contact.billingState) && (
@@ -195,110 +208,112 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoad
           </CardBody>
         </Card>
 
-        {/* Items Section */}
+        {/* Combined Items and Summary Section */}
         <Card className="border-0 shadow-sm">
           <CardBody>
-            <h6 className="card-title mb-2">Items ({invoiceItems.length})</h6>
-            <div className="table-responsive">
-              <Table className="table-sm">
-                <thead className="table-light">
-                  <tr>
-                    <th>Product</th>
-                    <th className="text-center">Qty</th>
-                    <th className="text-end">Rate</th>
-                    <th className="text-end">Discount</th>
-                    <th className="text-end">Tax</th>
-                    <th className="text-end">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {invoiceItems && invoiceItems.length > 0 ? (
-                    invoiceItems.map((item, index) => (
-                      <tr key={item.id || index}>
-                        <td>
-                          <div>
-                            <strong>{item.name}</strong>
-                            {item.code && (
-                              <small className="text-muted d-block">{item.code}</small>
-                            )}
-                            {item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0 && (
-                              <div className="mt-1">
-                                {item.serialNumbers.map((serial, idx) => (
-                                  <Badge key={idx} color="info" size="sm" className="me-1">
-                                    {serial}
-                                  </Badge>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="text-center">{item.quantity}</td>
-                        <td className="text-end">{formatCurrency(item.rate)}</td>
-                        <td className="text-end">
-                          {item.discountRate > 0 ? `${item.discountRate}% (${formatCurrency(item.discount)})` : '0%'}
-                        </td>
-                        <td className="text-end">
-                          {item.taxRate}% ({formatCurrency(item.taxAmount)})
-                        </td>
-                        <td className="text-end fw-bold">{formatCurrency(item.total)}</td>
+            <Row>
+              <Col md={8}>
+                <h6 className="card-title mb-2 text-muted">Items ({invoiceItems.length})</h6>
+                <div className="table-responsive" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                  <Table className="table-sm table-striped">
+                    <thead className="table-light sticky-top">
+                      <tr>
+                        <th>Product</th>
+                        <th className="text-center">Qty</th>
+                        <th className="text-end">Rate</th>
+                        <th className="text-end">Disc.</th>
+                        <th className="text-end">Tax</th>
+                        <th className="text-end">Total</th>
                       </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="6" className="text-center text-muted py-3">
-                        No items found
-                      </td>
-                    </tr>
+                    </thead>
+                    <tbody>
+                      {invoiceItems && invoiceItems.length > 0 ? (
+                        invoiceItems.map((item, index) => (
+                          <tr key={item.id || index}>
+                            <td>
+                              <div>
+                                <strong className="small">{item.name}</strong>
+                                {item.code && (
+                                  <div className="text-muted" style={{ fontSize: '0.7rem' }}>{item.code}</div>
+                                )}
+                                {item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0 && (
+                                  <div className="mt-1">
+                                    {item.serialNumbers.slice(0, 2).map((serial, idx) => (
+                                      <Badge key={idx} color="info" size="sm" className="me-1" style={{ fontSize: '0.6rem' }}>
+                                        {serial}
+                                      </Badge>
+                                    ))}
+                                    {item.serialNumbers.length > 2 && (
+                                      <small className="text-muted">+{item.serialNumbers.length - 2} more</small>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                            <td className="text-center">{item.quantity}</td>
+                            <td className="text-end">{formatCurrency(item.rate)}</td>
+                            <td className="text-end">
+                              <small>{item.discountRate > 0 ? `${item.discountRate}%` : '0%'}</small>
+                            </td>
+                            <td className="text-end">
+                              <small>{item.taxRate}%</small>
+                            </td>
+                            <td className="text-end fw-bold">{formatCurrency(item.total)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="text-center text-muted py-3">
+                            No items found
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </Table>
+                </div>
+              </Col>
+              <Col md={4}>
+                <div className="d-flex flex-column h-100">
+                  {/* Summary Section */}
+                  <div className="border rounded p-3 bg-light flex-grow-1">
+                    <h6 className="text-muted mb-3">Invoice Summary</h6>
+                    <div className="d-flex justify-content-between mb-2">
+                      <span className="small">Basic Amount:</span>
+                      <span className="small fw-medium">{formatCurrency(invoice.basicAmount)}</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-2">
+                      <span className="small">Tax:</span>
+                      <span className="small fw-medium">{formatCurrency(invoice.taxAmount)}</span>
+                    </div>
+                    <div className="d-flex justify-content-between mb-2">
+                      <span className="small">Discount:</span>
+                      <span className="small fw-medium text-danger">-{formatCurrency(invoice.totalDiscount)}</span>
+                    </div>
+                    {invoice.roundOff && (
+                      <div className="d-flex justify-content-between mb-2">
+                        <span className="small">Round Off:</span>
+                        <span className="small fw-medium">{formatCurrency(invoice.roundOff)}</span>
+                      </div>
+                    )}
+                    <hr className="my-2" />
+                    <div className="d-flex justify-content-between">
+                      <strong className="text-success">Total:</strong>
+                      <strong className="text-success fs-5">{formatCurrency(invoice.netReceivable)}</strong>
+                    </div>
+                  </div>
+                  
+                  {/* Notes Section */}
+                  {invoice.internalNotes && (
+                    <div className="border rounded p-3 bg-light mt-2">
+                      <h6 className="text-muted mb-2">Notes</h6>
+                      <p className="mb-0 small text-muted">{invoice.internalNotes}</p>
+                    </div>
                   )}
-                </tbody>
-              </Table>
-            </div>
+                </div>
+              </Col>
+            </Row>
           </CardBody>
         </Card>
-
-        {/* Summary Section */}
-        <Row className="g-2">
-          <Col md={5}>
-            {invoice.internalNotes && (
-              <Card className="border-0 shadow-sm h-100">
-                <CardBody>
-                  <h6 className="card-title mb-2">Notes</h6>
-                  <p className="mb-0 text-muted small">{invoice.internalNotes}</p>
-                </CardBody>
-              </Card>
-            )}
-          </Col>
-          <Col md={7}>
-            <Card className="border-0 shadow-sm">
-              <CardBody>
-                <h6 className="card-title mb-2">Summary</h6>
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="small">Basic Amount:</span>
-                  <span className="small">{formatCurrency(invoice.basicAmount)}</span>
-                </div>
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="small">Tax:</span>
-                  <span className="small">{formatCurrency(invoice.taxAmount)}</span>
-                </div>
-                <div className="d-flex justify-content-between mb-1">
-                  <span className="small">Discount:</span>
-                  <span className="small text-danger">{formatCurrency(invoice.totalDiscount)}</span>
-                </div>
-                {invoice.roundOff && (
-                  <div className="d-flex justify-content-between mb-1">
-                    <span className="small">Round Off:</span>
-                    <span className="small">{formatCurrency(invoice.roundOff)}</span>
-                  </div>
-                )}
-                <hr className="my-2" />
-                <div className="d-flex justify-content-between">
-                  <strong className="small">Total:</strong>
-                  <strong className="text-primary">{formatCurrency(invoice.netReceivable)}</strong>
-                </div>
-              </CardBody>
-            </Card>
-          </Col>
-        </Row>
       </ModalBody>
       
       <ModalFooter className="bg-light py-2">

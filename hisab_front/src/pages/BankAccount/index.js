@@ -198,6 +198,15 @@ const BankAccounts = () => {
             )
         },
         {
+            header: "Notes",
+            accessorKey: "notes",
+            cell: ({ row }) => (
+                <div className="text-truncate" style={{ maxWidth: '150px' }} title={row.original.notes || ''}>
+                    {row.original.notes || '—'}
+                </div>
+            )
+        },
+        {
             header: "Action",
             accessorKey: "action",
             cell: ({ row }) => (

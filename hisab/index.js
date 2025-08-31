@@ -20,7 +20,8 @@ import {
   stockCategoryRoute,
   taxCategoryRoutes,
   unitOfMeasurementsRoutes,
-  portalRoutes
+  portalRoutes,
+  dashboardRoutes
 } from "./src/routes/index.js";
 
 
@@ -55,6 +56,7 @@ app.use("/api/stockCategory", stockCategoryRoute);
 app.use("/api/taxCategory", taxCategoryRoutes);
 app.use("/api/unitOfMeasurements", unitOfMeasurementsRoutes);
 app.use("/api/portal", portalRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 
 
 

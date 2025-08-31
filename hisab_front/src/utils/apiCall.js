@@ -31,7 +31,7 @@ export const apiCall = async ({
     }
 
     // Build headers, handling FormData specially
-    const requestHeaders = { ...headers, companyId };
+    const requestHeaders = { ...headers, companyid: companyId };
     
     // If data is FormData, don't set Content-Type - let browser handle it
     if (data instanceof FormData) {

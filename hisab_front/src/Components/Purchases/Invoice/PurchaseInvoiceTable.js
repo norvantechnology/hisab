@@ -173,6 +173,16 @@ const PurchaseInvoiceTable = ({
             enableColumnFilter: false
         },
         {
+            header: "Notes",
+            accessorKey: "notes",
+            cell: (cell) => (
+                <div className="text-truncate" style={{ maxWidth: '150px' }} title={cell.row.original.internalNotes || ''}>
+                    {cell.row.original.internalNotes || '—'}
+                </div>
+            ),
+            enableColumnFilter: false
+        },
+        {
             header: "Action",
             accessorKey: "action",
             cell: (cell) => {

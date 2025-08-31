@@ -184,6 +184,18 @@ const Navdata = () => {
       label: "Menu",
       isHeader: true,
     },
+    {
+      id: "business-dashboard",
+      label: "Business Analytics",
+      icon: "las la-chart-bar",
+      link: "/business-dashboard",
+      click: function (e) {
+        e.preventDefault();
+        setIscurrentState("BusinessDashboard");
+        updateIconSidebar(e);
+        history("/business-dashboard");
+      },
+    },
     // {
     //   id: "dashboard",
     //   label: "Dashboards",

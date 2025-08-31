@@ -17,6 +17,7 @@ import stockCategoryRoute from "./stockCategoryRoute.js";
 import taxCategoryRoutes from "./taxCategoryRoutes.js";
 import unitOfMeasurementsRoutes from "./unitOfMeasurementsRoutes.js";
 import portalRoutes from "./portalRoutes.js";
+import dashboardRoutes from "./dashboardRoutes.js";
 
 
 export {
@@ -38,5 +39,6 @@ export {
   stockCategoryRoute,
   taxCategoryRoutes,
   unitOfMeasurementsRoutes,
-  portalRoutes
+  portalRoutes,
+  dashboardRoutes
 };

@@ -1,6 +1,6 @@
 import React from 'react';
-import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Row, Col } from 'reactstrap';
-import { RiBankLine, RiUser3Line, RiCalendarLine, RiAlarmWarningLine, RiArrowRightLine } from 'react-icons/ri';
+import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Row, Col, Card, CardBody } from 'reactstrap';
+import { RiWalletLine, RiBankLine, RiUser3Line, RiCalendarLine, RiAlarmWarningLine, RiArrowRightLine, RiFileTextLine, RiPriceTag3Line } from 'react-icons/ri';
 
 const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
     const getPaymentMethodDisplay = () => {
@@ -9,13 +9,11 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
         // Direct bank payment
         if (bankAccountName && !contactName) {
             return (
-                <div>
-                    <div className="d-flex align-items-center mb-2">
-                        <RiBankLine className="text-info me-2" size={18} />
-                        <span className="fw-medium">Direct Bank Payment</span>
-                    </div>
-                    <div className="text-muted">
-                        <strong>Bank Account:</strong> {bankAccountName}
+                <div className="d-flex align-items-center">
+                    <RiBankLine className="text-info me-2" size={18} />
+                    <div>
+                        <div className="fw-medium">Direct Bank Payment</div>
+                        <small className="text-muted">{bankAccountName}</small>
                     </div>
                 </div>
             );
@@ -24,13 +22,11 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
         // Contact payment - pending
         if (contactName && !bankAccountName) {
             return (
-                <div>
-                    <div className="d-flex align-items-center mb-2">
-                        <RiUser3Line className="text-warning me-2" size={18} />
-                        <span className="fw-medium">Contact Payment</span>
-                    </div>
-                    <div className="text-muted">
-                        <strong>Contact:</strong> {contactName}
+                <div className="d-flex align-items-center">
+                    <RiUser3Line className="text-warning me-2" size={18} />
+                    <div>
+                        <div className="fw-medium">Contact Payment</div>
+                        <small className="text-muted">{contactName}</small>
                     </div>
                 </div>
             );
@@ -42,21 +38,21 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
                 <div>
                     <div className="d-flex align-items-center mb-2">
                         <RiUser3Line className="text-warning me-2" size={18} />
-                        <span className="fw-medium">Contact Payment (Paid)</span>
+                        <div>
+                            <div className="fw-medium">Contact Payment (Paid)</div>
+                            <small className="text-muted">{contactName}</small>
+                        </div>
                     </div>
-                    <div className="text-muted mb-2">
-                        <strong>Contact:</strong> {contactName}
-                    </div>
-                    <div className="d-flex align-items-center text-muted">
-                        <RiArrowRightLine className="me-2" size={16} />
-                        <RiBankLine className="text-info me-2" size={16} />
-                        <span><strong>Paid via:</strong> {bankAccountName}</span>
+                    <div className="d-flex align-items-center text-muted ps-3">
+                        <RiArrowRightLine className="me-2" size={14} />
+                        <RiBankLine className="text-info me-2" size={14} />
+                        <small><strong>Paid via:</strong> {bankAccountName}</small>
                     </div>
                 </div>
             );
         }
         
-        return 'N/A';
+        return <span className="text-muted">Not specified</span>;
     };
 
     const getStatusBadge = () => {
@@ -64,15 +60,15 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
         
         // Direct bank payment - always paid
         if (bankAccountName && !contactName) {
-            return <Badge color="success" className="badge-soft-success">Paid</Badge>;
+            return <Badge color="success" className="badge-soft-success px-3 py-2">Paid</Badge>;
         }
         
         // Contact payments - show actual status
         if (contactName) {
             if (status === 'pending') {
-                return <Badge color="warning" className="badge-soft-warning">Pending</Badge>;
+                return <Badge color="warning" className="badge-soft-warning px-3 py-2">Pending</Badge>;
             } else if (status === 'paid') {
-                return <Badge color="success" className="badge-soft-success">Paid</Badge>;
+                return <Badge color="success" className="badge-soft-success px-3 py-2">Paid</Badge>;
             }
         }
         
@@ -83,11 +79,11 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
         const { bankAccountName, contactName } = expense || {};
         
         if (bankAccountName && !contactName) {
-            return <Badge color="info" className="badge-soft-info">Direct Payment</Badge>;
+            return <Badge color="info" className="badge-soft-info px-3 py-2">Direct Payment</Badge>;
         }
         
         if (contactName) {
-            return <Badge color="secondary" className="badge-soft-secondary">Contact Payment</Badge>;
+            return <Badge color="secondary" className="badge-soft-secondary px-3 py-2">Contact Payment</Badge>;
         }
         
         return <span className="text-muted">—</span>;
@@ -110,9 +106,8 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
                         <RiCalendarLine className="text-muted me-2" size={18} />
                     )}
                     <div>
-                        <span className={isOverdue ? 'text-danger fw-semibold' : ''}>
+                        <span className={isOverdue ? 'text-danger fw-semibold' : 'fw-medium'}>
                             {dueDateObj.toLocaleDateString('en-US', {
-                                weekday: 'short',
                                 month: 'short',
                                 day: 'numeric',
                                 year: 'numeric'
@@ -132,97 +127,120 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
 
     return (
         <Modal isOpen={isOpen} toggle={toggle} size="lg">
-            <ModalHeader toggle={toggle}>Expense Details</ModalHeader>
-            <ModalBody>
+            <ModalHeader toggle={toggle} className="bg-light">
+                <div className="d-flex align-items-center">
+                    <RiWalletLine className="text-danger me-2" size={20} />
+                    Expense Details
+                </div>
+            </ModalHeader>
+            <ModalBody className="p-3">
                 {expense && (
                     <div>
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Date</h6>
-                                    <p className="mb-0 fw-medium">
-                                        {new Date(expense.date).toLocaleDateString('en-US', {
-                                            weekday: 'short',
-                                            month: 'short',
-                                            day: 'numeric',
-                                            year: 'numeric'
-                                        })}
-                                    </p>
-                                </div>
-                            </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Amount</h6>
-                                    <p className="mb-0 fw-semibold fs-5 text-success">
-                                        ₹{parseFloat(expense.amount || 0).toFixed(2)}
-                                    </p>
-                                </div>
-                            </Col>
-                        </Row>
+                        {/* Header Card with Key Information */}
+                        <Card className="border-0 shadow-sm mb-3">
+                            <CardBody className="bg-light">
+                                <Row className="align-items-center">
+                                    <Col md={3}>
+                                        <div className="text-center">
+                                            <h6 className="text-muted mb-1">Date</h6>
+                                            <div className="fw-bold text-dark">
+                                                {new Date(expense.date).toLocaleDateString('en-US', {
+                                                    month: 'short',
+                                                    day: 'numeric',
+                                                    year: 'numeric'
+                                                })}
+                                            </div>
+                                        </div>
+                                    </Col>
+                                    <Col md={3}>
+                                        <div className="text-center">
+                                            <h6 className="text-muted mb-1">Category</h6>
+                                            <Badge color="primary" className="badge-soft-primary px-2 py-1">
+                                                {expense.categoryName || 'N/A'}
+                                            </Badge>
+                                        </div>
+                                    </Col>
+                                    <Col md={3}>
+                                        <div className="text-center">
+                                            <h6 className="text-muted mb-1">Status</h6>
+                                            <div>{getStatusBadge()}</div>
+                                        </div>
+                                    </Col>
+                                    <Col md={3}>
+                                        <div className="text-center">
+                                            <h6 className="text-muted mb-1">Amount</h6>
+                                            <div className="fw-bold text-danger fs-4">
+                                                ₹{parseFloat(expense.amount || 0).toFixed(2)}
+                                            </div>
+                                        </div>
+                                    </Col>
+                                </Row>
+                            </CardBody>
+                        </Card>
 
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Category</h6>
-                                    <Badge color="primary" className="badge-soft-primary fs-6">
-                                        {expense.categoryName || 'N/A'}
-                                    </Badge>
-                                </div>
+                        {/* Payment and Due Date Information */}
+                        <Row className="g-3 mb-3">
+                            <Col md={expense.contactName && expense.status === 'pending' ? 6 : 12}>
+                                <Card className="border-0 shadow-sm h-100">
+                                    <CardBody>
+                                        <h6 className="card-title text-muted mb-3">
+                                            <RiBankLine className="me-2" />
+                                            Payment Method
+                                        </h6>
+                                        <div className="d-flex align-items-center justify-content-between">
+                                            <div className="flex-grow-1">
+                                                {getPaymentMethodDisplay()}
+                                            </div>
+                                            <div className="ms-3">
+                                                {getTypeBadge()}
+                                            </div>
+                                        </div>
+                                    </CardBody>
+                                </Card>
                             </Col>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Type</h6>
-                                    <div>{getTypeBadge()}</div>
-                                </div>
-                            </Col>
-                        </Row>
 
-                        <Row>
-                            <Col md={6}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Status</h6>
-                                    <div>{getStatusBadge()}</div>
-                                </div>
-                            </Col>
                             {expense.contactName && expense.status === 'pending' && (
                                 <Col md={6}>
-                                    <div className="mb-3">
-                                        <h6 className="text-muted mb-1">Due Date</h6>
-                                        <div>{getDueDateDisplay()}</div>
-                                    </div>
+                                    <Card className="border-0 shadow-sm h-100">
+                                        <CardBody>
+                                            <h6 className="card-title text-muted mb-3">
+                                                <RiCalendarLine className="me-2" />
+                                                Due Date
+                                            </h6>
+                                            <div className="d-flex align-items-center justify-content-center">
+                                                {getDueDateDisplay()}
+                                            </div>
+                                        </CardBody>
+                                    </Card>
                                 </Col>
                             )}
                         </Row>
 
-                        <Row>
-                            <Col md={12}>
-                                <div className="mb-3">
-                                    <h6 className="text-muted mb-1">Payment Details</h6>
-                                    <div className="p-3 bg-light rounded">
-                                        {getPaymentMethodDisplay()}
-                                    </div>
-                                </div>
-                            </Col>
-                        </Row>
-
+                        {/* Notes Section - Only show if notes exist */}
                         {expense.notes && (
-                            <Row>
-                                <Col md={12}>
-                                    <div className="mb-3">
-                                        <h6 className="text-muted mb-1">Notes</h6>
-                                        <div className="p-3 bg-light rounded">
-                                            <p className="mb-0">{expense.notes}</p>
-                                        </div>
+                            <Card className="border-0 shadow-sm mb-3">
+                                <CardBody>
+                                    <h6 className="card-title text-muted mb-3">
+                                        <RiFileTextLine className="me-2" />
+                                        Notes
+                                    </h6>
+                                    <div className="bg-light rounded p-3">
+                                        <p className="mb-0">{expense.notes}</p>
                                     </div>
-                                </Col>
-                            </Row>
+                                </CardBody>
+                            </Card>
                         )}
 
-                        <Row>
-                            <Col md={12}>
-                                <div className="mb-0">
-                                    <h6 className="text-muted mb-1">Created</h6>
-                                    <p className="mb-0 text-muted small">
+                        {/* Metadata Card */}
+                        <Card className="border-0 shadow-sm">
+                            <CardBody className="bg-light">
+                                <h6 className="card-title text-muted mb-2">
+                                    <RiCalendarLine className="me-2" />
+                                    Record Information
+                                </h6>
+                                <div className="text-center">
+                                    <label className="form-label text-muted small">Created At</label>
+                                    <div className="fw-medium">
                                         {new Date(expense.createdAt).toLocaleDateString('en-US', {
                                             month: 'short',
                                             day: 'numeric',
@@ -230,14 +248,14 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
                                             hour: '2-digit',
                                             minute: '2-digit'
                                         })}
-                                    </p>
+                                    </div>
                                 </div>
-                            </Col>
-                        </Row>
+                            </CardBody>
+                        </Card>
                     </div>
                 )}
             </ModalBody>
-            <ModalFooter>
+            <ModalFooter className="bg-light">
                 <Button color="secondary" onClick={toggle}>Close</Button>
             </ModalFooter>
         </Modal>
