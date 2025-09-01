@@ -289,6 +289,12 @@ const SalesInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoad
                       <span className="small">Discount:</span>
                       <span className="small fw-medium text-danger">-{formatCurrency(invoice.totalDiscount)}</span>
                     </div>
+                    {parseFloat(invoice.transportationCharge || 0) > 0 && (
+                      <div className="d-flex justify-content-between mb-2">
+                        <span className="small">Transportation Charge:</span>
+                        <span className="small fw-medium text-info">{formatCurrency(invoice.transportationCharge)}</span>
+                      </div>
+                    )}
                     {invoice.roundOff && (
                       <div className="d-flex justify-content-between mb-2">
                         <span className="small">Round Off:</span>
