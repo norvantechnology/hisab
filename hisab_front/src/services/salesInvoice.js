@@ -69,3 +69,12 @@ export const downloadSalesPDF = (pdfUrl, fileName) => {
 export const openSalesPDFInNewTab = (pdfUrl) => {
     window.open(pdfUrl, '_blank');
 }; 
+
+// Share sales invoice
+export const shareSalesInvoice = async (invoiceId, shareData) => {
+  return apiCall({
+    method: 'post',
+    endpoint: `/sales/share/${invoiceId}`,
+    data: shareData
+  });
+}; 

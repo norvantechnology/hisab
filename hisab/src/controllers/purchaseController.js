@@ -2,6 +2,8 @@ import { constrainedMemory } from "process";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
 import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "../utils/fastPurchaseInvoicePDFGenerator.js";
+import { sendEmail } from "../utils/emailUtils.js";
+import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -1502,6 +1504,253 @@ export async function getNextInvoiceNumber(req, res) {
   } catch (error) {
     console.error('Error getting next invoice number:', error);
     return errorResponse(res, "Failed to get next invoice number", 500);
+  } finally {
+    client.release();
+  }
+}
+
+export async function sharePurchaseInvoice(req, res) {
+  const { id } = req.params;
+  const { shareType, recipient, description } = req.body; // shareType: 'email' or 'whatsapp'
+  const companyId = req.currentUser?.companyId;
+  const userId = req.currentUser?.id;
+
+  if (!id || !shareType || !recipient) {
+    return errorResponse(res, "Invoice ID, share type, and recipient are required", 400);
+  }
+
+  if (!['email', 'whatsapp'].includes(shareType)) {
+    return errorResponse(res, "Share type must be either 'email' or 'whatsapp'", 400);
+  }
+
+  if (!companyId || !userId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Get purchase details with all related data
+    const [purchaseResult, itemsResult] = await Promise.all([
+      client.query(`
+        SELECT 
+          p.*,
+          c."name" as "contactName",
+          c."email" as "contactEmail",
+          c."mobile" as "contactMobile",
+          c."gstin" as "contactGstin",
+          c."billingAddress1" as "contactBillingAddress1",
+          c."billingAddress2" as "contactBillingAddress2",
+          c."billingCity" as "contactBillingCity",
+          c."billingState" as "contactBillingState",
+          c."billingPincode" as "contactBillingPincode",
+          c."billingCountry" as "contactBillingCountry",
+          ba."accountName" as "bankAccountName",
+          ba."accountType" as "bankAccountType",
+          comp."name" as "companyName",
+          comp."logoUrl",
+          comp."address1",
+          comp."address2", 
+          comp."city",
+          comp."state",
+          comp."pincode",
+          comp."country",
+          comp."gstin" as "companyGstin"
+        FROM hisab."purchases" p
+        LEFT JOIN hisab."contacts" c ON p."contactId" = c.id
+        LEFT JOIN hisab."bankAccounts" ba ON p."bankAccountId" = ba.id
+        LEFT JOIN hisab."companies" comp ON p."companyId" = comp.id
+        WHERE p."id" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL
+      `, [id, companyId]),
+      
+      client.query(`
+        SELECT 
+          pi.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode",
+          p."currentStock",
+          p."isInventoryTracked",
+          p."isSerialized"
+        FROM hisab."purchase_items" pi
+        LEFT JOIN hisab."products" p ON pi."productId" = p.id
+        WHERE pi."purchaseId" = $1 AND pi."companyId" = $2
+        ORDER BY pi.id
+      `, [id, companyId])
+    ]);
+
+    if (purchaseResult.rows.length === 0) {
+      return errorResponse(res, "Purchase invoice not found", 404);
+    }
+
+    const purchase = purchaseResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare data for PDF generation
+    const pdfData = {
+      purchase: {
+        id: purchase.id,
+        invoiceNumber: purchase.invoiceNumber,
+        invoiceDate: purchase.invoiceDate,
+        status: purchase.status,
+        taxType: purchase.taxType,
+        discountType: purchase.discountType,
+        discountValue: purchase.discountValue,
+        basicAmount: purchase.basicAmount,
+        totalDiscount: purchase.totalDiscount,
+        taxAmount: purchase.taxAmount,
+        transportationCharge: purchase.transportationCharge,
+        roundOff: purchase.roundOff,
+        netPayable: purchase.netPayable,
+        internalNotes: purchase.internalNotes
+      },
+      company: {
+        name: purchase.companyName,
+        logoUrl: purchase.logoUrl,
+        address1: purchase.address1,
+        address2: purchase.address2,
+        city: purchase.city,
+        state: purchase.state,
+        pincode: purchase.pincode,
+        country: purchase.country,
+        gstin: purchase.companyGstin
+      },
+      contact: {
+        name: purchase.contactName,
+        email: purchase.contactEmail,
+        mobile: purchase.contactMobile,
+        gstin: purchase.contactGstin,
+        billingAddress1: purchase.contactBillingAddress1,
+        billingAddress2: purchase.contactBillingAddress2,
+        billingCity: purchase.contactBillingCity,
+        billingState: purchase.contactBillingState,
+        billingPincode: purchase.contactBillingPincode,
+        billingCountry: purchase.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: purchase.bankAccountName,
+        accountType: purchase.bankAccountType
+      },
+      items: items
+    };
+
+    // Generate HTML content and PDF
+    const htmlContent = createFastPurchaseInvoiceHTML(pdfData);
+    const pdfFileName = generateFastPurchaseInvoicePDFFileName(purchase.invoiceNumber, purchase.companyName);
+    const pdfBuffer = await generateFastPurchaseInvoicePDF(htmlContent);
+
+    // Generate default description if not provided
+    const defaultDescription = description || `Purchase Invoice #${purchase.invoiceNumber} from ${purchase.companyName}. 
+Amount: ₹${parseFloat(purchase.netPayable || 0).toFixed(2)}. 
+Date: ${new Date(purchase.invoiceDate).toLocaleDateString('en-IN')}.
+Thank you for your business!`;
+
+    if (shareType === 'email') {
+      // Send via email
+      await sendEmail({
+        to: recipient,
+        subject: `Purchase Invoice #${purchase.invoiceNumber} - ${purchase.companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="margin: 0; font-size: 28px;">Purchase Invoice</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">${purchase.companyName}</p>
+            </div>
+            
+            <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                Dear Supplier,
+              </p>
+              
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                ${defaultDescription}
+              </p>
+              
+              <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #2563eb;">Invoice Details:</h3>
+                <p style="margin: 5px 0; color: #333;"><strong>Invoice Number:</strong> ${purchase.invoiceNumber}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Date:</strong> ${new Date(purchase.invoiceDate).toLocaleDateString('en-IN')}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Amount:</strong> ₹${parseFloat(purchase.netPayable || 0).toFixed(2)}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Status:</strong> ${purchase.status}</p>
+              </div>
+              
+              <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                Please find the detailed invoice attached as a PDF document.
+              </p>
+              
+              <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                If you have any questions regarding this invoice, please contact us.
+              </p>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px;">
+                <p>This is an automated message from ${purchase.companyName}</p>
+              </div>
+            </div>
+          </div>
+        `,
+        attachments: [{
+          filename: pdfFileName,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }]
+      });
+
+      return successResponse(res, {
+        message: "Purchase invoice shared successfully via email",
+        shareType: 'email',
+        recipient: recipient
+      });
+
+    } else if (shareType === 'whatsapp') {
+      // Validate WhatsApp number
+      if (!isValidWhatsAppNumber(recipient)) {
+        return errorResponse(res, "Invalid WhatsApp number format", 400);
+      }
+
+      try {
+        // Upload PDF to S3 for WhatsApp sharing
+        const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+        
+        // Send document via WhatsApp Business API
+        await sendWhatsAppDocument(
+          recipient,
+          pdfUrl,
+          pdfFileName,
+          defaultDescription
+        );
+
+        return successResponse(res, {
+          message: "Purchase invoice shared successfully via WhatsApp",
+          shareType: 'whatsapp',
+          recipient: recipient
+        });
+
+      } catch (whatsappError) {
+        console.error('WhatsApp API failed, falling back to web link:', whatsappError);
+        
+        // Fallback: Upload PDF and provide web link
+        const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+        const whatsappMessage = `${defaultDescription}
+
+📄 Download Invoice: ${pdfUrl}
+
+This link is valid for download.`;
+
+        return successResponse(res, {
+          message: "WhatsApp API unavailable. Web link prepared for manual sharing.",
+          shareType: 'whatsapp',
+          recipient: recipient,
+          whatsappMessage: whatsappMessage,
+          pdfUrl: pdfUrl,
+          // Frontend can use this to open WhatsApp with pre-filled message
+          whatsappUrl: `https://wa.me/${recipient.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`,
+          fallbackMode: true
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error("Error sharing purchase invoice:", error);
+    return errorResponse(res, "Failed to share purchase invoice", 500);
   } finally {
     client.release();
   }

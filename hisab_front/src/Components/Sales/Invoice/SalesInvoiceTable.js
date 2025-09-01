@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiWalletLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiWalletLine, RiShareLine } from 'react-icons/ri';
 import TableContainer from '../../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Button } from 'reactstrap';
 
@@ -25,7 +25,8 @@ const SalesInvoiceTable = ({
     onDelete,
     onGeneratePDF,
     onCreatePayment,
-    pdfLoading = null
+    pdfLoading = null,
+    onShare
 }) => {
     const columns = useMemo(() => [
         {
@@ -216,6 +217,19 @@ const SalesInvoiceTable = ({
                                 <RiFilePdfLine />
                             )}
                         </Button>
+                        <Button
+                            color="info"
+                            size="sm"
+                            onClick={() => onShare && onShare(invoice)}
+                            title="Share Invoice"
+                            disabled={pdfLoading === invoice.id}
+                        >
+                            {pdfLoading === invoice.id ? (
+                                <i className="ri-loader-4-line spin"></i>
+                            ) : (
+                                <RiShareLine />
+                            )}
+                        </Button>
                         <UncontrolledDropdown direction="start">
                             <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
                                 <RiMoreFill />
@@ -242,7 +256,7 @@ const SalesInvoiceTable = ({
             },
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete, onGeneratePDF, onCreatePayment, pdfLoading]);
+    ], [onView, onEdit, onDelete, onGeneratePDF, onCreatePayment, pdfLoading, onShare]);
 
     return (
         <>

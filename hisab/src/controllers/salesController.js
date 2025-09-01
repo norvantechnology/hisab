@@ -1,12 +1,8 @@
 import pool from "../config/dbConnection.js";
-import { 
-  errorResponse, 
-  successResponse, 
-  uploadFileToS3, 
-  generateFastSalesInvoicePDF, 
-  generateFastSalesInvoicePDFFileName, 
-  createFastSalesInvoiceHTML 
-} from "../utils/index.js";
+import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { generateFastSalesInvoicePDF, generateFastSalesInvoicePDFFileName, createFastSalesInvoiceHTML } from "../utils/fastSalesInvoicePDFGenerator.js";
+import { sendEmail } from "../utils/emailUtils.js";
+import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 import { generateSalesInvoicePDFFromHTML, generateSalesInvoicePDFFileName, createSalesInvoiceHTML } from "../utils/salesInvoicePDFGenerator.js";
 
 export async function createSale(req, res) {
@@ -1104,6 +1100,254 @@ export async function getNextInvoiceNumber(req, res) {
   } catch (error) {
     console.error('Error getting next invoice number:', error);
     return errorResponse(res, "Failed to get next invoice number", 500);
+  } finally {
+    client.release();
+  }
+} 
+
+export async function shareSalesInvoice(req, res) {
+  const { id } = req.params;
+  const { shareType, recipient, description } = req.body; // shareType: 'email' or 'whatsapp'
+  const companyId = req.currentUser?.companyId;
+  const userId = req.currentUser?.id;
+
+  if (!id || !shareType || !recipient) {
+    return errorResponse(res, "Invoice ID, share type, and recipient are required", 400);
+  }
+
+  if (!['email', 'whatsapp'].includes(shareType)) {
+    return errorResponse(res, "Share type must be either 'email' or 'whatsapp'", 400);
+  }
+
+  if (!companyId || !userId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Get sale details with all related data
+    const saleQuery = `
+      SELECT 
+        s.*,
+        c."name" as "contactName",
+        c."email" as "contactEmail",
+        c."mobile" as "contactMobile",
+        c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
+        ba."accountName" as "bankAccountName",
+        ba."accountType" as "bankAccountType",
+        comp."name" as "companyName",
+        comp."logoUrl",
+        comp."address1",
+        comp."address2", 
+        comp."city",
+        comp."state",
+        comp."pincode",
+        comp."country",
+        comp."gstin" as "companyGstin"
+      FROM hisab."sales" s
+      LEFT JOIN hisab."contacts" c ON s."contactId" = c.id
+      LEFT JOIN hisab."bankAccounts" ba ON s."bankAccountId" = ba.id
+      LEFT JOIN hisab."companies" comp ON s."companyId" = comp.id
+      WHERE s."id" = $1 AND s."companyId" = $2 AND s."deletedAt" IS NULL
+    `;
+
+    const [saleResult, itemsResult] = await Promise.all([
+      client.query(saleQuery, [id, companyId]),
+      client.query(`
+        SELECT 
+          si.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode",
+          p."currentStock",
+          p."isInventoryTracked",
+          p."isSerialized"
+        FROM hisab."sale_items" si
+        LEFT JOIN hisab."products" p ON si."productId" = p.id
+        WHERE si."saleId" = $1
+        ORDER BY si.id
+      `, [id])
+    ]);
+
+    if (saleResult.rows.length === 0) {
+      return errorResponse(res, "Sales invoice not found", 404);
+    }
+
+    const sale = saleResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare data for PDF generation
+    const pdfData = {
+      sale: {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        invoiceDate: sale.invoiceDate,
+        status: sale.status,
+        taxType: sale.taxType,
+        discountType: sale.discountType,
+        discountValue: sale.discountValue,
+        basicAmount: sale.basicAmount,
+        totalDiscount: sale.totalDiscount,
+        taxAmount: sale.taxAmount,
+        transportationCharge: sale.transportationCharge,
+        roundOff: sale.roundOff,
+        netReceivable: sale.netReceivable,
+        internalNotes: sale.internalNotes
+      },
+      company: {
+        name: sale.companyName,
+        logoUrl: sale.logoUrl,
+        address1: sale.address1,
+        address2: sale.address2,
+        city: sale.city,
+        state: sale.state,
+        pincode: sale.pincode,
+        country: sale.country,
+        gstin: sale.companyGstin
+      },
+      contact: {
+        name: sale.contactName,
+        email: sale.contactEmail,
+        mobile: sale.contactMobile,
+        gstin: sale.contactGstin,
+        billingAddress1: sale.contactBillingAddress1,
+        billingAddress2: sale.contactBillingAddress2,
+        billingCity: sale.contactBillingCity,
+        billingState: sale.contactBillingState,
+        billingPincode: sale.contactBillingPincode,
+        billingCountry: sale.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: sale.bankAccountName,
+        accountType: sale.bankAccountType
+      },
+      items: items
+    };
+
+    // Generate HTML content and PDF
+    const htmlContent = createFastSalesInvoiceHTML(pdfData);
+    const pdfFileName = generateFastSalesInvoicePDFFileName(sale.invoiceNumber, sale.companyName);
+    const pdfBuffer = await generateFastSalesInvoicePDF(htmlContent);
+
+    // Generate default description if not provided
+    const defaultDescription = description || `Sales Invoice #${sale.invoiceNumber} from ${sale.companyName}. 
+Amount: ₹${parseFloat(sale.netReceivable || 0).toFixed(2)}. 
+Date: ${new Date(sale.invoiceDate).toLocaleDateString('en-IN')}.
+Thank you for your business!`;
+
+    if (shareType === 'email') {
+      // Send via email
+      await sendEmail({
+        to: recipient,
+        subject: `Sales Invoice #${sale.invoiceNumber} - ${sale.companyName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #16a34a 0%, #059669 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+              <h1 style="margin: 0; font-size: 28px;">Sales Invoice</h1>
+              <p style="margin: 10px 0 0 0; opacity: 0.9;">${sale.companyName}</p>
+            </div>
+            
+            <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-radius: 0 0 10px 10px;">
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                Dear Customer,
+              </p>
+              
+              <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                ${defaultDescription}
+              </p>
+              
+              <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #16a34a;">Invoice Details:</h3>
+                <p style="margin: 5px 0; color: #333;"><strong>Invoice Number:</strong> ${sale.invoiceNumber}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Date:</strong> ${new Date(sale.invoiceDate).toLocaleDateString('en-IN')}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Amount:</strong> ₹${parseFloat(sale.netReceivable || 0).toFixed(2)}</p>
+                <p style="margin: 5px 0; color: #333;"><strong>Status:</strong> ${sale.status}</p>
+              </div>
+              
+              <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                Please find the detailed invoice attached as a PDF document.
+              </p>
+              
+              <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                If you have any questions regarding this invoice, please contact us.
+              </p>
+              
+              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px;">
+                <p>This is an automated message from ${sale.companyName}</p>
+              </div>
+            </div>
+          </div>
+        `,
+        attachments: [{
+          filename: pdfFileName,
+          content: pdfBuffer,
+          contentType: 'application/pdf'
+        }]
+      });
+
+      return successResponse(res, {
+        message: "Sales invoice shared successfully via email",
+        shareType: 'email',
+        recipient: recipient
+      });
+
+    } else if (shareType === 'whatsapp') {
+      // Validate WhatsApp number
+      if (!isValidWhatsAppNumber(recipient)) {
+        return errorResponse(res, "Invalid WhatsApp number format", 400);
+      }
+
+      try {
+        // Upload PDF to S3 for WhatsApp sharing
+        const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+        
+        // Send document via WhatsApp Business API
+        await sendWhatsAppDocument(
+          recipient,
+          pdfUrl,
+          pdfFileName,
+          defaultDescription
+        );
+
+        return successResponse(res, {
+          message: "Sales invoice shared successfully via WhatsApp",
+          shareType: 'whatsapp',
+          recipient: recipient
+        });
+
+      } catch (whatsappError) {
+        console.error('WhatsApp API failed, falling back to web link:', whatsappError);
+        
+        // Fallback: Upload PDF and provide web link
+        const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
+        const whatsappMessage = `${defaultDescription}
+
+📄 Download Invoice: ${pdfUrl}
+
+This link is valid for download.`;
+
+        return successResponse(res, {
+          message: "WhatsApp API unavailable. Web link prepared for manual sharing.",
+          shareType: 'whatsapp',
+          recipient: recipient,
+          whatsappMessage: whatsappMessage,
+          pdfUrl: pdfUrl,
+          // Frontend can use this to open WhatsApp with pre-filled message
+          whatsappUrl: `https://wa.me/${recipient.replace(/\D/g, '')}?text=${encodeURIComponent(whatsappMessage)}`,
+          fallbackMode: true
+        });
+      }
+    }
+
+  } catch (error) {
+    console.error("Error sharing sales invoice:", error);
+    return errorResponse(res, "Failed to share sales invoice", 500);
   } finally {
     client.release();
   }

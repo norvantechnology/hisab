@@ -65,3 +65,12 @@ export const downloadPurchasePDF = (pdfUrl, fileName) => {
 export const openPurchasePDFInNewTab = (pdfUrl) => {
     window.open(pdfUrl, '_blank');
 };
+
+// Share purchase invoice
+export const sharePurchaseInvoice = async (invoiceId, shareData) => {
+  return apiCall({
+    method: 'post',
+    endpoint: `/purchase/share/${invoiceId}`,
+    data: shareData
+  });
+};

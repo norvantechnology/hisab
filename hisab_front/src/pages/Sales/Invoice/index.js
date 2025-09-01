@@ -1,22 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
-import { toast, ToastContainer } from 'react-toastify';
-import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
-import BreadCrumb from '../../../Components/Common/BreadCrumb';
-import SalesInvoiceFilter from '../../../Components/Sales/Invoice/SalesInvoiceFilter';
-import SalesInvoiceTable from '../../../Components/Sales/Invoice/SalesInvoiceTable';
-import SalesInvoiceForm from '../../../Components/Sales/Invoice/SalesInvoiceForm';
-import SalesInvoiceViewModal from '../../../Components/Sales/Invoice/SalesInvoiceViewModal';
-import PaymentForm from '../../../Components/Payments/PaymentForm';
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Container, Row, Col, Card, CardBody, Button, Alert } from "reactstrap";
+import { RiAddLine, RiCloseLine, RiDownload2Line } from "react-icons/ri";
+import { toast } from "react-toastify";
+
+// Components
+import BreadCrumb from "../../../Components/Common/BreadCrumb";
+import SalesInvoiceTable from "../../../Components/Sales/Invoice/SalesInvoiceTable";
+import SalesInvoiceForm from "../../../Components/Sales/Invoice/SalesInvoiceForm";
+import SalesInvoiceViewModal from "../../../Components/Sales/Invoice/SalesInvoiceViewModal";
+import SalesInvoiceFilter from "../../../Components/Sales/Invoice/SalesInvoiceFilter";
+import ShareModal from "../../../Components/Common/ShareModal";
 import DeleteModal from "../../../Components/Common/DeleteModal";
-import ExportCSVModal from '../../../Components/Common/ExportCSVModal';
-import Loader from '../../../Components/Common/Loader';
-import { getCurrentMonthRange } from '../../../utils/dateUtils';
-import { listSales, createSale, updateSales, deleteSale, getSale, generateSalesInvoicePDF, downloadSalesPDF } from '../../../services/salesInvoice';
+import PaymentForm from "../../../Components/Payments/PaymentForm";
+
+// Services & Utils
+import { listSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice } from "../../../services/salesInvoice";
 import { createPayment } from '../../../services/payment';
 import { getBankAccounts } from '../../../services/bankAccount';
 import { getContacts } from '../../../services/contacts';
 import useCompanySelectionState from '../../../hooks/useCompanySelection';
+import { getCurrentMonthRange } from '../../../utils/dateUtils';
+import Loader from '../../../Components/Common/Loader';
 
 const SalesInvoicePage = () => {
     const currentMonthRange = getCurrentMonthRange();
@@ -45,7 +49,8 @@ const SalesInvoicePage = () => {
             main: false,
             view: false,
             export: false,
-            payment: false
+            payment: false,
+            share: false
         },
         selectedInvoice: null,
         isEditMode: false,
@@ -298,6 +303,56 @@ const SalesInvoicePage = () => {
         }));
     };
 
+    const handleShare = (invoice) => {
+        setState(prev => ({
+            ...prev,
+            selectedInvoice: invoice,
+            modals: { ...prev.modals, share: true }
+        }));
+    };
+
+    const handleShareInvoice = async (shareData) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+            
+            // For now, only handle email sharing
+            if (shareData.shareType !== 'email') {
+                setState(prev => ({ ...prev, apiLoading: false }));
+                toast.info("WhatsApp integration coming soon! Please use email for now.");
+                return;
+            }
+            
+            const response = await shareSalesInvoice(selectedInvoice.id, shareData);
+
+            if (response.success) {
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, share: false },
+                    apiLoading: false
+                }));
+
+                toast.success("Invoice shared successfully via email!");
+                
+                // WhatsApp handling commented out - coming soon
+                // if (shareData.shareType === 'whatsapp') {
+                //     if (response.fallbackMode) {
+                //         window.open(response.whatsappUrl, '_blank');
+                //         toast.info("WhatsApp API unavailable. Opening web WhatsApp with pre-filled message.");
+                //     } else {
+                //         toast.success("Invoice sent successfully via WhatsApp!");
+                //     }
+                // } else {
+                //     toast.success("Invoice shared successfully via email!");
+                // }
+            } else {
+                throw new Error(response.message || "Failed to share invoice");
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(error.message || "Failed to share invoice");
+        }
+    };
+
     const handleSubmitPayment = async (paymentData) => {
         try {
             setState(prev => ({ ...prev, apiLoading: true }));
@@ -437,6 +492,7 @@ const SalesInvoicePage = () => {
                         onDelete={handleDeleteClick}
                         onGeneratePDF={handleGeneratePDF}
                         onCreatePayment={handleCreatePayment}
+                        onShare={handleShare}
                         pdfLoading={pdfLoading}
                     />
                 )}
@@ -482,6 +538,15 @@ const SalesInvoicePage = () => {
                     isLoading={apiLoading}
                     selectedInvoice={selectedInvoiceForPayment}
                     invoiceType="sale"
+                />
+
+                <ShareModal
+                    isOpen={modals.share}
+                    toggle={() => toggleModal('share', false)}
+                    invoiceType="sales"
+                    invoiceData={selectedInvoice}
+                    onShare={handleShareInvoice}
+                    isLoading={apiLoading}
                 />
             </Container>
         </div>

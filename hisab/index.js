@@ -59,8 +59,6 @@ app.use("/api/portal", portalRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 
 
-
-
 // Global error handler to return JSON errors instead of HTML
 app.use((err, req, res, next) => {
   console.error(err.stack);

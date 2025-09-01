@@ -11,5 +11,6 @@ router.put('/updatePurchases', authenticateUser, purchaseController.updatePurcha
 router.delete('/deletePurchase', authenticateUser, purchaseController.deletePurchase);
 router.get('/getNextInvoiceNumber', authenticateUser, purchaseController.getNextInvoiceNumber);
 router.get('/generateInvoicePDF', authenticateUser, purchaseController.generatePurchaseInvoicePDF);
+router.post('/share/:id', authenticateUser, purchaseController.sharePurchaseInvoice);
 
 export default router;
