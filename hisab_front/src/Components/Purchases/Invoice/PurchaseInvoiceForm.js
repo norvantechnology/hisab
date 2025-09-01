@@ -273,6 +273,7 @@ const PurchaseInvoiceForm = ({
     totalDiscount: Yup.number().min(0, 'Discount cannot be negative'),
     taxAmount: Yup.number().min(0, 'Tax cannot be negative'),
     roundOff: Yup.number(),
+    transportationCharge: Yup.number().nullable().min(0, 'Transportation charge cannot be negative'),
     netPayable: Yup.number().min(0, 'Net payable cannot be negative').required('Net payable is required')
   }), []);
 
@@ -365,6 +366,7 @@ const PurchaseInvoiceForm = ({
       totalDiscount: isEditMode ? calculatedTotalDiscount : 0,
       taxAmount: isEditMode ? calculatedTaxAmount : 0,
       roundOff: isEditMode ? calculatedRoundOff : 0,
+      transportationCharge: isEditMode && selectedInvoice ? selectedInvoice.transportationCharge || '' : '',
       netPayable: isEditMode ? calculatedNetPayable : 0
     };
   }, [isEditMode, selectedInvoice]);
@@ -664,9 +666,11 @@ const PurchaseInvoiceForm = ({
     }
 
     const netBeforeRound = basicAmount - totalDiscount;
+    // Add transportation charges to the calculation
+    const transportationCharge = parseFloat(validation.values.transportationCharge || 0);
     // Use user-input round-off value instead of auto-calculating
     const userRoundOff = parseFloat(validation.values.roundOff || 0);
-    const netPayable = netBeforeRound + userRoundOff;
+    const netPayable = netBeforeRound + transportationCharge + userRoundOff;
 
     const billFromParts = validation.values.billFrom.split('_');
     const billFromType = billFromParts[0];
@@ -676,10 +680,11 @@ const PurchaseInvoiceForm = ({
       basicAmount,
       totalDiscount,
       roundOff: userRoundOff,
+      transportationCharge,
       netPayable,
       totalTax
     };
-  }, [items, validation.values.discountType, validation.values.discountValueType, validation.values.discountValue, validation.values.taxType, validation.values.roundOff]);
+  }, [items, validation.values.discountType, validation.values.discountValueType, validation.values.discountValue, validation.values.taxType, validation.values.roundOff, validation.values.transportationCharge]);
 
   const calculateInvoiceTotals = useCallback((values, itemsData) => {
     // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
@@ -713,9 +718,11 @@ const PurchaseInvoiceForm = ({
     }
 
     const netBeforeRound = basicAmount - totalDiscount;
+    // Add transportation charges to the calculation
+    const transportationCharge = parseFloat(values.transportationCharge || 0);
     // Use user-input round-off value instead of auto-calculating
     const userRoundOff = parseFloat(values.roundOff || 0);
-    const netPayable = netBeforeRound + userRoundOff;
+    const netPayable = netBeforeRound + transportationCharge + userRoundOff;
 
     const billFromParts = values.billFrom.split('_');
     const billFromType = billFromParts[0];
@@ -750,6 +757,7 @@ const PurchaseInvoiceForm = ({
       taxAmount: totalTax,
       totalDiscount,
       roundOff: userRoundOff,
+      transportationCharge: parseFloat(values.transportationCharge || 0),
       netPayable,
       discountType: values.discountType,
       discountValueType: values.discountValueType,
@@ -846,11 +854,12 @@ const PurchaseInvoiceForm = ({
           taxAmount: calculatedTotals.taxAmount,
           totalDiscount: calculatedTotals.totalDiscount,
           roundOff: shouldUpdateRoundOff ? calculatedTotals.roundOff : prev.roundOff, // Preserve user-set values
+          transportationCharge: calculatedTotals.transportationCharge,
           netPayable: calculatedTotals.netPayable
         }), false);
       }
     }
-  }, [calculatedTotals.basicAmount, calculatedTotals.taxAmount, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netPayable, isOpen, isEditMode, selectedInvoice]);
+  }, [calculatedTotals.basicAmount, calculatedTotals.taxAmount, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.transportationCharge, calculatedTotals.netPayable, isOpen, isEditMode, selectedInvoice]);
 
   // Recalculate all items when discount type changes
   // useEffect(() => {
@@ -1623,7 +1632,34 @@ const PurchaseInvoiceForm = ({
 
             <Row className="mb-2">
               <Col md={6}>
-                <FormGroup>
+                <Row>
+                  <Col md={6}>
+                    <FormGroup>
+                      <Label>Transportation Charge (₹)</Label>
+                      <InputGroup>
+                        <InputGroupText>₹</InputGroupText>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          name="transportationCharge"
+                          value={validation.values.transportationCharge || ''}
+                          onChange={(e) => {
+                            const charge = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                            validation.setFieldValue('transportationCharge', e.target.value === '' ? '' : charge);
+                          }}
+                          onBlur={validation.handleBlur}
+                          invalid={validation.touched.transportationCharge && !!validation.errors.transportationCharge}
+                          disabled={isProcessing}
+                          placeholder="0.00"
+                        />
+                      </InputGroup>
+                      <FormFeedback>{validation.errors.transportationCharge}</FormFeedback>
+                    </FormGroup>
+                  </Col>
+                 
+                </Row>
+                
+                <FormGroup className="mt-3">
                   <Label>Internal Notes</Label>
                   <Input
                     type="textarea"
@@ -1654,6 +1690,14 @@ const PurchaseInvoiceForm = ({
                       <span className="text-danger">(-) ₹ {calculatedTotals.totalDiscount.toFixed(2)}</span>
                     </div>
                   )}
+                  
+                  {parseFloat(validation.values.transportationCharge || 0) > 0 && (
+                    <div className="d-flex justify-content-between mb-1">
+                      <span>Transportation</span>
+                      <span className="text-info">₹ {parseFloat(validation.values.transportationCharge || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  
                     <div className="d-flex justify-content-between mb-1">
                     <span>Round Off</span>
                     <div className="d-flex align-items-center gap-2">

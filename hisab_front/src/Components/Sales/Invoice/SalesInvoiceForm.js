@@ -217,6 +217,7 @@ const SalesInvoiceForm = ({
     totalDiscount: Yup.number().min(0, 'Total discount cannot be negative'),
     taxAmount: Yup.number().min(0, 'Tax cannot be negative'),
     roundOff: Yup.number(),
+    transportationCharge: Yup.number().nullable().min(0, 'Transportation charge cannot be negative'),
     netReceivable: Yup.number().min(0, 'Net receivable cannot be negative').required('Net receivable is required')
   }), []);
 
@@ -278,6 +279,7 @@ const SalesInvoiceForm = ({
       totalDiscount: isEditMode && selectedInvoice ? selectedInvoice.totalDiscount : 0,
       taxAmount: isEditMode && selectedInvoice ? selectedInvoice.taxAmount : 0,
       roundOff: isEditMode && selectedInvoice ? selectedInvoice.roundOff : 0,
+      transportationCharge: isEditMode && selectedInvoice ? selectedInvoice.transportationCharge || '' : '',
       netReceivable: isEditMode && selectedInvoice ? selectedInvoice.netReceivable : 0
     };
   }, [isEditMode, selectedInvoice]);
@@ -588,9 +590,11 @@ const SalesInvoiceForm = ({
     }, 0);
 
     const netBeforeRound = basicAmount - totalDiscount + totalTax;
+    // Add transportation charges to the calculation
+    const transportationCharge = parseFloat(values.transportationCharge || 0);
     // Use user-input round-off value instead of auto-calculating
     const userRoundOff = parseFloat(values.roundOff || 0);
-    const netReceivable = netBeforeRound + userRoundOff;
+    const netReceivable = netBeforeRound + transportationCharge + userRoundOff;
 
     const billToParts = values.billTo.split('_');
     const billToType = billToParts[0];
@@ -654,6 +658,7 @@ const SalesInvoiceForm = ({
       taxAmount: totalTax,
       totalDiscount,
       roundOff: userRoundOff,
+      transportationCharge: parseFloat(values.transportationCharge || 0),
       netReceivable,
 
     };
@@ -714,18 +719,21 @@ const SalesInvoiceForm = ({
     }, 0);
 
     const netBeforeRound = basicAmount - totalDiscount + totalTax;
+    // Add transportation charges to the calculation
+    const transportationCharge = parseFloat(validation.values.transportationCharge || 0);
     // Use user-input round-off value instead of auto-calculating
     const userRoundOff = parseFloat(validation.values.roundOff || 0);
-    const netReceivable = netBeforeRound + userRoundOff;
+    const netReceivable = netBeforeRound + transportationCharge + userRoundOff;
 
     return {
       basicAmount,
-      totalTax,
       totalDiscount,
+      taxAmount: totalTax,
+      transportationCharge,
       roundOff: userRoundOff,
       netReceivable
     };
-  }, [items, validation.values.taxType, validation.values.roundOff]);
+  }, [items, validation.values.taxType, validation.values.roundOff, validation.values.transportationCharge]);
 
   const filteredProducts = useMemo(() => {
     return products.filter(product =>
@@ -782,13 +790,14 @@ const SalesInvoiceForm = ({
         taxAmount: calculatedTotals.totalTax,
         totalDiscount: calculatedTotals.totalDiscount,
         roundOff: shouldUpdateRoundOff ? calculatedTotals.roundOff : prev.roundOff, // Preserve user-set values
+                  transportationCharge: calculatedTotals.transportationCharge,
         netReceivable: calculatedTotals.netReceivable
       }), false);
 
       // Don't auto-populate invoice number - let user choose to use suggested number via button
       // This matches the purchase form behavior where suggested number appears as a button
     }
-  }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.netReceivable, items, isOpen, suggestedInvoiceNumber, isEditMode]); // Removed validation from dependencies
+  }, [calculatedTotals.basicAmount, calculatedTotals.totalTax, calculatedTotals.totalDiscount, calculatedTotals.roundOff, calculatedTotals.transportationCharge, calculatedTotals.netReceivable, items, isOpen, suggestedInvoiceNumber, isEditMode]); // Removed validation from dependencies
 
   // Reset form when switching from edit mode to new invoice mode
   useEffect(() => {
@@ -1411,7 +1420,35 @@ const SalesInvoiceForm = ({
 
             <Row className="mb-2">
               <Col md={5}>
-                <FormGroup className="mb-2">
+                <Row>
+                  
+                  <Col md={6}>
+                    <FormGroup>
+                      <Label>Transportation Charge (₹)</Label>
+                      <InputGroup>
+                        <InputGroupText>₹</InputGroupText>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          name="transportationCharge"
+                          value={validation.values.transportationCharge || ''}
+                          onChange={(e) => {
+                            const charge = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
+                            validation.setFieldValue('transportationCharge', e.target.value === '' ? '' : charge);
+                          }}
+                          onBlur={validation.handleBlur}
+                          invalid={validation.touched.transportationCharge && !!validation.errors.transportationCharge}
+                          disabled={isProcessing}
+                          placeholder="0.00"
+                        />
+                      </InputGroup>
+                      <FormFeedback>{validation.errors.transportationCharge}</FormFeedback>
+                    </FormGroup>
+                  </Col>
+                  
+                </Row>
+                
+                <FormGroup className="mb-2 mt-3">
                   <Label className="form-label">Internal Notes</Label>
                   <Input
                     type="textarea"
@@ -1446,6 +1483,14 @@ const SalesInvoiceForm = ({
                       <span className="text-success">+ ₹ {calculatedTotals.totalTax.toFixed(2)}</span>
                     </div>
                   )}
+                  
+                  {parseFloat(validation.values.transportationCharge || 0) > 0 && (
+                    <div className="d-flex justify-content-between mb-1">
+                      <span>Transportation:</span>
+                      <span className="text-info">₹ {parseFloat(validation.values.transportationCharge || 0).toFixed(2)}</span>
+                    </div>
+                  )}
+                  
                     <div className="d-flex justify-content-between mb-1">
                       <span>Round Off:</span>
                     <div className="d-flex align-items-center gap-2">

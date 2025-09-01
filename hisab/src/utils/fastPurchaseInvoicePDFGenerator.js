@@ -285,6 +285,12 @@ export const createFastPurchaseInvoiceHTML = (data) => {
           <span class="total-label">Tax Amount:</span>
           <span class="total-value">₹${taxAmount.toFixed(2)}</span>
         </div>
+        ${parseFloat(purchase?.transportationCharge || 0) > 0 ? `
+        <div class="total-row">
+          <span class="total-label">Transportation Charge:</span>
+          <span class="total-value">₹${parseFloat(purchase?.transportationCharge || 0).toFixed(2)}</span>
+        </div>
+        ` : ''}
         ${parseFloat(purchase?.roundOff || 0) !== 0 ? `
         <div class="total-row">
           <span class="total-label">Round Off:</span>

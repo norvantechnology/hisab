@@ -22,6 +22,7 @@ export async function createSale(req, res) {
     totalDiscount,
     taxAmount,
     roundOff = 0,
+    transportationCharge = 0,
     netReceivable,
     billToBank,
     billToContact,
@@ -134,13 +135,13 @@ export async function createSale(req, res) {
       `INSERT INTO hisab."sales" (
         "companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
         "taxType", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
-        "taxAmount", "netReceivable", "status", "remaining_amount", "paid_amount"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        "taxAmount", "transportationCharge", "netReceivable", "status", "remaining_amount", "paid_amount"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
         taxType, roundOff, internalNotes, basicAmount, totalDiscount, 
-        taxAmount, netReceivable, status, remainingAmount, paidAmount
+        taxAmount, transportationCharge, netReceivable, status, remainingAmount, paidAmount
       ]
     );
 
@@ -236,6 +237,7 @@ export async function updateSale(req, res) {
     totalDiscount,
     taxAmount,
     roundOff = 0,
+    transportationCharge = 0,
     netReceivable,
     billToBank,
     billToContact,
@@ -431,12 +433,12 @@ export async function updateSale(req, res) {
       `UPDATE hisab."sales" SET
         "bankAccountId" = $1, "contactId" = $2, "invoiceNumber" = $3, "invoiceDate" = $4,
         "taxType" = $5, "roundOff" = $6, "internalNotes" = $7, "basicAmount" = $8, 
-        "totalDiscount" = $9, "taxAmount" = $10, "netReceivable" = $11, "status" = $12, 
-        "remaining_amount" = $13, "paid_amount" = $14, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $15`,
+        "totalDiscount" = $9, "taxAmount" = $10, "transportationCharge" = $11, "netReceivable" = $12,
+        "status" = $13, "remaining_amount" = $14, "paid_amount" = $15, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $16`,
       [
         bankAccountId, contactId, invoiceNumber, date, taxType, roundOff, internalNotes, 
-        basicAmount, totalDiscount, taxAmount, netReceivable, status, remainingAmount, paidAmount, id
+        basicAmount, totalDiscount, taxAmount, transportationCharge, netReceivable, status, remainingAmount, paidAmount, id
       ]
     );
 
@@ -787,6 +789,7 @@ export async function generateSalesInvoicePDF(req, res) {
         basicAmount: sale.basicAmount,
         totalDiscount: sale.totalDiscount,
         taxAmount: sale.taxAmount,
+        transportationCharge: sale.transportationCharge,
         roundOff: sale.roundOff,
         netReceivable: sale.netReceivable,
         internalNotes: sale.internalNotes
@@ -1007,6 +1010,7 @@ export async function listSales(req, res) {
           basicAmount: parseFloat(sale.basicAmount || 0),
           totalDiscount: parseFloat(sale.totalDiscount || 0),
           taxAmount: parseFloat(sale.taxAmount || 0),
+          transportationCharge: parseFloat(sale.transportationCharge || 0),
           netReceivable: parseFloat(sale.netReceivable || 0),
           remainingAmount: parseFloat(sale.remaining_amount || 0),
           paidAmount: parseFloat(sale.paid_amount || 0),

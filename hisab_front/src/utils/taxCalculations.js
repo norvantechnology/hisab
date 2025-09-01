@@ -161,3 +161,71 @@ export const calculateItemTotalForDisplay = (item, taxType) => {
   const total = afterDiscount + taxAmount;
   return total;
 }; 
+
+/**
+ * Calculate transportation total (no tax calculation needed)
+ * @param {Object} params - Transportation calculation parameters
+ * @param {number} params.transportationCharge - Transportation charge amount
+ * @returns {Object} Object containing transportationCharge
+ */
+export const calculateTransportationTax = ({
+  transportationCharge
+}) => {
+  const totalCharge = parseFloat(transportationCharge) || 0;
+  
+  return {
+    transportationCharge: parseFloat(totalCharge.toFixed(2))
+  };
+};
+
+/**
+ * Calculate complete invoice totals including transportation charges
+ * @param {Object} params - Invoice calculation parameters
+ * @param {Array} params.items - Array of invoice items
+ * @param {number} params.roundOff - Round off amount
+ * @param {number} params.transportationCharge - Transportation charge
+ * @returns {Object} Object containing all calculated amounts
+ */
+export const calculateInvoiceTotalsWithTransportation = ({
+  items,
+  roundOff = 0,
+  transportationCharge = 0
+}) => {
+  // Calculate item totals
+  let basicAmount = 0;
+  let totalDiscount = 0;
+  let taxAmount = 0;
+  
+  items.forEach(item => {
+    const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity || 0);
+    const rate = parseFloat(item.rate || 0);
+    const itemTotal = parseFloat(item.total || 0);
+    const itemTaxAmount = parseFloat(item.taxAmount || 0);
+    const itemDiscount = parseFloat(item.discount || 0);
+    
+    basicAmount += (quantity * rate);
+    totalDiscount += itemDiscount;
+    taxAmount += itemTaxAmount;
+  });
+  
+  // Calculate transportation totals
+  const transportationCalc = calculateTransportationTax({
+    transportationCharge
+  });
+  
+  // Calculate final totals
+  const subtotal = basicAmount - totalDiscount + transportationCalc.transportationCharge;
+  const finalTaxAmount = taxAmount; // No transportation tax included here
+  const grandTotal = subtotal + finalTaxAmount + parseFloat(roundOff || 0);
+  
+  return {
+    basicAmount: parseFloat(basicAmount.toFixed(2)),
+    totalDiscount: parseFloat(totalDiscount.toFixed(2)),
+    taxAmount: parseFloat(finalTaxAmount.toFixed(2)),
+    transportationTaxAmount: 0, // No transportation tax included here
+          transportationCharge: transportationCalc.transportationCharge,
+    subtotal: parseFloat(subtotal.toFixed(2)),
+    grandTotal: parseFloat(grandTotal.toFixed(2)),
+    roundOff: parseFloat(roundOff || 0)
+  };
+}; 

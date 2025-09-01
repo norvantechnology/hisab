@@ -120,6 +120,7 @@ export const createSalesInvoiceHTML = (invoiceData) => {
   const basicAmount = parseFloat(sale.basicAmount || 0);
   const totalDiscount = parseFloat(sale.totalDiscount || 0);
   const taxAmount = parseFloat(sale.taxAmount || 0);
+  const transportationCharge = parseFloat(sale.transportationCharge || 0);
   const roundOff = parseFloat(sale.roundOff || 0);
   const netReceivable = parseFloat(sale.netReceivable || 0);
   
@@ -455,6 +456,12 @@ export const createSalesInvoiceHTML = (invoiceData) => {
             <tr>
               <td class="total-label">Tax Amount:</td>
               <td class="total-value">₹${taxAmount.toFixed(2)}</td>
+            </tr>
+            ` : ''}
+            ${transportationCharge > 0 ? `
+            <tr>
+              <td class="total-label">Transportation Charge:</td>
+              <td class="total-value">₹${transportationCharge.toFixed(2)}</td>
             </tr>
             ` : ''}
             ${roundOff !== 0 ? `

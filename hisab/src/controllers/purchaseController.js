@@ -20,6 +20,7 @@ export async function createPurchase(req, res) {
     totalDiscount,
     taxAmount,
     roundOff = 0,
+    transportationCharge = 0,
     netPayable,
     billFromBank,
     billFromContact,
@@ -148,14 +149,14 @@ export async function createPurchase(req, res) {
        ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", 
         "invoiceDate", "taxType", "rateType", "discountType", "discountValueType", 
         "discountValue", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
-        "taxAmount", "netPayable", "status", "remaining_amount", "paid_amount")
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+        "taxAmount", "transportationCharge", "netPayable", "status", "remaining_amount", "paid_amount")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING id`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
         taxType, rateType, discountType, discountValueType, discountValue,
-        roundOff, internalNotes, basicAmount, totalDiscount, taxAmount, netPayable, status,
-        remainingAmount, paidAmount
+        roundOff, internalNotes, basicAmount, totalDiscount, taxAmount,
+        transportationCharge, netPayable, status, remainingAmount, paidAmount
       ]
     );
     const purchaseId = purchaseRes.rows[0].id;
@@ -276,6 +277,7 @@ export async function updatePurchase(req, res) {
     totalDiscount,
     taxAmount,
     roundOff = 0,
+    transportationCharge = 0,
     netPayable,
     billFromBank,
     billFromContact,
@@ -517,12 +519,13 @@ export async function updatePurchase(req, res) {
            "basicAmount" = $12,
            "totalDiscount" = $13,
            "taxAmount" = $14,
-           "netPayable" = $15,
-           "status" = $16,
-           "remaining_amount" = $17,
-           "paid_amount" = $18,
+           "transportationCharge" = $15,
+           "netPayable" = $16,
+           "status" = $17,
+           "remaining_amount" = $18,
+           "paid_amount" = $19,
            "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $19 AND "companyId" = $20`,
+       WHERE "id" = $20 AND "companyId" = $21`,
       [
         bankAccountId,
         contactId,
@@ -538,6 +541,7 @@ export async function updatePurchase(req, res) {
         basicAmount,
         totalDiscount,
         taxAmount,
+        transportationCharge,
         netPayable,
         finalStatus,
         remainingAmount,
@@ -1028,6 +1032,7 @@ export async function generatePurchaseInvoicePDF(req, res) {
         basicAmount: purchase.basicAmount,
         totalDiscount: purchase.totalDiscount,
         taxAmount: purchase.taxAmount,
+        transportationCharge: purchase.transportationCharge,
         roundOff: purchase.roundOff,
         netPayable: purchase.netPayable,
         internalNotes: purchase.internalNotes
@@ -1192,6 +1197,7 @@ export async function listPurchases(req, res) {
         p."basicAmount",
         p."totalDiscount",
         p."taxAmount",
+        p."transportationCharge",
         p."status",
         p."netPayable",
         p."remaining_amount",
@@ -1391,6 +1397,7 @@ export async function listPurchases(req, res) {
           basicAmount: parseFloat(row.basicAmount || 0),
           totalDiscount: parseFloat(row.totalDiscount || 0),
           taxAmount: parseFloat(row.taxAmount || 0),
+          transportationCharge: parseFloat(row.transportationCharge || 0),
           netPayable: parseFloat(row.netPayable || 0),
           remainingAmount: parseFloat(row.remaining_amount || 0),
           paidAmount: parseFloat(row.paid_amount || 0),
