@@ -20,8 +20,6 @@ const convertNumberToWords = (amount) => {
 export const createFastSalesInvoiceHTML = (data) => {
   const { sale, items, contact, company, bankAccount } = data;
   
-
-  
   // Use pre-calculated amounts from database (already includes correct discount calculations)
   const taxAmount = parseFloat(sale?.taxAmount || 0);
   const grandTotal = parseFloat(sale?.netReceivable || 0);
@@ -33,279 +31,379 @@ export const createFastSalesInvoiceHTML = (data) => {
       <meta charset="UTF-8">
       <title>Sales Invoice</title>
       <style>
-        * { box-sizing: border-box; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body { 
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-          font-size: 10px; 
-          line-height: 1.3;
-          margin: 0; 
-          padding: 12px; 
+          font-family: Arial, sans-serif; 
+          font-size: 9px; 
+          line-height: 1.2;
+          color: #000;
           background: #fff;
-          color: #333;
+          padding: 8px;
         }
+        
+        .invoice-container {
+          max-width: 100%;
+          margin: 0 auto;
+        }
+        
         .header { 
           text-align: center; 
-          margin-bottom: 15px; 
-          border-bottom: 1px solid #000; 
-          padding-bottom: 10px; 
+          margin-bottom: 12px; 
+          border-bottom: 2px solid #000; 
+          padding-bottom: 8px; 
         }
+        
         .company-logo {
-          margin-bottom: 8px;
           text-align: center;
+          margin-bottom: 6px;
         }
+        
         .company-logo img {
-          max-height: 40px;
+          max-height: 35px;
           max-width: 120px;
           object-fit: contain;
         }
+        
         .company-name { 
-          font-size: 20px; 
-          font-weight: 700; 
-          margin-bottom: 4px; 
-          letter-spacing: 0.5px;
+          font-size: 16px; 
+          font-weight: bold; 
+          margin-bottom: 2px; 
           text-transform: uppercase;
+          color: #065f46;
         }
+        
         .company-details { 
-          font-size: 10px; 
-          line-height: 1.4;
-          opacity: 0.8;
+          font-size: 8px; 
+          line-height: 1.3;
+          color: #4b5563;
+          margin-bottom: 4px;
         }
+        
         .invoice-title { 
-          font-size: 18px; 
-          font-weight: 700; 
-          margin-bottom: 15px; 
+          font-size: 14px; 
+          font-weight: bold; 
+          margin: 8px 0; 
           text-align: center;
           text-transform: uppercase;
-          letter-spacing: 1px;
+          background: linear-gradient(135deg, #d1fae5 0%, #a7f3d0 100%);
+          color: #065f46;
+          padding: 6px;
+          border: 1px solid #10b981;
+          border-radius: 3px;
         }
+        
         .invoice-info { 
           display: flex; 
           justify-content: space-between; 
-          margin-bottom: 15px; 
-          gap: 25px;
+          margin-bottom: 10px; 
+          gap: 15px;
+          font-size: 8px;
         }
+        
         .info-section {
           flex: 1;
-        }
-        .info-row { 
-          margin-bottom: 4px; 
-          line-height: 1.3;
-        }
-        .info-label { 
-          font-weight: 600; 
-          min-width: 60px; 
-          display: inline-block;
-          text-transform: uppercase;
-          font-size: 9px;
-          letter-spacing: 0.3px;
-        }
-        .info-value {
-          font-weight: 400;
-          font-size: 10px;
-        }
-        .billing-address {
-          margin-top: 8px;
+          border: 1px solid #d1d5db;
           padding: 8px;
-          border: 1px solid #ddd;
           border-radius: 3px;
-          background: #fafafa;
+          background: #f9fafb;
         }
-        .billing-address-title {
-          font-weight: 600;
+        
+        .info-title {
+          font-weight: bold;
           font-size: 9px;
-          text-transform: uppercase;
           margin-bottom: 6px;
-          letter-spacing: 0.3px;
+          text-transform: uppercase;
+          color: #374151;
+          border-bottom: 1px solid #d1d5db;
+          padding-bottom: 2px;
         }
+        
+        .info-row { 
+          margin-bottom: 3px; 
+          display: flex;
+        }
+        
+        .info-label { 
+          font-weight: bold; 
+          min-width: 50px; 
+          font-size: 8px;
+          color: #6b7280;
+        }
+        
+        .info-value {
+          flex: 1;
+          font-size: 8px;
+          color: #000;
+        }
+        
         .items-table { 
           width: 100%; 
           border-collapse: collapse; 
-          margin: 15px 0; 
-          font-size: 9px; 
-          box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+          margin: 8px 0; 
+          font-size: 8px; 
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
+        
         .items-table th { 
-          background: #f8f9fa; 
-          padding: 8px 6px; 
-          border: 1px solid #dee2e6; 
-          font-weight: 600; 
+          background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); 
+          color: #065f46;
+          padding: 5px 3px; 
+          border: 1px solid #16a34a; 
+          font-weight: bold; 
+          text-align: center;
+          font-size: 7px;
           text-transform: uppercase;
-          font-size: 8px;
-          letter-spacing: 0.3px;
-          text-align: left;
         }
+        
         .items-table td { 
-          padding: 8px 6px; 
-          border: 1px solid #dee2e6; 
+          padding: 4px; 
+          border: 1px solid #e5e7eb; 
           vertical-align: top;
+          font-size: 8px;
         }
-        .items-table tr:nth-child(even) {
-          background: #fafafa;
+        
+        .items-table tbody tr:nth-child(even) {
+          background: #f9fafb;
         }
-        .totals { 
+        
+        .items-table tbody tr:hover {
+          background: #f0fdf4;
+        }
+        
+        .text-right { text-align: right; }
+        .text-center { text-align: center; }
+        .text-left { text-align: left; }
+        
+        .totals-section { 
+          margin-top: 10px; 
+          display: flex; 
+          justify-content: flex-end; 
+        }
+        
+        .totals-table {
+          width: 220px;
+          border-collapse: collapse;
+          font-size: 8px;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .totals-table td {
+          padding: 4px 8px;
+          border: 1px solid #d1d5db;
+        }
+        
+        .total-label {
+          font-weight: bold;
+          text-align: left;
+          background: #f0fdf4;
+          color: #065f46;
+        }
+        
+        .total-value {
+          text-align: right;
+          font-weight: bold;
+          background: white;
+          color: #000;
+        }
+        
+        .grand-total {
+          background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%) !important;
+          color: #065f46 !important;
+          font-size: 9px;
+          font-weight: bold;
+          border: 1px solid #16a34a !important;
+        }
+        
+        .amount-words {
+          margin-top: 10px;
+          padding: 8px;
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          border: 1px solid #60a5fa;
+          border-radius: 3px;
+          font-size: 8px;
+          font-weight: bold;
+          color: #1e40af;
+        }
+        
+        .footer { 
           margin-top: 15px; 
-          text-align: right; 
-          border-top: 1px solid #000;
-          padding-top: 12px;
+          text-align: center; 
+          border-top: 1px solid #e5e7eb; 
+          padding-top: 8px; 
+          font-size: 7px;
+          color: #6b7280;
         }
-        .total-row { 
-          margin-bottom: 6px; 
-          font-size: 11px;
+        
+        .signature-section {
+          margin-top: 20px;
           display: flex;
           justify-content: space-between;
-          max-width: 250px;
-          margin-left: auto;
+          font-size: 8px;
         }
-        .total-label {
-          font-weight: 600;
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
+        
+        .signature-box {
+          width: 150px;
+          text-align: center;
+          border-top: 1px solid #374151;
+          padding-top: 6px;
+          margin-top: 25px;
+          color: #374151;
         }
-        .total-value {
-          font-weight: 400;
-          min-width: 80px;
-          text-align: right;
-        }
-        .grand-total { 
-          font-weight: 700; 
-          border-top: 1px solid #000; 
-          padding-top: 8px; 
-          font-size: 12px;
-          margin-top: 12px;
-        }
-        .footer { 
-          margin-top: 20px; 
-          text-align: right; 
-          border-top: 1px solid #ddd; 
-          padding-top: 12px; 
-          font-size: 9px;
-          opacity: 0.7;
-          line-height: 1.4;
-        }
-        .amount-in-words {
-          font-style: italic;
-          font-weight: 500;
-          margin-top: 6px;
+        
+        @media print {
+          body { margin: 0; padding: 4px; }
+          .invoice-container { max-width: none; }
+          * { -webkit-print-color-adjust: exact; }
         }
       </style>
     </head>
     <body>
-      <div class="header">
-        ${company?.logoUrl ? `
+      <div class="invoice-container">
+        <!-- Compact Header -->
+        <div class="header">
           <div class="company-logo">
-            <img src="${company.logoUrl}" alt="Company Logo" />
+            ${company?.logoUrl ? `<img src="${company.logoUrl}" alt="Company Logo">` : ''}
           </div>
-        ` : ''}
-        <div class="company-name">${company?.name || 'Company Name'}</div>
-        <div class="company-details">
-          ${company?.address1 || ''} ${company?.city || ''}<br>
-          ${company?.gstin || ''}
+          <div class="company-name">${company?.name || 'Company Name'}</div>
+          <div class="company-details">
+            ${company?.address1 ? company.address1 + ', ' : ''}${company?.city || ''} ${company?.state || ''} ${company?.pincode || ''}
+            ${company?.gstin ? '| GSTIN: ' + company.gstin : ''}
+          </div>
+          <div class="invoice-title">Sales Invoice</div>
         </div>
-      </div>
 
-      <div class="invoice-title">SALES INVOICE</div>
-
-      <div class="invoice-info">
-        <div class="info-section">
-          <div class="info-row">
-            <span class="info-label">Invoice:</span>
-            <span class="info-value">${sale.invoiceNumber}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Date:</span>
-            <span class="info-value">${new Date(sale.invoiceDate).toLocaleDateString()}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Status:</span>
-            <span class="info-value">${sale.status}</span>
-          </div>
-        </div>
-        <div class="info-section">
-          <div class="info-row">
-            <span class="info-label">Customer:</span>
-            <span class="info-value">${contact?.name || ''}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Mobile:</span>
-            <span class="info-value">${contact?.mobile || ''}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Email:</span>
-            <span class="info-value">${contact?.email || ''}</span>
-          </div>
-          ${contact?.billingAddress1 || contact?.billingAddress2 || contact?.billingCity || contact?.billingState || contact?.billingPincode || contact?.billingCountry ? `
-            <div class="billing-address">
-              <div class="billing-address-title">Billing Address</div>
-              ${contact?.billingAddress1 ? `<div>${contact.billingAddress1}</div>` : ''}
-              ${contact?.billingAddress2 ? `<div>${contact.billingAddress2}</div>` : ''}
-              ${contact?.billingCity || contact?.billingState || contact?.billingPincode ? `<div>${[contact?.billingCity, contact?.billingState, contact?.billingPincode].filter(Boolean).join(', ')}</div>` : ''}
-              ${contact?.billingCountry ? `<div>${contact.billingCountry}</div>` : ''}
+        <!-- Compact Invoice & Customer Info -->
+        <div class="invoice-info">
+          <div class="info-section">
+            <div class="info-title">Invoice Details</div>
+            <div class="info-row">
+              <span class="info-label">Invoice#:</span>
+              <span class="info-value">${sale?.invoiceNumber || 'N/A'}</span>
             </div>
-          ` : ''}
+            <div class="info-row">
+              <span class="info-label">Date:</span>
+              <span class="info-value">${new Date(sale?.invoiceDate).toLocaleDateString('en-IN') || 'N/A'}</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Status:</span>
+              <span class="info-value">${sale?.status?.toUpperCase() || 'PENDING'}</span>
+            </div>
+          </div>
+          
+          <div class="info-section">
+            <div class="info-title">Bill To</div>
+            <div class="info-row">
+              <span class="info-label">Name:</span>
+              <span class="info-value">${contact?.name || 'Walk-in Customer'}</span>
+            </div>
+            ${contact?.mobile ? `
+            <div class="info-row">
+              <span class="info-label">Mobile:</span>
+              <span class="info-value">${contact.mobile}</span>
+            </div>` : ''}
+            ${contact?.gstin ? `
+            <div class="info-row">
+              <span class="info-label">GSTIN:</span>
+              <span class="info-value">${contact.gstin}</span>
+            </div>` : ''}
+            ${contact?.contactBillingAddress1 ? `
+            <div class="info-row">
+              <span class="info-label">Address:</span>
+              <span class="info-value">${contact.contactBillingAddress1}, ${contact?.contactBillingCity || ''}</span>
+            </div>` : ''}
+          </div>
         </div>
-      </div>
 
-      <table class="items-table">
-        <thead>
-          <tr>
-            <th>Item</th>
-            <th>Qty</th>
-            <th>Rate (W/O Tax)</th>
-            <th>Discount</th>
-            <th>Tax</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${items && items.length > 0 ? items.map(item => `
+        <!-- Compact Items Table -->
+        <table class="items-table">
+          <thead>
             <tr>
-              <td>${item?.productName || ''}</td>
-              <td>${parseFloat(item?.quantity || 0).toFixed(2)}</td>
-              <td>₹${parseFloat(item?.rate || 0).toFixed(2)}</td>
-              <td>${parseFloat(item?.discount || 0) > 0 ? `₹${parseFloat(item?.discount || 0).toFixed(2)}${item?.discountType === 'percentage' ? `<br><small>(${parseFloat(item?.discountRate || 0)}%)</small>` : ''}` : '-'}</td>
-              <td>₹${parseFloat(item?.taxAmount || 0).toFixed(2)}</td>
-              <td>₹${parseFloat(item?.total || 0).toFixed(2)}</td>
+              <th style="width: 5%;">#</th>
+              <th style="width: 35%;">Item Description</th>
+              <th style="width: 8%;">Qty</th>
+              <th style="width: 12%;">Rate</th>
+              <th style="width: 10%;">Disc</th>
+              <th style="width: 10%;">Tax</th>
+              <th style="width: 12%;">Amount</th>
             </tr>
-          `).join('') : '<tr><td colspan="6">No items found</td></tr>'}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            ${items.map((item, index) => `
+              <tr>
+                <td class="text-center">${index + 1}</td>
+                <td>
+                  <strong>${item.productName || item.name || 'N/A'}</strong>
+                  ${item.productCode ? `<br><small>Code: ${item.productCode}</small>` : ''}
+                  ${item.serialNumbers && item.serialNumbers.length > 0 ? 
+                    `<br><small>S/N: ${item.serialNumbers.join(', ')}</small>` : ''}
+                </td>
+                <td class="text-center">${parseFloat(item.quantity || 0).toFixed(2)}</td>
+                <td class="text-right">₹${parseFloat(item.rate || 0).toFixed(2)}</td>
+                <td class="text-right">${parseFloat(item.discount || 0) > 0 ? '₹' + parseFloat(item.discount).toFixed(2) : '-'}</td>
+                <td class="text-right">${parseFloat(item.taxAmount || 0) > 0 ? '₹' + parseFloat(item.taxAmount).toFixed(2) : '-'}</td>
+                <td class="text-right"><strong>₹${parseFloat(item.total || 0).toFixed(2)}</strong></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
 
-      <div class="totals">
-        <div class="total-row">
-          <span class="total-label">Basic Amount:</span>
-          <span class="total-value">₹${parseFloat(sale?.basicAmount || 0).toFixed(2)}</span>
+        <!-- Compact Totals -->
+        <div class="totals-section">
+          <table class="totals-table">
+            <tr>
+              <td class="total-label">Subtotal:</td>
+              <td class="total-value">₹${parseFloat(sale?.basicAmount || 0).toFixed(2)}</td>
+            </tr>
+            ${parseFloat(sale?.totalDiscount || 0) > 0 ? `
+            <tr>
+              <td class="total-label">Discount:</td>
+              <td class="total-value">-₹${parseFloat(sale.totalDiscount).toFixed(2)}</td>
+            </tr>` : ''}
+            ${parseFloat(sale?.taxAmount || 0) > 0 ? `
+            <tr>
+              <td class="total-label">Tax:</td>
+              <td class="total-value">₹${parseFloat(sale.taxAmount).toFixed(2)}</td>
+            </tr>` : ''}
+            ${parseFloat(sale?.transportationCharge || 0) > 0 ? `
+            <tr>
+              <td class="total-label">Transport:</td>
+              <td class="total-value">₹${parseFloat(sale.transportationCharge).toFixed(2)}</td>
+            </tr>` : ''}
+            ${parseFloat(sale?.roundOff || 0) !== 0 ? `
+            <tr>
+              <td class="total-label">Round Off:</td>
+              <td class="total-value">${parseFloat(sale.roundOff) >= 0 ? '+' : ''}₹${parseFloat(sale.roundOff).toFixed(2)}</td>
+            </tr>` : ''}
+            <tr class="grand-total">
+              <td class="total-label">TOTAL:</td>
+              <td class="total-value">₹${grandTotal.toFixed(2)}</td>
+            </tr>
+          </table>
         </div>
-        ${parseFloat(sale?.totalDiscount || 0) > 0 ? `
-        <div class="total-row">
-          <span class="total-label">Discount (${sale?.discountType === 'percentage' ? sale?.discountValue + '%' : 'Fixed'}):</span>
-          <span class="total-value">-₹${parseFloat(sale?.totalDiscount || 0).toFixed(2)}</span>
-        </div>
-        ` : ''}
-        <div class="total-row">
-          <span class="total-label">Tax Amount:</span>
-          <span class="total-value">₹${taxAmount.toFixed(2)}</span>
-        </div>
-        ${parseFloat(sale?.transportationCharge || 0) > 0 ? `
-        <div class="total-row">
-          <span class="total-label">Transportation Charge:</span>
-          <span class="total-value">₹${parseFloat(sale?.transportationCharge || 0).toFixed(2)}</span>
-        </div>
-        ` : ''}
-        ${parseFloat(sale?.roundOff || 0) !== 0 ? `
-        <div class="total-row">
-          <span class="total-label">Round Off:</span>
-          <span class="total-value">₹${parseFloat(sale?.roundOff || 0).toFixed(2)}</span>
-        </div>
-        ` : ''}
-        <div class="total-row grand-total">
-          <span class="total-label">Total:</span>
-          <span class="total-value">₹${grandTotal.toFixed(2)}</span>
-        </div>
-      </div>
 
-      <div class="footer">
-        <div class="amount-in-words">
-          Amount in words: ${convertNumberToWords(Math.round(grandTotal))} Rupees Only
+        <!-- Amount in Words -->
+        <div class="amount-words">
+          <strong>Amount in Words:</strong> ${convertNumberToWords(grandTotal)} Rupees Only
+        </div>
+
+        ${sale?.internalNotes ? `
+        <div style="margin-top: 8px; padding: 4px; border: 1px solid #ccc; font-size: 8px;">
+          <strong>Notes:</strong> ${sale.internalNotes}
+        </div>` : ''}
+
+        <!-- Compact Signature Section -->
+        <div class="signature-section">
+          <div class="signature-box">
+            <div>Customer Signature</div>
+          </div>
+          <div class="signature-box">
+            <div>Authorized Signatory</div>
+          </div>
+        </div>
+
+        <!-- Minimal Footer -->
+        <div class="footer">
+          Generated on ${new Date().toLocaleString('en-IN')} | ${company?.name || 'HISAB'} | ${process.env.FRONTEND_URL || 'www.hisab.com'}
         </div>
       </div>
     </body>

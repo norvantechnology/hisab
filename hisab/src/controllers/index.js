@@ -8,6 +8,7 @@ import * as userRoleController from "./userRoleController.js";
 import * as moduleController from "./moduleController.js";
 import * as rolePermissionsController from "./rolePermissionsController.js";
 import * as contactController from "./contactController.js";
+import * as contactStatementController from "./contactStatementController.js";
 import * as paymentController from "./paymentController.js";
 import * as bankTransferController from "./bankTransferController.js";
 import * as productController from "./productController.js";
@@ -29,6 +30,7 @@ export {
   moduleController,
   rolePermissionsController,
   contactController,
+  contactStatementController,
   paymentController,
   bankTransferController,
   productController,

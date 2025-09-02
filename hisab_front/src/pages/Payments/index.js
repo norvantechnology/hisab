@@ -130,6 +130,8 @@ const PaymentsPage = () => {
     };
 
     const handleEditClick = (payment) => {
+        console.log('🔍 Edit payment clicked:', payment);
+        console.log('🆔 Payment ID:', payment?.id);
         setState(prev => ({
             ...prev,
             selectedPayment: payment,
@@ -178,31 +180,17 @@ const PaymentsPage = () => {
         }
     };
 
-    const handleSubmitPayment = async (values) => {
+    const handleSubmitPayment = async (payloadFromForm) => {
         try {
             setState(prev => ({ ...prev, apiLoading: true }));
-            const allocations = values.transactionAllocations.map(allocation => ({
-                transactionId: allocation.transactionId,
-                transactionType: allocation.transactionType || 'purchase', // Add missing transactionType
-                type: allocation.type,
-                amount: parseFloat(allocation.amount),
-                paidAmount: parseFloat(allocation.paidAmount)
-            }));
-console.log('🚀 Submitting payment with values:', values);              
-            const payload = {
-                id: values.id,
-                contactId: values.contactId,
-                bankAccountId: values.bankAccountId,
-                date: values.date,
-                description: values.description || '',
-                adjustmentType: values.adjustmentType,
-                adjustmentValue: values.adjustmentType !== 'none' ? parseFloat(values.adjustmentValue) : 0,
-                transactionAllocations: allocations
-            };
+            
+            console.log('🚀 Received payload from PaymentForm:', payloadFromForm);
+            console.log('🔍 Edit mode debug:', { isEditMode, selectedPaymentId: selectedPayment?.id });
+            console.log('📦 Final payload for API:', payloadFromForm);
 
             const response = isEditMode
-                ? await updatePayment(payload)
-                : await createPayment(payload);
+                ? await updatePayment(payloadFromForm)
+                : await createPayment(payloadFromForm);
 
             if (response.success) {
                 toast.success(`Payment ${isEditMode ? 'updated' : 'created'} successfully`);

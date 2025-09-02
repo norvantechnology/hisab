@@ -41,7 +41,8 @@ const PurchaseInvoiceForm = ({
   isEditMode,
   selectedInvoice,
   onSubmit,
-  isLoading = false
+  isLoading = false,
+  apiError = null
 }) => {
   const getInitialItems = useCallback(() => {
     // Debug: Log the selectedInvoice data when editing
@@ -105,7 +106,7 @@ const PurchaseInvoiceForm = ({
           taxRate,
           discountRate,
           rateType,
-          discountValueType: 'percentage',
+          discountValueType: 'rupees',
           discountValue: discountRate
         });
         
@@ -340,7 +341,7 @@ const PurchaseInvoiceForm = ({
         (selectedInvoice.rateType || (TAX_TYPES.find(tax => tax.value === selectedInvoice.taxType)?.rate === 0 ? 'without_tax' : 'with_tax')) : 
         'without_tax',
       discountType: isEditMode && selectedInvoice ? selectedInvoice.discountType : 'none',
-      discountValueType: isEditMode && selectedInvoice ? selectedInvoice.discountValueType : 'percentage',
+      discountValueType: isEditMode && selectedInvoice ? selectedInvoice.discountValueType : 'rupees',
       discountValue: isEditMode && selectedInvoice ? selectedInvoice.discountValue : 0,
       status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
@@ -591,7 +592,7 @@ const PurchaseInvoiceForm = ({
             taxRate,
             discountRate,
             rateType: newRateType,
-            discountValueType: 'percentage',
+            discountValueType: 'rupees',
             discountValue: discountRate
           });
           
@@ -1109,7 +1110,7 @@ const PurchaseInvoiceForm = ({
           taxRate,
           discountRate,
           rateType: updatedItem.rateType,
-          discountValueType: 'percentage',
+          discountValueType: 'rupees',
           discountValue: discountRate
         });
         
@@ -1124,8 +1125,8 @@ const PurchaseInvoiceForm = ({
   }, []);
 
   const selectProduct = useCallback((product) => {
-    const defaultTaxRate = getDefaultTaxRate();
-    const productTaxRate = parseFloat(product.taxRate) || defaultTaxRate;
+    // Don't use product's default tax - let user manually select tax options
+    const defaultTaxRate = 0;
     const quantity = currentItem?.isSerialized ? currentItem.serialNumbers.length : currentItem?.quantity || 1;
     const rate = currentItem?.rate || 0;
     const discountRate = currentItem?.discountRate || 0;
@@ -1137,14 +1138,14 @@ const PurchaseInvoiceForm = ({
     let total = currentItem?.total;
     
     if (!taxAmount || !discount || !total) {
-      // Use common utility function for tax calculations
+      // Use common utility function for tax calculations with 0 tax rate
       const result = calculateItemTaxAndTotal({
         rate,
         quantity,
-        taxRate: productTaxRate,
+        taxRate: defaultTaxRate, // Use 0 instead of product tax rate
         discountRate,
         rateType,
-        discountValueType: 'percentage',
+        discountValueType: 'rupees',
         discountValue: discountRate
       });
       
@@ -1161,7 +1162,7 @@ const PurchaseInvoiceForm = ({
       name: product.name,
       code: product.itemCode,
       rateType: rateType, // Preserve rateType
-      taxRate: productTaxRate,
+      taxRate: defaultTaxRate, // Set to 0 instead of product.taxRate
       isSerialized: product.isSerialized,
       currentStock: product.currentStock,
       taxAmount: taxAmount,
@@ -1807,30 +1808,39 @@ const PurchaseInvoiceForm = ({
           </Form>
         </ModalBody>
         <ModalFooter>
-          <Button
-            color="light"
-            onClick={toggle}
-            disabled={isProcessing}
-          >
-            Cancel
-          </Button>
-          <Button
-            color="primary"
-            type="button"
-            onClick={() => {
-              validation.handleSubmit();
-            }}
-            disabled={isProcessing || !validation.isValid}
-          >
-            {isProcessing ? (
-              <>
-                <RiLoader4Line className="spin me-1" />
-                {isEditMode ? 'Updating...' : 'Creating...'}
-              </>
-            ) : (
-              isEditMode ? 'Update Invoice' : 'Create Invoice'
-            )}
-          </Button>
+          {apiError && (
+            <div className="w-100 mb-3">
+              <Alert color="danger" className="mb-0">
+                <strong>Error:</strong> {apiError}
+              </Alert>
+            </div>
+          )}
+          <div className="d-flex justify-content-between w-100">
+            <Button
+              color="light"
+              onClick={toggle}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              color="primary"
+              type="button"
+              onClick={() => {
+                validation.handleSubmit();
+              }}
+              disabled={isProcessing || !validation.isValid}
+            >
+              {isProcessing ? (
+                <>
+                  <RiLoader4Line className="spin me-1" />
+                  {isEditMode ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                isEditMode ? 'Update Invoice' : 'Create Invoice'
+              )}
+            </Button>
+          </div>
         </ModalFooter>
       </Modal>
 

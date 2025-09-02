@@ -40,8 +40,16 @@ const ItemModal = ({
   const [newSerialNumber, setNewSerialNumber] = useState('');
   const [rateInput, setRateInput] = useState('');
   const [discountRateInput, setDiscountRateInput] = useState('');
+  const [localRateType, setLocalRateType] = useState(rateType || 'without_tax'); // Local rate type state
   const [errors, setErrors] = useState({});
-  const [localCurrentItem, setLocalCurrentItem] = useState(currentItem);
+  const [localCurrentItem, setLocalCurrentItem] = useState(null);
+
+  // Sync local rate type with prop changes
+  useEffect(() => {
+    if (rateType && rateType !== localRateType) {
+      setLocalRateType(rateType);
+    }
+  }, [rateType, localRateType]);
 
   // Initialize local state when modal opens or currentItem changes
   useEffect(() => {
@@ -124,7 +132,7 @@ const ItemModal = ({
     }
 
     // Tax rate validation
-    if (rateType === 'without_tax') {
+    if ((validation.values.rateType || 'without_tax') === 'without_tax') {
       // For "Without Tax" items, tax rate is required only if the selected tax type has a rate > 0
       const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
       if (selectedTax && selectedTax.rate > 0) {
@@ -146,7 +154,7 @@ const ItemModal = ({
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
-  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, rateType, validation.values.taxType]);
+  }, [localCurrentItem, serialNumbers, rateInput, discountRateInput, validation.values.rateType, validation.values.taxType]);
 
   const handleAddSerialNumber = useCallback(() => {
     const trimmedSerial = newSerialNumber.trim();
@@ -178,8 +186,8 @@ const ItemModal = ({
     }));
   }, [newSerialNumber, serialNumbers, localCurrentItem?.currentStock]);
 
-  const handleRemoveSerialNumber = useCallback((index) => {
-    const updatedSerialNumbers = serialNumbers.filter((_, i) => i !== index);
+  const removeSerialNumber = useCallback((serial) => {
+    const updatedSerialNumbers = serialNumbers.filter(s => s !== serial);
     setSerialNumbers(updatedSerialNumbers);
 
     // Update local current item with updated serial numbers
@@ -230,8 +238,8 @@ const ItemModal = ({
 
   // Enhanced product selection with better state management
   const selectProduct = useCallback((product) => {
+    // Don't use product's default tax - let user manually select tax options
     const defaultTaxRate = 0;
-    const productTaxRate = product.taxRate ? parseFloat(product.taxRate) : defaultTaxRate;
     
     // Preserve existing values when selecting a new product
     const existingRate = parseFloat(rateInput) || localCurrentItem?.rate || 0;
@@ -241,7 +249,8 @@ const ItemModal = ({
     const subtotal = existingRate * existingQuantity;
     const discount = (subtotal * existingDiscountRate) / 100;
     const afterDiscount = subtotal - discount;
-    const taxAmount = (afterDiscount * productTaxRate) / 100;
+    // No automatic tax calculation - user will select tax manually
+    const taxAmount = 0;
 
     const updatedItem = {
       ...localCurrentItem,
@@ -250,7 +259,7 @@ const ItemModal = ({
       name: product.name,
       code: product.itemCode,
       itemCode: product.itemCode,
-      taxRate: productTaxRate,
+      taxRate: defaultTaxRate, // Set to 0 instead of product.taxRate
       isSerialized: product.isSerialized,
       currentStock: product.currentStock ? parseFloat(product.currentStock) : 0,
       rate: existingRate,
@@ -351,7 +360,6 @@ const ItemModal = ({
                   </td>
                   <td className="text-end">
                     <div className="small">Stock: {product.currentStock}</div>
-                    <div className="small">Tax: {product.taxRate || 0}%</div>
                   </td>
                 </tr>
               ))}
@@ -387,7 +395,7 @@ const ItemModal = ({
       quantity,
       taxRate,
       discountRate: validDiscountRate,
-      rateType,
+              rateType: validation.values.rateType || 'without_tax', // Use main form's rateType
       discountValueType: 'percentage', // Purchase modals use percentage discount
       discountValue: validDiscountRate
     });
@@ -398,37 +406,45 @@ const ItemModal = ({
       taxAmount: result.taxAmount,
       total: result.total
     };
-  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, rateType]);
+  }, [rateInput, discountRateInput, localCurrentItem?.quantity, localCurrentItem?.taxRate, localCurrentItem?.isSerialized, serialNumbers.length, validation.values.rateType]);
 
   const renderItemDetails = useMemo(() => (
-    <div className="border-top pt-3">
-      <h5 className="mb-3">Item Details</h5>
-
-      {/* Product Selection Status */}
+    <div className="pt-2">
+      {/* Compact Product Selection Status */}
       {localCurrentItem?.productId ? (
-        <div className="alert alert-success py-2 mb-3">
-          <strong>Selected:</strong> {localCurrentItem.name} ({localCurrentItem.code || localCurrentItem.itemCode || localCurrentItem.productCode || 'N/A'})
+        <div className="bg-success bg-opacity-10 border border-success rounded px-3 py-2 mb-3">
+          <div className="d-flex align-items-center justify-content-between">
+            <div>
+              <strong className="text-success">✓ Selected:</strong> {localCurrentItem.name}
+              <span className="text-muted ms-2">({localCurrentItem.code || localCurrentItem.itemCode || 'N/A'})</span>
+            </div>
           {localCurrentItem.isSerialized && (
-            <Badge color="info" pill className="ms-2">Serialized</Badge>
+              <Badge color="info" size="sm">Serialized</Badge>
           )}
+          </div>
         </div>
       ) : (
-        <div className="alert alert-warning py-2 mb-3">
-          Please select a product from the list above
+        <div className="bg-warning bg-opacity-10 border border-warning rounded px-3 py-2 mb-3">
+          <span className="text-warning fw-medium">⚠ Please select a product from the list above</span>
         </div>
       )}
 
       {/* Product Selection Error */}
       {errors.product && (
-        <Alert color="danger" className="py-2 mb-3">{errors.product}</Alert>
+        <div className="bg-danger bg-opacity-10 border border-danger rounded px-3 py-2 mb-3 text-danger">
+          {errors.product}
+        </div>
       )}
 
-      <Row>
-        <Col md={6}>
-          <FormGroup>
-            <Label>Quantity <span className="text-danger">*</span></Label>
+      {/* Compact Form Layout - All essential fields in one row */}
+      <Row className="g-3">
+        {/* Quantity */}
+        <Col md={2} sm={6}>
+          <FormGroup className="mb-0">
+            <Label className="form-label fw-medium small">Qty *</Label>
             <Input
               type="number"
+              size="sm"
               min="0.01"
               step="0.01"
               value={localCurrentItem?.isSerialized ? serialNumbers.length : (localCurrentItem?.quantity || '')}
@@ -438,265 +454,270 @@ const ItemModal = ({
                   updateLocalItem('quantity', value);
                 }
               }}
-              placeholder="Enter quantity"
+              placeholder="0"
               disabled={localCurrentItem?.isSerialized}
               invalid={!!errors.quantity}
             />
-            {errors.quantity && <div className="text-danger small mt-1">{errors.quantity}</div>}
+            {errors.quantity && <div className="text-danger small">{errors.quantity}</div>}
             {localCurrentItem?.isSerialized && (
-              <div className="form-text">Quantity is determined by serial numbers ({serialNumbers.length})</div>
+              <div className="form-text small">Auto: {serialNumbers.length}</div>
             )}
           </FormGroup>
         </Col>
-        <Col md={6}>
-          <FormGroup>
-            <Label>Rate {rateType === 'with_tax' ? '(With Tax)' : '(Without Tax)'} <span className="text-danger">*</span></Label>
-            <InputGroup>
+
+        {/* Rate */}
+        <Col md={3} sm={6}>
+          <FormGroup className="mb-0">
+            <Label className="form-label fw-medium small">
+              Rate * 
+              <span className="text-muted ms-1">({validation.values.rateType === 'with_tax' ? 'Inc Tax' : 'Ex Tax'})</span>
+            </Label>
+            <InputGroup size="sm">
               <InputGroupText>₹</InputGroupText>
               <Input
-                type="text"
-                inputMode="decimal"
+                type="number"
+                min="0"
+                step="0.01"
                 value={rateInput}
-                onChange={e => {
-                  setRateInput(e.target.value);
-                  if (errors.rate) setErrors(prev => ({ ...prev, rate: '' }));
-                }}
-                onBlur={e => {
-                  const value = parseFloat(e.target.value);
-                  if (!isNaN(value) && value >= 0) {
-                    updateLocalItem('rate', value);
-                  }
-                }}
+                onChange={(e) => setRateInput(e.target.value)}
+                onKeyDown={handleKeyPress}
                 placeholder="0.00"
                 invalid={!!errors.rate}
               />
             </InputGroup>
-            {errors.rate && <div className="text-danger small mt-1">{errors.rate}</div>}
+            {errors.rate && <div className="text-danger small">{errors.rate}</div>}
+          </FormGroup>
+        </Col>
+
+        {/* Tax Rate - Only show if tax type has rate > 0 */}
+        {(() => {
+          const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
+          return selectedTax && selectedTax.rate > 0;
+        })() && (
+          <Col md={2} sm={6}>
+            <FormGroup className="mb-0">
+              <Label className="form-label fw-medium small">Tax %</Label>
+              <InputGroup size="sm">
+                <Input
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.01"
+                  value={localCurrentItem?.taxRate || ''}
+                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
+                  placeholder="0"
+                  invalid={!!errors.taxRate}
+                />
+                <InputGroupText>%</InputGroupText>
+              </InputGroup>
+              {errors.taxRate && <div className="text-danger small">{errors.taxRate}</div>}
+            </FormGroup>
+          </Col>
+        )}
+
+        {/* Discount */}
+        <Col md={(() => {
+          const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
+          return selectedTax && selectedTax.rate > 0 ? 2 : 3; // Wider when no tax field
+        })()} sm={6}>
+          <FormGroup className="mb-0">
+            <Label className="form-label fw-medium small">Discount</Label>
+            <InputGroup size="sm">
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={discountRateInput}
+                onChange={(e) => setDiscountRateInput(e.target.value)}
+                onKeyDown={handleKeyPress}
+                placeholder="0"
+                invalid={!!errors.discountRate}
+              />
+              <Button
+                color={validation.values.discountValueType === 'percentage' ? 'primary' : 'outline-secondary'}
+                size="sm"
+                style={{ minWidth: '35px' }}
+                onClick={() => validation.setFieldValue('discountValueType', 'percentage')}
+                type="button"
+              >
+                %
+              </Button>
+              <Button
+                color={validation.values.discountValueType === 'rupees' ? 'primary' : 'outline-secondary'}
+                size="sm"
+                style={{ minWidth: '35px' }}
+                onClick={() => validation.setFieldValue('discountValueType', 'rupees')}
+                type="button"
+              >
+                ₹
+              </Button>
+            </InputGroup>
+            {errors.discountRate && <div className="text-danger small">{errors.discountRate}</div>}
+            <div className="form-text small text-muted">
+              {validation.values.discountValueType === 'percentage' ? 'Percentage discount' : 'Fixed amount discount'}
+            </div>
+          </FormGroup>
+        </Col>
+
+        {/* Total Display */}
+        <Col md={3} sm={12}>
+          <FormGroup className="mb-0">
+            <Label className="form-label fw-medium small">Item Total</Label>
+            <div className="bg-light border rounded px-3 py-2 text-center">
+              <span className="fw-bold fs-6 text-primary">₹{calculatedValues.total.toFixed(2)}</span>
+            </div>
           </FormGroup>
         </Col>
       </Row>
 
-      {/* Serial Numbers Section */}
+      {/* Serial Numbers Section - Only show if serialized */}
       {localCurrentItem?.isSerialized && (
+        <div className="mt-3 pt-3 border-top">
         <Row>
-          <Col md={12}>
-            <FormGroup>
-              <Label>Serial Numbers <span className="text-danger">*</span></Label>
-              <InputGroup>
+            <Col md={8}>
+              <FormGroup className="mb-2">
+                <Label className="form-label fw-medium small">Add Serial Numbers *</Label>
+                <InputGroup size="sm">
                 <Input
                   type="text"
                   value={newSerialNumber}
-                  onChange={(e) => {
-                    setNewSerialNumber(e.target.value);
-                    if (errors.newSerial) {
-                      setErrors(prev => ({ ...prev, newSerial: '' }));
-                    }
-                  }}
-                  placeholder="Enter serial number"
-                  onKeyPress={handleKeyPress}
-                  disabled={localCurrentItem.currentStock && serialNumbers.length >= localCurrentItem.currentStock}
-                  invalid={!!errors.newSerial}
-                />
-                <Button
-                  color="primary"
-                  onClick={handleAddSerialNumber}
-                  disabled={localCurrentItem.currentStock && serialNumbers.length >= localCurrentItem.currentStock}
-                >
+                    onChange={(e) => setNewSerialNumber(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                                                 handleAddSerialNumber();
+                      }
+                    }}
+                    placeholder="Enter serial number and press Enter"
+                    invalid={!!errors.serialNumbers}
+                  />
+                                                       <Button color="primary" size="sm" onClick={handleAddSerialNumber}>
                   Add
                 </Button>
               </InputGroup>
+                {errors.serialNumbers && <div className="text-danger small">{errors.serialNumbers}</div>}
+              </FormGroup>
+            </Col>
+            <Col md={4}>
+              <Label className="form-label fw-medium small">Count: {serialNumbers.length}</Label>
+              <div className="small text-muted">Stock: {localCurrentItem?.currentStock || 0}</div>
+            </Col>
+          </Row>
 
-              {/* Serial Number Input Error */}
-              {errors.newSerial && (
-                <Alert color="danger" className="mt-2 py-2 mb-2">{errors.newSerial}</Alert>
-              )}
-
-              {/* Serial Numbers List Error */}
-              {errors.serialNumbers && (
-                <Alert color="danger" className="mt-2 py-2 mb-2">{errors.serialNumbers}</Alert>
-              )}
-
-              {/* Serial Numbers Display */}
+          {/* Added Serial Numbers */}
               {serialNumbers.length > 0 && (
-                <div className="mt-3 p-3 bg-light rounded">
-                  <div className="mb-2 fw-semibold">Added Serial Numbers:</div>
-                  <div className="d-flex flex-wrap gap-2">
+            <div className="mt-2">
+              <div className="d-flex flex-wrap gap-1">
                     {serialNumbers.map((serial, index) => (
                       <Badge
                         key={index}
                         color="primary"
-                        className="d-inline-flex align-items-center py-2 px-3"
-                        style={{ fontSize: '0.875rem' }}
-                      >
-                        <span className="me-2">{serial}</span>
-                        <RiCloseLine
-                          className="cursor-pointer"
-                          onClick={() => handleRemoveSerialNumber(index)}
-                          style={{ fontSize: '1rem' }}
+                    className="d-flex align-items-center gap-1 px-2 py-1"
+                  >
+                    {serial}
+                    <button
+                      type="button"
+                      className="btn-close btn-close-white"
+                      style={{ fontSize: '0.6em' }}
+                                             onClick={() => removeSerialNumber(serial)}
                         />
                       </Badge>
                     ))}
                   </div>
                 </div>
               )}
-
-              {serialNumbers.length === 0 && (
-                <div className="text-muted small mt-2">No serial numbers added yet</div>
-              )}
-            </FormGroup>
-          </Col>
-        </Row>
+        </div>
       )}
 
-      {rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
-        <Row className="mb-3">
+      {/* Quick Settings Row - Only show Rate Type when tax is applicable */}
+      {(() => {
+        const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
+        const showTaxRelatedFields = selectedTax && selectedTax.rate > 0;
+        
+        return (
+          <Row className="mt-3 pt-3 border-top">
+            {showTaxRelatedFields && (
           <Col md={6}>
-            <FormGroup>
-              <Label>Tax Rate</Label>
-              <InputGroup>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={localCurrentItem?.taxRate || ''}
-                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
-                  placeholder="0.00"
-                  invalid={!!errors.taxRate}
-                />
-                <InputGroupText>%</InputGroupText>
-              </InputGroup>
-              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
-              <div className="form-text">
-                {localCurrentItem?.productId ? 'Product tax rate (editable)' : 'Manual tax rate'}
+                <FormGroup className="mb-0">
+                  <Label className="form-label fw-medium small">Rate Type</Label>
+                  <div className="bg-light border rounded px-3 py-2 text-center small">
+                    <span className="text-primary fw-medium">
+                      {validation.values.rateType === 'with_tax' ? 'Including Tax' : 'Excluding Tax'}
+                    </span>
               </div>
+                  <div className="form-text small text-muted">Synced with main form</div>
             </FormGroup>
           </Col>
-          <Col md={6}>
-            <FormGroup>
-              <Label>Calculated Values</Label>
-              <div className="border p-3 bg-light rounded">
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Rate (Excluding Tax):</span>
-                  <span className="fw-semibold">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
-                    (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100))).toFixed(2) : '0.00'}</span>
-                </div>
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Tax Amount:</span>
-                  <span className="fw-semibold text-success">₹{localCurrentItem?.rate && localCurrentItem?.taxRate ? 
-                    (localCurrentItem.rate - (localCurrentItem.rate / (1 + (localCurrentItem.taxRate / 100)))).toFixed(2) : '0.00'}</span>
-                </div>
-                <div className="d-flex justify-content-between pt-2 border-top">
-                  <span className="fw-bold">Total Rate (With Tax):</span>
-                  <span className="fw-bold">₹{localCurrentItem?.rate ? localCurrentItem.rate.toFixed(2) : '0.00'}</span>
-                </div>
-              </div>
-            </FormGroup>
-          </Col>
-        </Row>
-      )}
-
-      {rateType === 'without_tax' && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
-        <Row className="mb-3">
-          <Col md={6}>
-            <FormGroup>
-              <Label>Tax Rate <span className="text-danger">*</span></Label>
-              <InputGroup>
-                <Input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.01"
-                  value={localCurrentItem?.taxRate || ''}
-                  onChange={(e) => updateLocalItem('taxRate', parseFloat(e.target.value) || 0)}
-                  placeholder="0.00"
-                  invalid={!!errors.taxRate}
-                />
-                <InputGroupText>%</InputGroupText>
-              </InputGroup>
-              <div className="form-text text-muted">
-                Tax rate is required to calculate tax amount separately (rate is exclusive of tax)
-              </div>
-              {errors.taxRate && <div className="text-danger small mt-1">{errors.taxRate}</div>}
-            </FormGroup>
-          </Col>
-        </Row>
-      )}
-
-      {(validation.values.discountType === 'per_item' || validation.values.discountType === 'per_item_and_invoice') && (
-        <Row className="mb-3">
-          <Col md={6}>
-            <FormGroup>
-              <Label>Discount Rate</Label>
-              <InputGroup>
-                <Input
-                  type="text"
-                  inputMode="decimal"
-                  value={discountRateInput}
-                  onChange={e => {
-                    setDiscountRateInput(e.target.value);
-                    if (errors.discountRate) setErrors(prev => ({ ...prev, discountRate: '' }));
-                  }}
-                  onBlur={e => {
-                    const value = parseFloat(e.target.value);
-                    if (!isNaN(value) && value >= 0 && (validation.values.discountValueType === 'percentage' ? value <= 100 : true)) {
-                      updateLocalItem('discountRate', value);
-                    }
-                  }}
-                  placeholder="0.00"
-                  invalid={!!errors.discountRate}
-                />
-                <InputGroupText>
-                  {validation.values.discountValueType === 'percentage' ? '%' : '₹'}
-                </InputGroupText>
-              </InputGroup>
-              {errors.discountRate && <div className="text-danger small mt-1">{errors.discountRate}</div>}
-            </FormGroup>
-          </Col>
-        </Row>
-      )}
-
-      {/* Calculation Summary */}
-      {localCurrentItem?.rate && (localCurrentItem?.quantity > 0 || serialNumbers.length > 0) && (
-        <div className="border-top mt-3 pt-3">
-          <h6 className="mb-3">Calculation Summary</h6>
-          <Row>
-            <Col md={6}>
-              <div className="d-flex justify-content-between mb-2">
-                <span>Subtotal:</span>
-                <span>₹{calculatedValues.subtotal.toFixed(2)}</span>
-              </div>
-              {(validation.values.discountType === 'per_item' || validation.values.discountType === 'per_item_and_invoice') && calculatedValues.discount > 0 && (
-                <div className="d-flex justify-content-between mb-2">
-                  <span>Item Discount ({localCurrentItem?.discountRate || 0}{validation.values.discountValueType === 'percentage' ? '%' : '₹'}):</span>
-                  <span className="text-danger">- ₹{calculatedValues.discount.toFixed(2)}</span>
-                </div>
-              )}
-              {calculatedValues.taxAmount > 0 && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
-                <div className="d-flex justify-content-between mb-2">
-                  <span>
-                    {rateType === 'with_tax' ? 'Tax Included' : 'Tax'} ({localCurrentItem?.taxRate || 0}%):
+            )}
+            <Col md={showTaxRelatedFields ? 6 : 12}>
+              <FormGroup className="mb-0">
+                <Label className="form-label fw-medium small">Stock Available</Label>
+                <div className="bg-light border rounded px-3 py-1 text-center small">
+                  <span className={localCurrentItem?.currentStock > 0 ? 'text-success' : 'text-danger'}>
+                    {localCurrentItem?.currentStock || 0} units
                   </span>
-                  <span className={rateType === 'with_tax' ? 'text-info' : 'text-success'}>
-                    {rateType === 'with_tax' ? '₹' : '+ ₹'}{calculatedValues.taxAmount.toFixed(2)}
-                    {rateType === 'with_tax' && ' (included in rate)'}
-                  </span>
+              </div>
+            </FormGroup>
+          </Col>
+        </Row>
+        );
+      })()}
+
+      {/* Calculation Breakdown - Compact */}
+      <div className="mt-3 pt-3 border-top">
+        <div className="bg-light rounded p-3">
+          <Row className="small">
+            <Col md={3}>
+              <div className="text-center">
+                <div className="text-muted">Subtotal</div>
+                <div className="fw-medium">₹{calculatedValues.subtotal.toFixed(2)}</div>
+              </div>
+          </Col>
+            {calculatedValues.discount > 0 && (
+              <Col md={3}>
+                <div className="text-center">
+                  <div className="text-muted">Discount</div>
+                  <div className="fw-medium text-danger">-₹{calculatedValues.discount.toFixed(2)}</div>
                 </div>
-              )}
-            </Col>
-            <Col md={6}>
-              <div className="bg-light p-3 rounded">
-                <div className="d-flex justify-content-between fw-bold">
-                  <span>Item Total:</span>
-                  <span>₹{calculatedValues.total.toFixed(2)}</span>
+              </Col>
+            )}
+            {calculatedValues.taxAmount > 0 && (
+              <Col md={3}>
+                <div className="text-center">
+                  <div className="text-muted">Tax</div>
+                  <div className="fw-medium text-success">+₹{calculatedValues.taxAmount.toFixed(2)}</div>
                 </div>
+              </Col>
+            )}
+            <Col md={3}>
+              <div className="text-center">
+                <div className="text-muted">Total</div>
+                <div className="fw-bold text-primary fs-6">₹{calculatedValues.total.toFixed(2)}</div>
               </div>
             </Col>
           </Row>
         </div>
-      )}
+      </div>
     </div>
-  ), [localCurrentItem, validation.values.discountType, validation.values.discountValueType, updateLocalItem, serialNumbers, newSerialNumber, handleAddSerialNumber, handleRemoveSerialNumber, errors, handleKeyPress, calculatedValues, rateInput, discountRateInput, rateType]);
+  ), [
+    localCurrentItem, 
+    serialNumbers, 
+    errors, 
+    rateInput, 
+    discountRateInput, 
+        validation.values.discountValueType,
+    calculatedValues, 
+    newSerialNumber, 
+    handleAddSerialNumber, 
+    removeSerialNumber, 
+    updateLocalItem, 
+    setRateInput, 
+    setDiscountRateInput, 
+    handleKeyPress,
+    validation.setFieldValue,
+    validation.values.taxType,
+    validation.values.rateType
+  ]);
 
   const handleSave = useCallback(() => {
     console.log('=== handleSave called ===');

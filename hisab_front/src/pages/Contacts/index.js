@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
-import { toast } from 'react-toastify';
+import { toast, ToastContainer } from 'react-toastify';
 import { RiDownload2Line, RiAddLine, RiUpload2Line } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ContactsFilter from '../../Components/Contacts/ContactsFilter';
 import ContactsTable from '../../Components/Contacts/ContactsTable';
 import ContactForm from '../../Components/Contacts/ContactForm';
 import ContactViewModal from '../../Components/Contacts/ContactViewModal';
+import ContactStatementModal from '../../Components/Contacts/ContactStatementModal';
 import DeleteModal from "../../Components/Common/DeleteModal";
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import ImportCSVModal from '../../Components/Common/ImportCSVModal';
@@ -45,7 +46,8 @@ const ContactsPage = () => {
             view: false,
             delete: false,
             export: false,
-            import: false
+            import: false,
+            statement: false
         }
     });
 
@@ -209,6 +211,14 @@ const ContactsPage = () => {
             ...prev,
             selectedContact: contact,
             modals: { ...prev.modals, delete: true }
+        }));
+    };
+
+    const handleStatementClick = (contact) => {
+        setState(prev => ({
+            ...prev,
+            selectedContactForStatement: contact,
+            modals: { ...prev.modals, statement: true }
         }));
     };
 
@@ -410,6 +420,7 @@ const ContactsPage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onViewStatement={handleStatementClick}
                     />
                 )}
 
@@ -456,7 +467,14 @@ const ContactsPage = () => {
                     title="Import Contacts"
                     description="Upload a CSV file to import multiple contacts at once. Download the sample file to see the required format."
                 />
+
+                <ContactStatementModal
+                    isOpen={modals.statement}
+                    toggle={() => toggleModal('statement', false)}
+                    contact={selectedContactForStatement}
+                />
             </Container>
+            <ToastContainer closeButton={false} position="top-right" />
         </div>
     );
 };

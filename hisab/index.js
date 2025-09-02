@@ -12,6 +12,7 @@ import {
   moduleRoutes,
   rolePermissionsRoutes,
   contactRoutes,
+  contactStatementRoutes,
   paymentRoutes,
   bankTransferRoutes,
   productRoute,
@@ -47,6 +48,7 @@ app.use("/api/userRoles", userRolesRoutes);
 app.use("/api/module", moduleRoutes);
 app.use("/api/rolePermissions", rolePermissionsRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/contactStatement", contactStatementRoutes);
 app.use("/api/payment", paymentRoutes);
 app.use("/api/bankTransfer", bankTransferRoutes);
 app.use("/api/product", productRoute);

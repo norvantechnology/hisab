@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Container, Row, Col, Card, CardBody, Button, Alert } from "reactstrap";
 import { RiAddLine, RiCloseLine, RiDownload2Line } from "react-icons/ri";
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
 
 // Components
 import BreadCrumb from "../../../Components/Common/BreadCrumb";
@@ -56,6 +56,7 @@ const PurchaseInvoicePage = () => {
         selectedInvoice: null,
         isEditMode: false,
         apiLoading: false,
+        apiError: null,
         pdfLoading: null,
         bankAccounts: [],
         contacts: [],
@@ -71,6 +72,7 @@ const PurchaseInvoicePage = () => {
         selectedInvoice,
         isEditMode,
         apiLoading,
+        apiError,
         pdfLoading,
         bankAccounts,
         contacts,
@@ -168,7 +170,15 @@ const PurchaseInvoicePage = () => {
                 ...prev,
                 modals: { ...prev.modals, [modalName]: false },
                 selectedInvoice: null,
-                isEditMode: false
+                isEditMode: false,
+                apiError: null // Clear any API errors when closing modal
+            }));
+        } else if (modalName === 'main' && value === true) {
+            // Clear errors when opening modal
+            setState(prev => ({
+                ...prev,
+                modals: { ...prev.modals, [modalName]: true },
+                apiError: null
             }));
         } else {
             setState(prev => ({
@@ -377,7 +387,7 @@ const PurchaseInvoicePage = () => {
 
     const handleSubmitInvoice = async (values) => {
         try {
-            setState(prev => ({ ...prev, apiLoading: true }));
+            setState(prev => ({ ...prev, apiLoading: true, apiError: null }));
 
             if (isEditMode && !values.id && selectedInvoice) {
                 values.id = selectedInvoice.id;
@@ -395,6 +405,7 @@ const PurchaseInvoicePage = () => {
                     ...prev,
                     modals: { ...prev.modals, main: false },
                     apiLoading: false,
+                    apiError: null,
                     isEditMode: false,
                     selectedInvoice: null
                 }));
@@ -404,8 +415,13 @@ const PurchaseInvoicePage = () => {
                 throw new Error(response.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
             }
         } catch (error) {
-            setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.message);
+            // Keep modal open and pass error to form component
+            setState(prev => ({ 
+                ...prev, 
+                apiLoading: false,
+                apiError: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
+            }));
+            // Don't show toast error anymore - form will display it
         }
     };
 
@@ -494,6 +510,7 @@ const PurchaseInvoicePage = () => {
                     selectedInvoice={selectedInvoice}
                     onSubmit={handleSubmitInvoice}
                     isLoading={apiLoading}
+                    apiError={apiError}
                 />
 
                 <PurchaseInvoiceViewModal
@@ -538,6 +555,7 @@ const PurchaseInvoicePage = () => {
                     isLoading={apiLoading}
                 />
             </Container>
+            <ToastContainer closeButton={false} position="top-right" />
         </div>
     );
 };

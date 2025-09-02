@@ -234,6 +234,7 @@ const PaymentForm = ({
             
             // Structure payload exactly like regular payment page  
             const payload = {
+                id: values.id, // Include payment ID for edit mode
                 contactId: parseInt(values.contactId),
                 bankAccountId: parseInt(values.bankId),
                 date: values.date,
@@ -246,10 +247,24 @@ const PaymentForm = ({
             console.log('🛠️ Payload after creation (before cleanup):', payload);
             
             // Only remove null/undefined fields, not zero values or NaN
+            // Special handling for ID field - only include if it has a valid value AND we're in edit mode
+            if (isEditMode && (!payload.id || payload.id === '')) {
+                console.log('❌ Edit mode but no valid payment ID:', payload.id);
+                console.log('❌ selectedPayment:', selectedPayment);
+                // This is an error condition - edit mode should have an ID
+            } else if (!isEditMode) {
+                // Remove ID for create mode
+                delete payload.id;
+                console.log('🗑️ Removed ID field (create mode)');
+            } else {
+                console.log('✅ Edit mode with valid payment ID:', payload.id);
+            }
+            
             Object.keys(payload).forEach(key => {
                 const value = payload[key];
                 // Don't remove if it's a valid number (including 0) or valid string
-                if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+                // Skip ID field as it's handled above
+                if (key !== 'id' && (value === null || value === undefined || (typeof value === 'number' && isNaN(value)))) {
                     console.log('🗑️ Removing invalid field:', key, value);
                     delete payload[key];
                 }
@@ -271,6 +286,9 @@ const PaymentForm = ({
             });
             
             console.log('📤 FINAL PAYLOAD being sent to API:', payload);
+            console.log('🔍 Form values being sent:', values);
+            console.log('🔍 isEditMode in PaymentForm:', isEditMode);
+            console.log('🔍 selectedPayment in PaymentForm:', selectedPayment);
             
             await onSubmit(payload);
         }

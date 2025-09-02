@@ -41,7 +41,8 @@ const SalesInvoiceForm = ({
   isEditMode,
   selectedInvoice,
   onSubmit,
-  isLoading = false
+  isLoading = false,
+  apiError = null
 }) => {
   const getInitialItems = useCallback(() => {
     return selectedInvoice?.items?.map(item => {
@@ -59,7 +60,7 @@ const SalesInvoiceForm = ({
         taxRate,
         discountRate: (item.discountType === 'percentage') ? discountRate : 0,
         rateType,
-        discountValueType: item.discountType || 'percentage',
+        discountValueType: item.discountType || 'rupees',
         discountValue: (item.discountType === 'rupees') ? discountRate : 0
       });
       
@@ -166,25 +167,14 @@ const SalesInvoiceForm = ({
     invoiceNumber: Yup.string().required('Invoice number is required'),
     date: Yup.date().required('Date is required'),
     billTo: Yup.string().required('Bill to is required'),
-    status: Yup.string().when('billTo', {
-      is: (billTo) => billTo && billTo.startsWith('contact_'),
-      then: (schema) => schema.required('Status is required'),
-      otherwise: (schema) => schema
-    }),
+    status: Yup.string(), // Made optional - will default to 'pending'
     billToBank: Yup.string().when(['status', 'billTo'], {
       is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
       then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
       otherwise: (schema) => schema
     }),
     taxType: Yup.string().required('Tax type is required'),
-    rateType: Yup.string().when('taxType', {
-      is: (taxType) => {
-        const selectedTax = TAX_TYPES.find(tax => tax.value === taxType);
-        return selectedTax && selectedTax.rate > 0;
-      },
-      then: (schema) => schema.required('Rate type is required'),
-      otherwise: (schema) => schema
-    }),
+    rateType: Yup.string(), // Made optional - system can work without explicit rate type selection
 
     items: Yup.array().of(
       Yup.object().shape({
@@ -247,13 +237,13 @@ const SalesInvoiceForm = ({
       date: isEditMode && selectedInvoice ? selectedInvoice.date?.split('T')[0] : new Date().toISOString().split('T')[0],
       billTo: billToValue,
       billToBank: billToBankValue,
-      status: isEditMode && selectedInvoice ? selectedInvoice.status : '',
+      status: isEditMode && selectedInvoice ? selectedInvoice.status : 'pending',
       taxType: isEditMode && selectedInvoice ? selectedInvoice.taxType : 'no_tax',
       rateType: isEditMode && selectedInvoice ? 
         (TAX_TYPES.find(tax => tax.value === selectedInvoice.taxType)?.rate === 0 ? '' : selectedInvoice.rateType) : 
         '',
       discountType: 'per_item', // Fixed to per_item only since we removed invoice-level discounts
-      discountValueType: 'percentage', // Default to percentage, but can be changed per item
+      discountValueType: 'rupees', // Default to rupees, but can be changed per item
       discountValue: 0, // No invoice-level discount
       items: isEditMode && selectedInvoice ? selectedInvoice.items : [
         {
@@ -343,8 +333,8 @@ const SalesInvoiceForm = ({
       // Store the selected contact information for billing address display
       setSelectedContact(selectedOption?.contact || null);
     } else {
-      // Clear status and billToBank if not a contact
-      validation.setFieldValue('status', '');
+      // For non-contacts, set status to 'pending' as well (they can change it if needed)
+      validation.setFieldValue('status', 'pending');
       validation.setFieldValue('billToBank', '');
       setSelectedContact(null);
     }
@@ -432,7 +422,7 @@ const SalesInvoiceForm = ({
             taxRate,
             discountRate: (item.discountType === 'percentage') ? discountRate : 0,
             rateType: newRateType,
-            discountValueType: item.discountType || 'percentage',
+            discountValueType: item.discountType || 'rupees',
             discountValue: (item.discountType === 'rupees') ? discountRate : 0
           });
           
@@ -475,7 +465,7 @@ const SalesInvoiceForm = ({
       taxRate,
       discountRate: (item.discountType === 'percentage') ? discountRate : 0,
       rateType,
-      discountValueType: item.discountType || 'percentage', // Use item-level discount type
+      discountValueType: item.discountType || 'rupees', // Use item-level discount type
       discountValue: (item.discountType === 'rupees') ? discountRate : 0
     });
     
@@ -1536,7 +1526,7 @@ const SalesInvoiceForm = ({
                                 // Calculate invoice discount fresh
                                 let totalDiscount = 0;
                                 const discountType = validation.values.discountType || 'none';
-                                const discountValueType = validation.values.discountValueType || 'percentage';
+                                const discountValueType = validation.values.discountValueType || 'rupees';
                                 const discountValue = parseFloat(validation.values.discountValue) || 0;
                                 
                                 if (discountType === 'on_invoice' || discountType === 'per_item_and_invoice') {
@@ -1599,29 +1589,38 @@ const SalesInvoiceForm = ({
           </Form>
         </ModalBody>
         <ModalFooter>
-          <Button
-            type="button"
-            color="secondary"
-            onClick={toggle}
-            disabled={isProcessing}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            color="primary"
-            onClick={validation.handleSubmit}
-            disabled={isProcessing || !validation.isValid || validation.values.items.length === 0}
-          >
-            {isProcessing ? (
-              <>
-                <RiLoader4Line className="spinner-border spinner-border-sm me-2" />
-                {isEditMode ? 'Updating...' : 'Creating...'}
-              </>
-            ) : (
-              isEditMode ? 'Update Invoice' : 'Create Invoice'
-            )}
-          </Button>
+          {apiError && (
+            <div className="w-100 mb-3">
+              <Alert color="danger" className="mb-0">
+                <strong>Error:</strong> {apiError}
+              </Alert>
+            </div>
+          )}
+          <div className="d-flex justify-content-between w-100">
+            <Button
+              type="button"
+              color="secondary"
+              onClick={toggle}
+              disabled={isProcessing}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              color="primary"
+              onClick={validation.handleSubmit}
+              disabled={isProcessing || !validation.isValid || validation.values.items.length === 0}
+            >
+              {isProcessing ? (
+                <>
+                  <RiLoader4Line className="spinner-border spinner-border-sm me-2" />
+                  {isEditMode ? 'Updating...' : 'Creating...'}
+                </>
+              ) : (
+                isEditMode ? 'Update Invoice' : 'Create Invoice'
+              )}
+            </Button>
+          </div>
         </ModalFooter>
       </Modal>
 

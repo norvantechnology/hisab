@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFileTextLine } from 'react-icons/ri';
 import TableContainer from '../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 
@@ -11,7 +11,8 @@ const ContactsTable = ({
   onPageChange, 
   onView, 
   onEdit, 
-  onDelete 
+  onDelete,
+  onViewStatement 
 }) => {
     const columns = useMemo(() => [
         {
@@ -160,26 +161,35 @@ const ContactsTable = ({
             header: "Action",
             accessorKey: "action",
             cell: (cell) => (
-                <UncontrolledDropdown direction="start">
-                    <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
-                        <RiMoreFill />
-                    </DropdownToggle>
-                    <DropdownMenu className="dropdown-menu-end">
-                        <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                            <RiEyeLine className="me-2 align-middle text-muted" /> View
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
-                            <RiPencilLine className="me-2 align-middle text-muted" /> Edit
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
-                            <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
-                        </DropdownItem>
-                    </DropdownMenu>
-                </UncontrolledDropdown>
+                <div className="d-flex gap-1">
+                    <button 
+                        className="btn btn-soft-info btn-sm"
+                        onClick={() => onViewStatement(cell.row.original)}
+                        title="View Statement"
+                    >
+                        <RiFileTextLine />
+                    </button>
+                    <UncontrolledDropdown direction="start">
+                        <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
+                            <RiMoreFill />
+                        </DropdownToggle>
+                        <DropdownMenu className="dropdown-menu-end">
+                            <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
+                                <RiEyeLine className="me-2 align-middle text-muted" /> View
+                            </DropdownItem>
+                            <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
+                                <RiPencilLine className="me-2 align-middle text-muted" /> Edit
+                            </DropdownItem>
+                            <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
+                                <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
+                            </DropdownItem>
+                        </DropdownMenu>
+                    </UncontrolledDropdown>
+                </div>
             ),
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete]);
+    ], [onView, onEdit, onDelete, onViewStatement]);
 
     return (
         <Card className="shadow-sm">

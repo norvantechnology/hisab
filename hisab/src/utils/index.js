@@ -7,6 +7,7 @@ import { upload, conditionalUpload } from "./multerConfig.js";
 import { generatePaymentPDFFromHTML, generatePaymentPDFFileName, createPaymentInvoiceHTML } from "./paymentPDFGenerator.js";
 import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "./fastPurchaseInvoicePDFGenerator.js";
 import { generateFastSalesInvoicePDF, generateFastSalesInvoicePDFFileName, createFastSalesInvoiceHTML } from "./fastSalesInvoicePDFGenerator.js";
+import { generateContactStatementPDF, generateContactStatementExcel } from "./contactStatementGenerator.js";
 
 export {
   sendCSVEmail,
@@ -28,5 +29,7 @@ export {
   createFastPurchaseInvoiceHTML,
   generateFastSalesInvoicePDF,
   generateFastSalesInvoicePDFFileName,
-  createFastSalesInvoiceHTML
+  createFastSalesInvoiceHTML,
+  generateContactStatementPDF,
+  generateContactStatementExcel
 };

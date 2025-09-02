@@ -15,7 +15,7 @@ import DeleteModal from "../../../Components/Common/DeleteModal";
 import PaymentForm from "../../../Components/Payments/PaymentForm";
 
 // Services & Utils
-import { listSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice } from "../../../services/salesInvoice";
+import { listSales, createSale, updateSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice } from "../../../services/salesInvoice";
 import { createPayment } from '../../../services/payment';
 import { getBankAccounts } from '../../../services/bankAccount';
 import { getContacts } from '../../../services/contacts';
@@ -56,6 +56,7 @@ const SalesInvoicePage = () => {
         selectedInvoice: null,
         isEditMode: false,
         apiLoading: false,
+        apiError: null,
         pdfLoading: null,
         bankAccounts: [],
         contacts: [],
@@ -71,6 +72,7 @@ const SalesInvoicePage = () => {
         selectedInvoice,
         isEditMode,
         apiLoading,
+        apiError,
         pdfLoading,
         bankAccounts,
         contacts,
@@ -168,7 +170,15 @@ const SalesInvoicePage = () => {
                 ...prev,
                 modals: { ...prev.modals, [modalName]: false },
                 selectedInvoice: null,
-                isEditMode: false
+                isEditMode: false,
+                apiError: null // Clear any API errors when closing modal
+            }));
+        } else if (modalName === 'main' && value === true) {
+            // Clear errors when opening modal
+            setState(prev => ({
+                ...prev,
+                modals: { ...prev.modals, [modalName]: true },
+                apiError: null
             }));
         } else {
             setState(prev => ({
@@ -383,7 +393,7 @@ const SalesInvoicePage = () => {
     const handleSubmitInvoice = async (values) => {
         console.log("values", values);
         try {
-            setState(prev => ({ ...prev, apiLoading: true }));
+            setState(prev => ({ ...prev, apiLoading: true, apiError: null }));
             console.log("values", values);
 
             if (isEditMode && !values.id && selectedInvoice) {
@@ -398,15 +408,21 @@ const SalesInvoicePage = () => {
                 setState(prev => ({
                     ...prev,
                     modals: { ...prev.modals, main: false },
-                    apiLoading: false
+                    apiLoading: false,
+                    apiError: null
                 }));
                 fetchData();
             } else {
                 throw new Error(response.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
             }
         } catch (error) {
-            setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.message);
+            // Keep modal open and pass error to form component
+            setState(prev => ({ 
+                ...prev, 
+                apiLoading: false,
+                apiError: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
+            }));
+            // Don't show toast error anymore - form will display it
         }
     };
 
@@ -506,6 +522,7 @@ const SalesInvoicePage = () => {
                     selectedInvoice={selectedInvoice}
                     onSubmit={handleSubmitInvoice}
                     isLoading={apiLoading}
+                    apiError={state.apiError}
                 />
 
                 <SalesInvoiceViewModal

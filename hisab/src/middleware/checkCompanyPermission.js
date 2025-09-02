@@ -12,11 +12,11 @@ const checkCompanyModulePermission = (moduleName, requiredPermission) => {
       return errorResponse(res, "Unauthorized access", 401);
     }
 
-    // Validate required permission type
-    const validPermissions = ['VIEW', 'CREATE', 'EDIT', 'DELETE'];
-    if (!validPermissions.includes(requiredPermission)) {
-      return errorResponse(res, "Invalid permission type", 400);
-    }
+    // // Validate required permission type
+    // const validPermissions = ['VIEW', 'CREATE', 'EDIT', 'DELETE'];
+    // if (!validPermissions.includes(requiredPermission)) {
+    //   return errorResponse(res, "Invalid permission type", 400);
+    // }
 
     const client = await pool.connect();
 

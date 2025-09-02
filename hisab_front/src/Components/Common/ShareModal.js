@@ -61,6 +61,13 @@ const ShareModal = ({
   const generateDefaultDescription = () => {
     if (!invoiceData) return '';
     
+    if (invoiceType === 'contact-statement') {
+      return `Contact Statement for ${invoiceData.name || 'Customer'}.
+Please find attached the complete transaction history and account summary.
+Generated on ${new Date().toLocaleDateString('en-IN')}.
+Thank you for your business!`;
+    }
+    
     const type = invoiceType === 'sales' ? 'Sales' : 'Purchase';
     const amount = invoiceType === 'sales' 
       ? parseFloat(invoiceData.netReceivable || 0).toFixed(2)
@@ -104,7 +111,10 @@ Thank you for your business!`;
       <ModalHeader toggle={handleModalToggle}>
         <div className="d-flex align-items-center">
           <RiShareLine className="me-2" />
-          Share {invoiceType === 'sales' ? 'Sales' : 'Purchase'} Invoice
+          {invoiceType === 'contact-statement' 
+            ? `Share Contact Statement (${invoiceData?.format?.toUpperCase() || 'PDF'})`
+            : `Share ${invoiceType === 'sales' ? 'Sales' : 'Purchase'} Invoice`
+          }
         </div>
       </ModalHeader>
       
@@ -112,11 +122,21 @@ Thank you for your business!`;
         <ModalBody>
           {invoiceData && (
             <Alert color="info" className="mb-3">
-              <strong>Invoice:</strong> #{invoiceData.invoiceNumber || 'N/A'} | 
-              <strong> Date:</strong> {new Date(invoiceData.invoiceDate || Date.now()).toLocaleDateString('en-IN')} | 
-              <strong> Amount:</strong> ₹{invoiceType === 'sales' 
-                ? parseFloat(invoiceData.netReceivable || 0).toFixed(2)
-                : parseFloat(invoiceData.netPayable || 0).toFixed(2)}
+              {invoiceType === 'contact-statement' ? (
+                <>
+                  <strong>Contact:</strong> {invoiceData.name || 'N/A'} | 
+                  <strong> Format:</strong> {invoiceData.format?.toUpperCase() || 'PDF'} | 
+                  <strong> Generated:</strong> {new Date().toLocaleDateString('en-IN')}
+                </>
+              ) : (
+                <>
+                  <strong>Invoice:</strong> #{invoiceData.invoiceNumber || 'N/A'} | 
+                  <strong> Date:</strong> {new Date(invoiceData.invoiceDate || Date.now()).toLocaleDateString('en-IN')} | 
+                  <strong> Amount:</strong> ₹{invoiceType === 'sales' 
+                    ? parseFloat(invoiceData.netReceivable || 0).toFixed(2)
+                    : parseFloat(invoiceData.netPayable || 0).toFixed(2)}
+                </>
+              )}
             </Alert>
           )}
 

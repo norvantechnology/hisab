@@ -8,6 +8,7 @@ import userRolesRoutes from "./userRolesRoutes.js";
 import moduleRoutes from "./moduleRoutes.js";
 import rolePermissionsRoutes from "./rolePermissionsRoutes.js";
 import contactRoutes from "./contactRoutes.js";
+import contactStatementRoutes from "./contactStatementRoutes.js";
 import paymentRoutes from "./paymentRoutes.js";
 import bankTransferRoutes from "./bankTransferRoutes.js";
 import productRoute from "./productRoute.js";
@@ -31,6 +32,7 @@ export {
   moduleRoutes,
   rolePermissionsRoutes,
   contactRoutes,
+  contactStatementRoutes,
   paymentRoutes,
   bankTransferRoutes,
   productRoute,
