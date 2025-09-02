@@ -60,9 +60,9 @@ const WelcomePage = () => {
                     logoPreview: ''
                 });
                 
-                // Wait a bit then redirect to dashboard
+                // Wait a bit then redirect to business dashboard
                 setTimeout(() => {
-                    navigate('/dashboard');
+                    navigate('/business-dashboard');
                 }, 2000);
             } else {
                 setError(response?.message || 'Failed to create company');
