@@ -6,7 +6,7 @@
 echo "🚀 Starting HISAB Backend Deployment to EC2..."
 
 # Configuration - UPDATE THESE VALUES
-EC2_HOST="ec2-100-25-217-12.compute-1.amazonaws.com"
+EC2_HOST="ec2-18-215-210-153.compute-1.amazonaws.com"
 EC2_USER="ubuntu"
 EC2_KEY_PATH="./hisab.pem"
 PROJECT_NAME="hisab-backend"
