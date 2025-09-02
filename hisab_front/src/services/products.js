@@ -12,7 +12,15 @@ export const listProducts = async (params) => {
     return apiCall({
         method: 'get',
         endpoint: '/product/listProducts',
-        params
+        params,
+    });
+};
+
+export const bulkImportProducts = async (data) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/product/bulkImportProducts',
+        data,
     });
 };
 

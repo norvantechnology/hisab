@@ -1,0 +1,6 @@
+name,itemType,itemCode,hsnCode,description,defaultInvoiceDescription,isInventoryTracked,isSerialized,unitOfMeasurement,stockCategory,rate,isTaxInclusive,discount,taxCategory,openingStockQty,openingStockCostPerQty
+iPhone 14 Pro,product,IPH14PRO,85171200,Apple iPhone 14 Pro 128GB Space Black,iPhone 14 Pro - Latest Apple smartphone,true,false,Pieces,Electronics,99999.00,false,0.00,GST 18%,50,85000.00
+MacBook Air M2,product,MBA-M2,84713000,Apple MacBook Air with M2 chip 256GB SSD,MacBook Air M2 - Ultra-portable laptop,true,true,Pieces,Computers,119900.00,false,2.00,GST 18%,25,105000.00
+Web Development Service,service,WEB-DEV,998314,Professional web development services,Custom website development and design,false,false,Hour,,5000.00,true,0.00,GST 18%,0,0.00
+Samsung Galaxy S23,product,SGS23,85171200,Samsung Galaxy S23 128GB Phantom Black,Samsung Galaxy S23 - Premium Android phone,true,false,Pieces,Electronics,74999.00,false,5.00,GST 18%,30,65000.00
+Dell XPS 13,product,DELL-XPS13,84713000,Dell XPS 13 Laptop Intel i7 16GB RAM 512GB SSD,Dell XPS 13 - Premium ultrabook,true,true,Pieces,Computers,89999.00,false,3.00,GST 18%,15,78000.00 

@@ -9,5 +9,6 @@ router.get('/getProduct', authenticateUser, productController.getProduct);
 router.get('/listProducts', authenticateUser, productController.listProducts);
 router.put('/updateProduct', authenticateUser, productController.updateProduct);
 router.delete('/deleteProduct', authenticateUser, productController.deleteProduct);
+router.post('/bulkImportProducts', authenticateUser, productController.bulkImportProducts);
 
 export default router;

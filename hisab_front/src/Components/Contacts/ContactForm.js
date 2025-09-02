@@ -79,7 +79,12 @@ const ContactForm = ({
       mobile: Yup.string()
         .matches(/^[0-9]{10}$/, 'Mobile must be 10 digits')
         .required('Mobile is required'),
-      email: Yup.string().email('Invalid email format'),
+      email: Yup.string()
+        .email('Invalid email format')
+        .when('enablePortal', {
+          is: true,
+          then: (schema) => schema.required('Email is required when customer portal access is enabled')
+        }),
       dueDays: Yup.number().min(0, 'Due days must be 0 or more'),
       contactType: Yup.string().required('Contact type is required'),
       billingAddress1: Yup.string().required('Billing Address Line 1 is required'),
@@ -318,7 +323,10 @@ An email has been sent to ${selectedContact.email}.`,
             </Col>
             <Col md={6}>
               <FormGroup>
-                <Label>Email</Label>
+                <Label>
+                  Email
+                  {validation.values.enablePortal && <span className="text-danger">*</span>}
+                </Label>
                 <Input
                   type="email"
                   name="email"
@@ -672,6 +680,12 @@ An email has been sent to ${selectedContact.email}.`,
             <Label check for="enablePortal">
               Enable customer portal access
             </Label>
+            {validation.values.enablePortal && (
+              <small className="text-info d-block mt-1">
+                <i className="mdi mdi-information-outline me-1"></i>
+                Email address is required when portal access is enabled
+              </small>
+            )}
           </FormGroup>
 
           {isEditMode && selectedContact?.enablePortal && (

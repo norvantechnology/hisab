@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast, ToastContainer } from 'react-toastify';
-import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
+import { RiDownload2Line, RiAddLine, RiUpload2Line } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ProductForm from '../../Components/Products/ProductForm';
 import ProductTable from '../../Components/Products/ProductTable';
@@ -9,13 +9,15 @@ import ProductViewModal from '../../Components/Products/ProductViewModal';
 import DeleteModal from "../../Components/Common/DeleteModal";
 import ProductsFilter from '../../Components/Products/ProductsFilter';
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
+import ImportCSVModal from '../../Components/Common/ImportCSVModal';
 import AddStockCategoryModal from '../../Components/Products/AddStockCategoryModal';
 import Loader from '../../Components/Common/Loader';
-import { createProduct, updateProduct, deleteProduct, listProducts, getProduct } from '../../services/products';
+import { createProduct, updateProduct, deleteProduct, listProducts, getProduct, bulkImportProducts } from '../../services/products';
 import { listStockCategories, createStockCategory } from '../../services/productSetup.js';
 import { getTaxCategory } from '../../services/taxCategories.js';
 import { getUnitOfMeasurements } from '../../services/unitOfMeasurements.js';
 import useCompanySelectionState from '../../hooks/useCompanySelection';
+import { sampleProductData, productFields } from '../../data/productData';
 
 const ProductsPage = () => {
     // State management
@@ -47,6 +49,7 @@ const ProductsPage = () => {
             main: false,
             view: false,
             export: false,
+            import: false,
             stockCategory: false
         },
         selectedProduct: null,
@@ -344,6 +347,76 @@ const ProductsPage = () => {
         }
     };
 
+    // Bulk Import Handler
+    const handleBulkImport = async (products, onComplete) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+            const response = await bulkImportProducts({ products });
+            
+            if (response.success) {
+                const { results } = response;
+                const successCount = results.success.length;
+                const errorCount = results.errors.length;
+                
+                if (errorCount === 0) {
+                    toast.success(`Successfully imported ${successCount} products!`);
+                } else {
+                    // Show detailed error messages
+                    toast.warning(`Imported ${successCount} products with ${errorCount} errors:`);
+                    
+                    // Show first few errors in detail
+                    results.errors.slice(0, 5).forEach((error, index) => {
+                        setTimeout(() => {
+                            toast.error(`Row ${error.row}: ${error.error}`, {
+                                autoClose: 8000,
+                                position: "top-right"
+                            });
+                        }, (index + 1) * 1000);
+                    });
+                    
+                    // If there are more than 5 errors, show a summary
+                    if (results.errors.length > 5) {
+                        setTimeout(() => {
+                            toast.info(`... and ${results.errors.length - 5} more errors. Please check your CSV file.`, {
+                                autoClose: 5000
+                            });
+                        }, 6000);
+                    }
+                }
+                
+                // Refresh the products list
+                fetchData();
+                
+                // Close the import modal
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, import: false },
+                    apiLoading: false
+                }));
+                
+                // Call onComplete to close the modal
+                if (onComplete) {
+                    onComplete();
+                }
+            } else {
+                throw new Error(response.message || 'Failed to import products');
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(`Import failed: ${error.message}`);
+            
+            // Close the modal even on error
+            setState(prev => ({
+                ...prev,
+                modals: { ...prev.modals, import: false }
+            }));
+            
+            if (onComplete) {
+                onComplete();
+            }
+        }
+    };
+
     // Stock Category Modal Handlers
     const handleAddStockCategory = () => {
         setState(prev => ({
@@ -452,6 +525,9 @@ const ProductsPage = () => {
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
                                 <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
+                            <Button color="info" onClick={() => toggleModal('import', true)}>
+                                <RiUpload2Line className="align-middle me-1" /> Import
+                            </Button>
                             <Button color="success" onClick={handleAddClick}>
                                 <RiAddLine className="align-middle me-1" /> Add Product
                             </Button>
@@ -516,6 +592,19 @@ const ProductsPage = () => {
                     onCloseClick={() => toggleModal('export', false)}
                     data={prepareExportData()}
                     filename="products"
+                />
+
+                <ImportCSVModal
+                    show={modals.import}
+                    onCloseClick={() => toggleModal('import', false)}
+                    onImport={handleBulkImport}
+                    sampleData={sampleProductData}
+                    requiredFields={productFields.required}
+                    optionalFields={productFields.optional}
+                    maxFileSize={10}
+                    isLoading={apiLoading}
+                    title="Import Products"
+                    description="Upload a CSV file to import multiple products at once. Download the sample file to see the required format."
                 />
             </Container>
         </div>

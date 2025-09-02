@@ -503,8 +503,8 @@ export async function listProducts(req, res) {
                 queryParams.push(itemCode);
                 paramCount++;
             } else {
-                query += ` AND p."itemCode" = $${paramCount}`;
-                queryParams.push(itemCode);
+                query += ` AND p."itemCode" ILIKE $${paramCount}`;
+                queryParams.push(`%${itemCode}%`);
                 paramCount++;
             }
         }
@@ -515,8 +515,8 @@ export async function listProducts(req, res) {
                 queryParams.push(hsnCode);
                 paramCount++;
             } else {
-                query += ` AND p."hsnCode" = $${paramCount}`;
-                queryParams.push(hsnCode);
+                query += ` AND p."hsnCode" ILIKE $${paramCount}`;
+                queryParams.push(`%${hsnCode}%`);
                 paramCount++;
             }
         }
@@ -646,8 +646,8 @@ export async function listProducts(req, res) {
                 countParams.push(itemCode);
                 paramCount++;
             } else {
-                countQuery += ` AND p."itemCode" = $${paramCount}`;
-                countParams.push(itemCode);
+                countQuery += ` AND p."itemCode" ILIKE $${paramCount}`;
+                countParams.push(`%${itemCode}%`);
                 paramCount++;
             }
         }
@@ -658,8 +658,8 @@ export async function listProducts(req, res) {
                 countParams.push(hsnCode);
                 paramCount++;
             } else {
-                countQuery += ` AND p."hsnCode" = $${paramCount}`;
-                countParams.push(hsnCode);
+                countQuery += ` AND p."hsnCode" ILIKE $${paramCount}`;
+                countParams.push(`%${hsnCode}%`);
                 paramCount++;
             }
         }
@@ -724,4 +724,250 @@ async function getProductDetails(client, companyId, productId) {
     }
 
     return product;
+}
+
+export async function bulkImportProducts(req, res) {
+    const { products } = req.body;
+    const companyId = req.currentUser?.companyId;
+    const currentUserId = req.currentUser?.id;
+
+    if (!companyId || !currentUserId) {
+        return errorResponse(res, "Unauthorized access", 401);
+    }
+
+    if (!Array.isArray(products) || products.length === 0) {
+        return errorResponse(res, "No products data provided", 400);
+    }
+
+    if (products.length > 1000) {
+        return errorResponse(res, "Maximum 1000 products can be imported at once", 400);
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query("BEGIN");
+
+        const results = {
+            success: [],
+            errors: [],
+            total: products.length
+        };
+
+        // Helper function to find unit of measurement (no auto-create)
+        const findUnit = async (unitName) => {
+            if (!unitName || unitName.trim() === '') return null;
+            
+            const unitNameTrimmed = unitName.trim();
+            
+            // Try to find existing unit
+            const existingUnit = await client.query(
+                'SELECT id FROM hisab."unitOfMeasurements" WHERE LOWER(name) = LOWER($1) AND "isActive" = TRUE',
+                [unitNameTrimmed]
+            );
+            
+            if (existingUnit.rows.length > 0) {
+                return existingUnit.rows[0].id;
+            }
+            
+            // Return error instead of creating
+            throw new Error(`Unit of measurement "${unitNameTrimmed}" not found. Please create it first or use an existing unit.`);
+        };
+
+        // Helper function to find or create stock category (keep auto-create)
+        const findOrCreateStockCategory = async (categoryName) => {
+            if (!categoryName || categoryName.trim() === '') return null;
+            
+            const categoryNameTrimmed = categoryName.trim();
+            
+            // Try to find existing category
+            const existingCategory = await client.query(
+                'SELECT id FROM hisab."stockCategories" WHERE "companyId" = $1 AND LOWER(name) = LOWER($2) AND "isActive" = TRUE',
+                [companyId, categoryNameTrimmed]
+            );
+            
+            if (existingCategory.rows.length > 0) {
+                return existingCategory.rows[0].id;
+            }
+            
+            // Create new stock category
+            const newCategory = await client.query(
+                'INSERT INTO hisab."stockCategories" ("companyId", name) VALUES ($1, $2) RETURNING id',
+                [companyId, categoryNameTrimmed]
+            );
+            return newCategory.rows[0].id;
+        };
+
+        // Helper function to find tax category (no auto-create)
+        const findTaxCategory = async (taxCategoryName) => {
+            if (!taxCategoryName || taxCategoryName.trim() === '') return null;
+            
+            const taxCategoryNameTrimmed = taxCategoryName.trim();
+            
+            // Try to find existing tax category
+            const existingTaxCategory = await client.query(
+                'SELECT id FROM hisab."taxCategories" WHERE LOWER(name) = LOWER($1) AND "isActive" = TRUE',
+                [taxCategoryNameTrimmed]
+            );
+            
+            if (existingTaxCategory.rows.length > 0) {
+                return existingTaxCategory.rows[0].id;
+            }
+            
+            // Return error instead of creating
+            throw new Error(`Tax category "${taxCategoryNameTrimmed}" not found. Please create it first or use an existing tax category.`);
+        };
+
+        for (let i = 0; i < products.length; i++) {
+            const product = products[i];
+            const rowNumber = i + 1;
+
+            try {
+                // Validate required fields
+                if (!product.name || product.name.trim() === '') {
+                    results.errors.push({
+                        row: rowNumber,
+                        error: 'Product name is required'
+                    });
+                    continue;
+                }
+
+                if (!product.itemType || !['product', 'service', 'bundle'].includes(product.itemType)) {
+                    results.errors.push({
+                        row: rowNumber,
+                        error: 'Valid itemType is required (product, service, or bundle)'
+                    });
+                    continue;
+                }
+
+                if (!product.rate || isNaN(parseFloat(product.rate)) || parseFloat(product.rate) < 0) {
+                    results.errors.push({
+                        row: rowNumber,
+                        error: 'Valid rate (price) is required'
+                    });
+                    continue;
+                }
+
+                // Check for duplicate item codes within the same company
+                if (product.itemCode && product.itemCode.trim() !== '') {
+                    const duplicateCheck = await client.query(
+                        'SELECT id FROM hisab.products WHERE "companyId" = $1 AND "itemCode" = $2 AND "deletedAt" IS NULL',
+                        [companyId, product.itemCode.trim()]
+                    );
+                    
+                    if (duplicateCheck.rows.length > 0) {
+                        results.errors.push({
+                            row: rowNumber,
+                            error: `Product with item code "${product.itemCode}" already exists`
+                        });
+                        continue;
+                    }
+                }
+
+                // Parse boolean values
+                const isInventoryTracked = product.isInventoryTracked === 'true' || product.isInventoryTracked === true;
+                const isSerialized = product.isSerialized === 'true' || product.isSerialized === true;
+                const isTaxInclusive = product.isTaxInclusive === 'true' || product.isTaxInclusive === true;
+
+                // Parse numeric values
+                const rate = parseFloat(product.rate) || 0;
+                const discount = parseFloat(product.discount) || 0;
+                const openingStockQty = parseFloat(product.openingStockQty) || 0;
+                const openingStockCostPerQty = parseFloat(product.openingStockCostPerQty) || 0;
+
+                // Find or create categories and units
+                const unitOfMeasurementId = await findUnit(product.unitOfMeasurement);
+                const stockCategoryId = await findOrCreateStockCategory(product.stockCategory);
+                const taxCategoryId = await findTaxCategory(product.taxCategory);
+
+                // Prepare product data with defaults
+                const productData = {
+                    name: product.name.trim(),
+                    itemType: product.itemType,
+                    itemCode: product.itemCode ? product.itemCode.trim() : null,
+                    hsnCode: product.hsnCode ? product.hsnCode.trim() : null,
+                    description: product.description ? product.description.trim() : null,
+                    defaultInvoiceDescription: product.defaultInvoiceDescription ? product.defaultInvoiceDescription.trim() : null,
+                    isInventoryTracked,
+                    isSerialized,
+                    unitOfMeasurementId,
+                    stockCategoryId,
+                    rate,
+                    isTaxInclusive,
+                    discount,
+                    taxCategoryId,
+                    openingStockQty,
+                    openingStockCostPerQty
+                };
+
+                const insertQuery = `
+                    INSERT INTO hisab."products" (
+                        "companyId", "userId", "name", "itemType", "itemCode", "hsnCode", 
+                        "description", "defaultInvoiceDescription", "isInventoryTracked", 
+                        "isSerialized", "unitOfMeasurementId", "stockCategoryId",
+                        "rate", "isTaxInclusive", "discount", "taxCategoryId", "openingStockQty", 
+                        "currentStock", "openingStockCostPerQty"
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+                    RETURNING id, name, "itemCode"
+                `;
+
+                const params = [
+                    companyId, currentUserId, productData.name, productData.itemType, productData.itemCode,
+                    productData.hsnCode, productData.description, productData.defaultInvoiceDescription,
+                    productData.isInventoryTracked, productData.isSerialized, productData.unitOfMeasurementId,
+                    productData.stockCategoryId, productData.rate, productData.isTaxInclusive, productData.discount,
+                    productData.taxCategoryId, productData.openingStockQty, productData.openingStockQty, // currentStock = openingStockQty
+                    productData.openingStockCostPerQty
+                ];
+
+                const result = await client.query(insertQuery, params);
+                const createdProduct = result.rows[0];
+
+                // Create inventory transaction for opening stock if applicable
+                if (isInventoryTracked && openingStockQty > 0) {
+                    await client.query(
+                        `INSERT INTO hisab."inventoryTransactions" (
+                            "companyId", "productId", "transactionType", "quantity", 
+                            "unitCost", "totalValue", "referenceType"
+                        ) VALUES ($1, $2, 'opening_stock', $3, $4, $5, 'product')`,
+                        [
+                            companyId,
+                            createdProduct.id,
+                            openingStockQty,
+                            openingStockCostPerQty,
+                            openingStockQty * openingStockCostPerQty
+                        ]
+                    );
+                }
+
+                results.success.push({
+                    row: rowNumber,
+                    id: createdProduct.id,
+                    name: createdProduct.name,
+                    itemCode: createdProduct.itemCode
+                });
+
+            } catch (err) {
+                console.error(`Error processing product row ${rowNumber}:`, err);
+                results.errors.push({
+                    row: rowNumber,
+                    error: err.message || 'Failed to create product'
+                });
+            }
+        }
+
+        await client.query("COMMIT");
+
+        return successResponse(res, {
+            message: `Bulk import completed. ${results.success.length} products created successfully, ${results.errors.length} errors.`,
+            results
+        });
+
+    } catch (error) {
+        await client.query("ROLLBACK");
+        console.error("Error in bulk import products:", error);
+        return errorResponse(res, "Error importing products", 500);
+    } finally {
+        client.release();
+    }
 }
