@@ -316,7 +316,6 @@ input:-webkit-autofill:active{
 .react-select-container {
   .react-select__control {
     border-color: var(--#{$prefix}border-color);
-    background-color: var(--#{$prefix}body-bg);
     
     &:hover {
       border-color: var(--#{$prefix}primary);
