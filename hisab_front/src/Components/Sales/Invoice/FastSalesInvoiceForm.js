@@ -192,7 +192,7 @@ const FastSalesInvoiceForm = ({
                     taxRate: shouldCalculateTax ? taxRate : 0,
                     discountRate,
                     rateType,
-                    discountValueType: 'percentage', // Sales invoices use percentage discount
+                    discountValueType: updatedItem.discountType || 'percentage', // Use item's discount type or default to percentage
                     discountValue: discountRate
                 });
 
@@ -603,7 +603,7 @@ const FastSalesInvoiceForm = ({
             taxRate: validation.values.taxType && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 ? taxRate : 0,
             discountRate,
             rateType: validation.values.rateType,
-            discountValueType: 'percentage', // Sales invoices use percentage discount
+            discountValueType: newItem.discountType, // Use the actual discount type selected by user
             discountValue: discountRate
         });
 
@@ -809,7 +809,7 @@ const FastSalesInvoiceForm = ({
                     taxRate,
                     discountRate,
                     rateType: newRateType,
-                    discountValueType: 'percentage', // Sales invoices use percentage discount
+                    discountValueType: item.discountType || 'percentage', // Use item's discount type or default to percentage
                     discountValue: discountRate
                 });
                 

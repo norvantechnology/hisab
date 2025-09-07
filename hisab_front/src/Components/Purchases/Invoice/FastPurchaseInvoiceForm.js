@@ -199,7 +199,7 @@ const FastPurchaseInvoiceForm = ({
                     taxRate: shouldCalculateTax ? taxRate : 0, // Force tax rate to 0 if "No Tax" is selected
                     discountRate,
                     rateType,
-                    discountValueType: 'percentage', // Purchase invoices use percentage discount
+                    discountValueType: updatedItem.discountType || 'percentage', // Use item's discount type or default to percentage
                     discountValue: discountRate
                 });
 
@@ -623,7 +623,7 @@ const FastPurchaseInvoiceForm = ({
             taxRate: validation.values.taxType && TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 ? taxRate : 0,
             discountRate,
             rateType: validation.values.rateType,
-            discountValueType: 'percentage', // Purchase invoices use percentage discount
+            discountValueType: newItem.discountType, // Use the actual discount type selected by user
             discountValue: discountRate
         });
 
@@ -859,7 +859,7 @@ const FastPurchaseInvoiceForm = ({
                     taxRate,
                     discountRate,
                     rateType: newRateType,
-                    discountValueType: 'percentage', // Purchase invoices use percentage discount
+                    discountValueType: item.discountType || 'percentage', // Use item's discount type or default to percentage
                     discountValue: discountRate
                 });
                 

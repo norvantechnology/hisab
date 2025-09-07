@@ -205,7 +205,11 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
                 </div>
                 <div className="col-3">
                   <div className="text-muted">Payment Method:</div>
-                  <div className="fw-medium">{invoice.paymentMethod || 'Credit'}</div>
+                  <div className="fw-medium">
+                    {invoice.status === 'paid' ? 
+                      (invoice.bankAccount?.name ? `Bank (${invoice.bankAccount.name})` : 'Cash') : 
+                      'Credit'}
+                  </div>
                 </div>
               </div>
             </div>
@@ -275,7 +279,13 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
                             <td className="text-center">{item.quantity}</td>
                             <td className="text-end">{formatCurrency(item.rate)}</td>
                             <td className="text-end">
-                              <small>{item.discountRate > 0 ? `${item.discountRate}%` : '0%'}</small>
+                              <small>
+                                {(item.discountAmount > 0) ? formatCurrency(item.discountAmount) : 
+                                 (item.discountValue > 0) ? 
+                                   (item.discountType === 'percentage' ? `${item.discountValue}%` : formatCurrency(item.discountValue)) : 
+                                 (item.discountRate > 0) ? `${item.discountRate}%` : 
+                                 '0'}
+                              </small>
                             </td>
                             <td className="text-end">
                               <small>{item.taxRate}%</small>
