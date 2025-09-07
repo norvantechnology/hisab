@@ -48,16 +48,18 @@ export const calculateItemTaxAndTotal = ({
   let taxAmount = 0;
   let total = 0;
 
+  // Calculate tax based on rate type
   if (rateType === 'with_tax') {
-    // For "With Tax" items, we want the total to be the rate input
-    // So we calculate backwards: total = rate input, then calculate tax amount
+    // For "With Tax" items, the rate input represents the desired total (inclusive of tax)
+    // So we calculate backwards: total = rate input, then extract tax amount
     total = afterDiscount;
     // Calculate tax amount: if total = base + tax, then tax = total - base
     // base = total / (1 + taxRate/100)
     const baseAmount = total / (1 + (validTaxRate / 100));
     taxAmount = total - baseAmount;
   } else {
-    // For "Without Tax" items, add tax to the rate
+    // For "Without Tax" items, the rate input is the base rate (before tax)
+    // Add tax to the rate
     taxAmount = (afterDiscount * validTaxRate) / 100;
     total = afterDiscount + taxAmount;
   }
@@ -101,8 +103,8 @@ export const calculateItemTaxAmount = (item, taxType, TAX_TYPES) => {
   if (selectedTax && selectedTax.rate > 0) {
     const taxRate = parseFloat(item.taxRate) || 0;
     if (item.rateType === 'with_tax') {
-      // For "With Tax" items, we want the total to be the rate input
-      // So we calculate backwards: total = rate input, then calculate tax amount
+      // For "With Tax" items, the rate represents the desired total (inclusive of tax)
+      // So we calculate backwards: total = rate input, then extract tax amount
       const total = afterDiscount;
       // Calculate tax amount: if total = base + tax, then tax = total - base
       // base = total / (1 + taxRate/100)
@@ -145,8 +147,8 @@ export const calculateItemTotalForDisplay = (item, taxType) => {
   const taxRate = parseFloat(item.taxRate) || 0;
   if (taxRate > 0) {
     if (item.rateType === 'with_tax') {
-      // For "With Tax" items, we want the total to be the rate input
-      // So we calculate backwards: total = rate input, then calculate tax amount
+      // For "With Tax" items, the rate represents the desired total (inclusive of tax)
+      // So we calculate backwards: total = rate input, then extract tax amount
       const total = afterDiscount;
       // Calculate tax amount: if total = base + tax, then tax = total - base
       // base = total / (1 + taxRate/100)

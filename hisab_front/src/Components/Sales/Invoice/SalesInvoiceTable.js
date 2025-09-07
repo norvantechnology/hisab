@@ -46,23 +46,23 @@ const SalesInvoiceTable = ({
             header: "Customer",
             accessorKey: "customer",
             cell: (cell) => {
-                const hasContact = cell.row.original.contactName || cell.row.original.contactId;
-                const hasBank = cell.row.original.accountName || cell.row.original.bankAccountId;
+                const hasContact = cell.row.original.contact;
+                const hasBank = cell.row.original.bankAccount;
                 
                 return (
                     <div>
                         <h6 className="mb-0">
-                            {/* Always show contact name if available, otherwise show bank name */}
-                            {cell.row.original.contactName || cell.row.original.accountName || 'N/A'}
+                            {/* Use contact.name from new schema structure */}
+                            {cell.row.original.contact?.name || cell.row.original.bankAccount?.name || 'N/A'}
                         </h6>
-                        {cell.row.original.contactGstin && (
-                            <small className="text-muted">{cell.row.original.contactGstin}</small>
+                        {cell.row.original.contact?.gstin && (
+                            <small className="text-muted">{cell.row.original.contact.gstin}</small>
                         )}
                         {/* Show payment bank info when both contact and bank are present */}
                         {hasContact && hasBank && (
                             <small className="text-info d-block">
                                 <i className="ri-arrow-right-line me-1"></i>
-                                Amount received in {cell.row.original.accountName}
+                                Amount received in {cell.row.original.bankAccount.name}
                             </small>
                         )}
                         {/* Show bank-only info when only bank is present */}

@@ -17,7 +17,7 @@ export const TAX_TYPES_SIMPLE = [
 export const DISCOUNT_TYPES = [
   { value: 'none', label: 'None' },
   { value: 'per_item', label: 'Per Item' },
-  { value: 'on_invoice', label: 'On Invoice' },
+  { value: 'invoice', label: 'On Invoice' },
   { value: 'per_item_and_invoice', label: 'Per Item & On Invoice' }
 ];
 

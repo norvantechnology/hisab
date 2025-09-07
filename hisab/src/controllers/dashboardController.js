@@ -111,7 +111,7 @@ export async function getBusinessAnalytics(req, res) {
       FROM sales_summary s, purchase_summary p, expense_summary e, income_summary i
     `;
 
-    // 2. Top Products - Simple fixed calculation
+    // 2. Top Products - Updated to use correct table and column names
     const topProductsQuery = `
       SELECT 
         p.id,
@@ -120,15 +120,9 @@ export async function getBusinessAnalytics(req, res) {
         p.rate as current_rate,
         COALESCE(SUM(si.quantity), 0) as total_quantity_sold,
         COUNT(DISTINCT s.id) as invoice_count,
-        -- For single product invoices: use netReceivable, for multi: use line total
-        COALESCE(SUM(
-          CASE 
-            WHEN (SELECT COUNT(*) FROM hisab.sale_items si2 WHERE si2."saleId" = s.id) = 1
-            THEN s."netReceivable"
-            ELSE si.total
-          END
-        ), 0) as total_sales_amount
-      FROM hisab.products p
+        -- Use lineTotal from sale_items table
+        COALESCE(SUM(si."lineTotal"), 0) as total_sales_amount
+      FROM hisab."products" p
       LEFT JOIN hisab.sale_items si ON p.id = si."productId"
       LEFT JOIN hisab.sales s ON si."saleId" = s.id AND s."deletedAt" IS NULL ${startDate || endDate || status ? `
         AND s."companyId" = $1 
@@ -137,13 +131,7 @@ export async function getBusinessAnalytics(req, res) {
         ${status && status !== 'all' ? `AND s.status = $${params.indexOf(status) + 1}` : ''}` : ''}
       WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
       GROUP BY p.id, p.name, p."itemCode", p.rate
-      HAVING COALESCE(SUM(
-        CASE 
-          WHEN (SELECT COUNT(*) FROM hisab.sale_items si2 WHERE si2."saleId" = s.id) = 1
-          THEN s."netReceivable"
-          ELSE si.total
-        END
-      ), 0) > 0
+      HAVING COALESCE(SUM(si."lineTotal"), 0) > 0
       ORDER BY total_sales_amount DESC
       LIMIT 10
     `;
@@ -195,6 +183,7 @@ export async function getBusinessAnalytics(req, res) {
           s."invoiceNumber" as reference,
           s."invoiceDate" as date,
           c.name as contact_name,
+          c.id as contact_id,
           s."remaining_amount" as amount,
           (CURRENT_DATE - s."invoiceDate"::date) as days_overdue
         FROM hisab.sales s
@@ -211,6 +200,7 @@ export async function getBusinessAnalytics(req, res) {
           p."invoiceNumber" as reference,
           p."invoiceDate" as date,
           c.name as contact_name,
+          c.id as contact_id,
           p."remaining_amount" as amount,
           (CURRENT_DATE - p."invoiceDate"::date) as days_overdue
         FROM hisab.purchases p
@@ -264,236 +254,6 @@ export async function getBusinessAnalytics(req, res) {
   }
 }
 
-export async function getCashFlowAnalytics(req, res) {
-  const userId = req.currentUser?.id;
-  const companyId = req.currentUser?.companyId;
-  const { period = '6months' } = req.query;
-
-  if (!userId || !companyId) {
-    return errorResponse(res, "Unauthorized access", 401);
-  }
-
-  const client = await pool.connect();
-
-  try {
-    let dateCondition = '';
-    switch (period) {
-      case '3months':
-        dateCondition = "AND date >= CURRENT_DATE - INTERVAL '3 months'";
-        break;
-      case '6months':
-        dateCondition = "AND date >= CURRENT_DATE - INTERVAL '6 months'";
-        break;
-      case '1year':
-        dateCondition = "AND date >= CURRENT_DATE - INTERVAL '1 year'";
-        break;
-      default:
-        dateCondition = "AND date >= CURRENT_DATE - INTERVAL '6 months'";
-    }
-
-    const cashFlowQuery = `
-      WITH cash_inflows AS (
-        -- Sales receipts
-        SELECT 
-          DATE_TRUNC('month', s."invoiceDate") as month,
-          'sales' as source,
-          COALESCE(SUM(s."paid_amount"), 0) as amount
-        FROM hisab.sales s
-        WHERE s."companyId" = $1 
-          AND s."deletedAt" IS NULL 
-          ${dateCondition.replace('date', 's."invoiceDate"')}
-        GROUP BY DATE_TRUNC('month', s."invoiceDate")
-        
-        UNION ALL
-        
-        -- Income receipts
-        SELECT 
-          DATE_TRUNC('month', i."date") as month,
-          'incomes' as source,
-          COALESCE(SUM(i."paid_amount"), 0) as amount
-        FROM hisab.incomes i
-        WHERE i."companyId" = $1 
-          ${dateCondition.replace('date', 'i."date"')}
-        GROUP BY DATE_TRUNC('month', i."date")
-        
-        UNION ALL
-        
-        -- Payments received
-        SELECT 
-          DATE_TRUNC('month', p."date") as month,
-          'receipts' as source,
-          COALESCE(SUM(CASE WHEN p."paymentType" = 'receipt' THEN p.amount END), 0) as amount
-        FROM hisab.payments p
-        WHERE p."companyId" = $1 
-          AND p."deletedAt" IS NULL 
-          ${dateCondition.replace('date', 'p."date"')}
-        GROUP BY DATE_TRUNC('month', p."date")
-      ),
-      cash_outflows AS (
-        -- Purchase payments
-        SELECT 
-          DATE_TRUNC('month', p."invoiceDate") as month,
-          'purchases' as source,
-          COALESCE(SUM(p."paid_amount"), 0) as amount
-        FROM hisab.purchases p
-        WHERE p."companyId" = $1 
-          AND p."deletedAt" IS NULL 
-          ${dateCondition.replace('date', 'p."invoiceDate"')}
-        GROUP BY DATE_TRUNC('month', p."invoiceDate")
-        
-        UNION ALL
-        
-        -- Expense payments
-        SELECT 
-          DATE_TRUNC('month', e."date") as month,
-          'expenses' as source,
-          COALESCE(SUM(e."paid_amount"), 0) as amount
-        FROM hisab.expenses e
-        WHERE e."companyId" = $1 
-          ${dateCondition.replace('date', 'e."date"')}
-        GROUP BY DATE_TRUNC('month', e."date")
-        
-        UNION ALL
-        
-        -- Payments made
-        SELECT 
-          DATE_TRUNC('month', p."date") as month,
-          'payments' as source,
-          COALESCE(SUM(CASE WHEN p."paymentType" = 'payment' THEN p.amount END), 0) as amount
-        FROM hisab.payments p
-        WHERE p."companyId" = $1 
-          AND p."deletedAt" IS NULL 
-          ${dateCondition.replace('date', 'p."date"')}
-        GROUP BY DATE_TRUNC('month', p."date")
-      ),
-      combined_flow AS (
-        SELECT month, 'inflow' as type, source, amount FROM cash_inflows WHERE amount > 0
-        UNION ALL
-        SELECT month, 'outflow' as type, source, amount FROM cash_outflows WHERE amount > 0
-      )
-      SELECT 
-        month,
-        COALESCE(SUM(CASE WHEN type = 'inflow' THEN amount END), 0) as total_inflow,
-        COALESCE(SUM(CASE WHEN type = 'outflow' THEN amount END), 0) as total_outflow,
-        (COALESCE(SUM(CASE WHEN type = 'inflow' THEN amount END), 0) - 
-         COALESCE(SUM(CASE WHEN type = 'outflow' THEN amount END), 0)) as net_flow,
-        json_agg(
-          json_build_object('source', source, 'type', type, 'amount', amount)
-        ) FILTER (WHERE amount > 0) as details
-      FROM combined_flow
-      GROUP BY month
-      ORDER BY month
-    `;
-
-    const cashFlowResult = await client.query(cashFlowQuery, [companyId]);
-
-    return successResponse(res, {
-      message: "Cash flow analytics fetched successfully",
-      cashFlow: cashFlowResult.rows || []
-    });
-
-  } catch (error) {
-    console.error('Error fetching cash flow analytics:', error);
-    return errorResponse(res, "Error fetching cash flow analytics", 500);
-  } finally {
-    client.release();
-  }
-}
-
-export async function getProductPerformance(req, res) {
-  const userId = req.currentUser?.id;
-  const companyId = req.currentUser?.companyId;
-  const { period = '3months' } = req.query;
-
-  if (!userId || !companyId) {
-    return errorResponse(res, "Unauthorized access", 401);
-  }
-
-  const client = await pool.connect();
-
-  try {
-    let dateCondition = '';
-    switch (period) {
-      case '1month':
-        dateCondition = "AND s.\"invoiceDate\" >= CURRENT_DATE - INTERVAL '1 month'";
-        break;
-      case '3months':
-        dateCondition = "AND s.\"invoiceDate\" >= CURRENT_DATE - INTERVAL '3 months'";
-        break;
-      case '6months':
-        dateCondition = "AND s.\"invoiceDate\" >= CURRENT_DATE - INTERVAL '6 months'";
-        break;
-      case '1year':
-        dateCondition = "AND s.\"invoiceDate\" >= CURRENT_DATE - INTERVAL '1 year'";
-        break;
-    }
-
-    const productPerformanceQuery = `
-      WITH product_sales AS (
-        SELECT 
-          p.id,
-          p.name,
-          p."itemCode",
-          p."itemType",
-          p.rate as current_rate,
-          p."currentStock",
-          sc.name as category_name,
-          COALESCE(SUM(si.quantity), 0) as total_quantity_sold,
-          COALESCE(SUM(si.total), 0) as total_revenue,
-          COALESCE(AVG(si.rate), 0) as avg_selling_price,
-          COUNT(DISTINCT s.id) as transaction_count,
-          MAX(s."invoiceDate") as last_sale_date
-        FROM hisab.products p
-        LEFT JOIN hisab.sale_items si ON p.id = si."productId"
-        LEFT JOIN hisab.sales s ON si."saleId" = s.id AND s."deletedAt" IS NULL ${dateCondition}
-        LEFT JOIN hisab."stockCategories" sc ON p."stockCategoryId" = sc.id
-        WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
-        GROUP BY p.id, p.name, p."itemCode", p."itemType", p.rate, p."currentStock", sc.name
-      ),
-      product_purchases AS (
-        SELECT 
-          p.id,
-          COALESCE(SUM(pi.total), 0) as total_cost,
-          COALESCE(AVG(pi.rate), 0) as avg_purchase_price
-        FROM hisab.products p
-        LEFT JOIN hisab.purchase_items pi ON p.id = pi."productId"
-        LEFT JOIN hisab.purchases pu ON pi."purchaseId" = pu.id AND pu."deletedAt" IS NULL ${dateCondition.replace('s."invoiceDate"', 'pu."invoiceDate"')}
-        WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
-        GROUP BY p.id
-      )
-      SELECT 
-        ps.*,
-        pp.total_cost,
-        pp.avg_purchase_price,
-        CASE 
-          WHEN pp.total_cost > 0 THEN ps.total_revenue - pp.total_cost
-          ELSE ps.total_revenue
-        END as profit,
-        CASE 
-          WHEN pp.total_cost > 0 AND ps.total_revenue > 0 
-          THEN ((ps.total_revenue - pp.total_cost) / ps.total_revenue * 100)
-          ELSE 0
-        END as profit_margin_percentage
-      FROM product_sales ps
-      LEFT JOIN product_purchases pp ON ps.id = pp.id
-      ORDER BY ps.total_revenue DESC
-    `;
-
-    const productResult = await client.query(productPerformanceQuery, [companyId]);
-
-    return successResponse(res, {
-      message: "Product performance analytics fetched successfully",
-      products: productResult.rows || []
-    });
-
-  } catch (error) {
-    console.error('Error fetching product performance:', error);
-    return errorResponse(res, "Error fetching product performance", 500);
-  } finally {
-    client.release();
-  }
-}
-
 export async function getQuickStats(req, res) {
   const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
@@ -524,7 +284,7 @@ export async function getQuickStats(req, res) {
         SELECT 
           (SELECT COUNT(*) FROM hisab.sales WHERE "companyId" = $1 AND "deletedAt" IS NULL) as total_sales_invoices,
           (SELECT COUNT(*) FROM hisab.purchases WHERE "companyId" = $1 AND "deletedAt" IS NULL) as total_purchase_invoices,
-          (SELECT COUNT(*) FROM hisab.products WHERE "companyId" = $1 AND "deletedAt" IS NULL) as total_products,
+          (SELECT COUNT(*) FROM hisab."products" WHERE "companyId" = $1 AND "deletedAt" IS NULL) as total_products,
           (SELECT COUNT(*) FROM hisab.contacts WHERE "companyId" = $1 AND "deletedAt" IS NULL) as total_contacts,
           (SELECT COUNT(*) FROM hisab."bankAccounts" WHERE "companyId" = $1 AND "deletedAt" IS NULL AND "isActive" = true) as active_bank_accounts
       ),
@@ -556,10 +316,11 @@ export async function getQuickStats(req, res) {
   }
 }
 
-// Get filter options for the dashboard
-export async function getDashboardFilters(req, res) {
+// Export dashboard data - NEW API
+export async function exportDashboardData(req, res) {
   const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
+  const { format = 'csv', filters = {} } = req.query;
 
   if (!userId || !companyId) {
     return errorResponse(res, "Unauthorized access", 401);
@@ -568,60 +329,86 @@ export async function getDashboardFilters(req, res) {
   const client = await pool.connect();
 
   try {
-    const filtersQuery = `
-      WITH date_ranges AS (
+    // Get comprehensive dashboard data for export
+    const exportQuery = `
+      WITH sales_data AS (
         SELECT 
-          MIN(earliest_date) as earliest_transaction,
-          MAX(latest_date) as latest_transaction
-        FROM (
-          SELECT MIN("invoiceDate") as earliest_date, MAX("invoiceDate") as latest_date FROM hisab.sales WHERE "companyId" = $1 AND "deletedAt" IS NULL
-          UNION ALL
-          SELECT MIN("invoiceDate") as earliest_date, MAX("invoiceDate") as latest_date FROM hisab.purchases WHERE "companyId" = $1 AND "deletedAt" IS NULL
-          UNION ALL
-          SELECT MIN("date") as earliest_date, MAX("date") as latest_date FROM hisab.expenses WHERE "companyId" = $1
-          UNION ALL
-          SELECT MIN("date") as earliest_date, MAX("date") as latest_date FROM hisab.incomes WHERE "companyId" = $1
-        ) combined_dates
+          'sales' as type,
+          s."invoiceNumber" as reference,
+          s."invoiceDate" as date,
+          c.name as contact_name,
+          s."netReceivable" as amount,
+          s.status,
+          s."paid_amount",
+          s."remaining_amount"
+        FROM hisab.sales s
+        LEFT JOIN hisab.contacts c ON s."contactId" = c.id
+        WHERE s."companyId" = $1 AND s."deletedAt" IS NULL
       ),
-      categories AS (
-        SELECT id, name FROM hisab."stockCategories" WHERE "companyId" = $1 ORDER BY name
+      purchase_data AS (
+        SELECT 
+          'purchases' as type,
+          p."invoiceNumber" as reference,
+          p."invoiceDate" as date,
+          c.name as contact_name,
+          p."netPayable" as amount,
+          p.status,
+          p."paid_amount",
+          p."remaining_amount"
+        FROM hisab.purchases p
+        LEFT JOIN hisab.contacts c ON p."contactId" = c.id
+        WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
       ),
-      account_types AS (
-        SELECT DISTINCT "accountType" FROM hisab."bankAccounts" WHERE "companyId" = $1 ORDER BY "accountType"
+      expense_data AS (
+        SELECT 
+          'expenses' as type,
+          'EXP-' || e.id as reference,
+          e."date",
+          c.name as contact_name,
+          e.amount,
+          e.status,
+          e."paid_amount",
+          e."remaining_amount"
+        FROM hisab.expenses e
+        LEFT JOIN hisab.contacts c ON e."contactId" = c.id
+        WHERE e."companyId" = $1
+      ),
+      income_data AS (
+        SELECT 
+          'incomes' as type,
+          'INC-' || i.id as reference,
+          i."date",
+          c.name as contact_name,
+          i.amount,
+          i.status,
+          i."paid_amount",
+          i."remaining_amount"
+        FROM hisab.incomes i
+        LEFT JOIN hisab.contacts c ON i."contactId" = c.id
+        WHERE i."companyId" = $1
       )
-      SELECT 
-        (SELECT row_to_json(d) FROM date_ranges d) as date_ranges,
-        (SELECT array_agg(row_to_json(c)) FROM categories c) as product_categories,
-        (SELECT array_agg(row_to_json(a)) FROM account_types a) as account_types
+      SELECT * FROM sales_data
+      UNION ALL
+      SELECT * FROM purchase_data
+      UNION ALL
+      SELECT * FROM expense_data
+      UNION ALL
+      SELECT * FROM income_data
+      ORDER BY date DESC
     `;
 
-    const result = await client.query(filtersQuery, [companyId]);
-    const filterData = result.rows[0];
-
-    const filters = {
-      dateRanges: filterData.date_ranges || {},
-      productCategories: filterData.product_categories || [],
-      accountTypes: filterData.account_types || [],
-      statusOptions: [
-        { value: 'all', label: 'All Status' },
-        { value: 'paid', label: 'Paid' },
-        { value: 'pending', label: 'Pending' }
-      ],
-      contactTypes: [
-        { value: 'all', label: 'All Contacts' },
-        { value: 'customer', label: 'Customers' },
-        { value: 'vendor', label: 'Vendors' }
-      ]
-    };
+    const result = await client.query(exportQuery, [companyId]);
 
     return successResponse(res, {
-      message: "Dashboard filters fetched successfully",
-      filters
+      message: "Dashboard data exported successfully",
+      data: result.rows,
+      format: format,
+      exportedAt: new Date().toISOString()
     });
 
   } catch (error) {
-    console.error('Error fetching dashboard filters:', error);
-    return errorResponse(res, "Error fetching dashboard filters", 500);
+    console.error('Error exporting dashboard data:', error);
+    return errorResponse(res, "Error exporting dashboard data", 500);
   } finally {
     client.release();
   }

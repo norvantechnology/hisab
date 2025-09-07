@@ -188,6 +188,28 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
               </Col>
             </Row>
 
+            {/* Invoice Details Section */}
+            <div className="mt-2 pt-2 border-top">
+              <div className="row g-2 small">
+                <div className="col-3">
+                  <div className="text-muted">Tax Type:</div>
+                  <div className="fw-medium">{invoice.taxType || 'N/A'}</div>
+                </div>
+                <div className="col-3">
+                  <div className="text-muted">Rate Type:</div>
+                  <div className="fw-medium">{invoice.rateType === 'with_tax' ? 'With Tax' : 'Without Tax'}</div>
+                </div>
+                <div className="col-3">
+                  <div className="text-muted">Discount Scope:</div>
+                  <div className="fw-medium">{invoice.discountScope || 'None'}</div>
+                </div>
+                <div className="col-3">
+                  <div className="text-muted">Payment Method:</div>
+                  <div className="fw-medium">{invoice.paymentMethod || 'Credit'}</div>
+                </div>
+              </div>
+            </div>
+
             {/* Compact Billing Address */}
             {invoice.contact && (invoice.contact.billingAddress1 || invoice.contact.billingCity || invoice.contact.billingState) && (
               <div className="mt-2 pt-2 border-top">
@@ -276,29 +298,53 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
                 <div className="d-flex flex-column h-100">
                   {/* Summary Section */}
                   <div className="border rounded p-3 bg-light flex-grow-1">
-                    <h6 className="text-muted mb-3">Invoice Summary</h6>
+                    <h6 className="text-primary mb-3 fw-bold">Invoice Summary</h6>
                     <div className="d-flex justify-content-between mb-2">
-                      <span className="small">Basic Amount:</span>
+                      <span className="small">Subtotal:</span>
                       <span className="small fw-medium">{formatCurrency(invoice.basicAmount)}</span>
                     </div>
                     <div className="d-flex justify-content-between mb-2">
                       <span className="small">Tax:</span>
-                      <span className="small fw-medium">{formatCurrency(invoice.taxAmount)}</span>
+                      <span className="small fw-medium text-success">+{formatCurrency(invoice.taxAmount)}</span>
                     </div>
-                    <div className="d-flex justify-content-between mb-2">
-                      <span className="small">Discount:</span>
-                      <span className="small fw-medium text-danger">-{formatCurrency(invoice.totalDiscount)}</span>
-                    </div>
+                    {(() => {
+                      // Calculate item-level discount from items
+                      const itemLevelDiscount = (invoice.items || []).reduce((sum, item) => {
+                        return sum + (parseFloat(item.discountAmount) || 0);
+                      }, 0);
+                      
+                      // Calculate invoice-level discount
+                      const invoiceLevelDiscount = (parseFloat(invoice.totalDiscount) || 0) - itemLevelDiscount;
+                      
+                      return (
+                        <>
+                          {itemLevelDiscount > 0 && (
+                            <div className="d-flex justify-content-between mb-2">
+                              <span className="small">Item Discount:</span>
+                              <span className="small fw-medium text-danger">-{formatCurrency(itemLevelDiscount)}</span>
+                            </div>
+                          )}
+                          {invoiceLevelDiscount > 0 && (
+                            <div className="d-flex justify-content-between mb-2">
+                              <span className="small">Invoice Discount:</span>
+                              <span className="small fw-medium text-danger">-{formatCurrency(invoiceLevelDiscount)}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                     {parseFloat(invoice.transportationCharge || 0) > 0 && (
                       <div className="d-flex justify-content-between mb-2">
                         <span className="small">Transportation Charge:</span>
                         <span className="small fw-medium text-info">{formatCurrency(invoice.transportationCharge)}</span>
                       </div>
                     )}
-                    {invoice.roundOff && (
+                    {parseFloat(invoice.roundOff || 0) !== 0 && (
                       <div className="d-flex justify-content-between mb-2">
                         <span className="small">Round Off:</span>
-                        <span className="small fw-medium">{formatCurrency(invoice.roundOff)}</span>
+                        <span className={`small fw-medium ${parseFloat(invoice.roundOff || 0) > 0 ? 'text-success' : 'text-danger'}`}>
+                          {parseFloat(invoice.roundOff || 0) > 0 ? '+' : ''}{formatCurrency(Math.abs(parseFloat(invoice.roundOff || 0)))}
+                        </span>
                       </div>
                     )}
                     <hr className="my-2" />

@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Container, Row, Col, Card, CardBody, Button, Alert } from "reactstrap";
 import { RiAddLine, RiCloseLine, RiDownload2Line } from "react-icons/ri";
 import { toast,ToastContainer } from "react-toastify";
+import { useSearchParams } from 'react-router-dom';
 import ExportCSVModal from "../../../Components/Common/ExportCSVModal";
 
 // Components
 import BreadCrumb from "../../../Components/Common/BreadCrumb";
 import SalesInvoiceTable from "../../../Components/Sales/Invoice/SalesInvoiceTable";
-import SalesInvoiceForm from "../../../Components/Sales/Invoice/SalesInvoiceForm";
+import FastSalesInvoiceForm from "../../../Components/Sales/Invoice/FastSalesInvoiceForm";
 import SalesInvoiceViewModal from "../../../Components/Sales/Invoice/SalesInvoiceViewModal";
 import SalesInvoiceFilter from "../../../Components/Sales/Invoice/SalesInvoiceFilter";
 import ShareModal from "../../../Components/Common/ShareModal";
@@ -19,12 +20,14 @@ import { listSales, createSale, updateSales, deleteSale, generateSalesInvoicePDF
 import { createPayment } from '../../../services/payment';
 import { getBankAccounts } from '../../../services/bankAccount';
 import { getContacts } from '../../../services/contacts';
+import { listProducts } from '../../../services/products';
 import useCompanySelectionState from '../../../hooks/useCompanySelection';
 import { getCurrentMonthRange } from '../../../utils/dateUtils';
 import Loader from '../../../Components/Common/Loader';
 
 const SalesInvoicePage = () => {
     const currentMonthRange = getCurrentMonthRange();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [state, setState] = useState({
         invoices: [],
         loading: false,
@@ -60,6 +63,7 @@ const SalesInvoicePage = () => {
         pdfLoading: null,
         bankAccounts: [],
         contacts: [],
+        products: [],
         selectedInvoiceForPayment: null
     });
 
@@ -76,28 +80,47 @@ const SalesInvoicePage = () => {
         pdfLoading,
         bankAccounts,
         contacts,
+        products,
         selectedInvoiceForPayment
     } = state;
 
     // Use the modern company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
 
+    // Check for add parameter and auto-open add form
+    useEffect(() => {
+        const shouldAdd = searchParams.get('add');
+        if (shouldAdd === 'true') {
+            // Clear the parameter from URL
+            setSearchParams({});
+            // Open the add form
+            setState(prev => ({
+                ...prev,
+                isEditMode: false,
+                selectedInvoice: null,
+                modals: { ...prev.modals, main: true }
+            }));
+        }
+    }, [searchParams, setSearchParams]);
+
     const fetchBankAccountsAndContacts = async () => {
         if (!selectedCompanyId) return;
 
         try {
-            const [bankAccountsResponse, contactsResponse] = await Promise.all([
+            const [bankAccountsResponse, contactsResponse, productsResponse] = await Promise.all([
                 getBankAccounts({}),
-                getContacts({})
+                getContacts({}),
+                listProducts({ limit: 1000 }) // Fetch all products for fast search
             ]);
 
             setState(prev => ({
                 ...prev,
                 bankAccounts: bankAccountsResponse?.success ? bankAccountsResponse.accounts || [] : [],
-                contacts: contactsResponse?.success ? contactsResponse.contacts || [] : []
+                contacts: contactsResponse?.success ? contactsResponse.contacts || [] : [],
+                products: productsResponse?.success ? productsResponse.data || [] : []
             }));
         } catch (error) {
-            console.error('Error fetching bank accounts and contacts:', error);
+            console.error('Error fetching data:', error);
         }
     };
 
@@ -203,7 +226,8 @@ const SalesInvoicePage = () => {
         if (existingInvoice) {
             const transformedInvoice = {
                 ...existingInvoice,
-                date: existingInvoice.invoiceDate,
+                date: existingInvoice.invoiceDate, // Map invoiceDate to date
+                discountType: existingInvoice.discountScope, // Map discountScope to discountType for form
                 // Preserve the original IDs for the form to use
                 bankAccountId: existingInvoice.bankAccountId,
                 contactId: existingInvoice.contactId,
@@ -211,19 +235,24 @@ const SalesInvoicePage = () => {
                 items: existingInvoice.items?.map(item => ({
                     id: item.id,
                     productId: item.productId,
-                    name: item.productName || item.name,
-                    code: item.productCode || item.code,
-                    quantity: item.quantity,
-                    rate: item.rate,
-                    taxRate: item.taxRate,
-                    taxAmount: item.taxAmount,
-                    discount: item.discount,
-                    discountRate: item.discountRate,
-                    discountType: item.discountType,
-                    total: item.total,
-                    isSerialized: item.isSerialized,
+                    name: item.name, // Use correct field name
+                    code: item.code, // Use correct field name
+                    quantity: parseFloat(item.quantity || 0),
+                    rate: parseFloat(item.rate || 0),
+                    rateType: item.rateType || 'without_tax',
+                    taxRate: parseFloat(item.taxRate || 0),
+                    taxAmount: parseFloat(item.taxAmount || 0),
+                    discountType: item.discountType || 'rupees',
+                    discountValue: parseFloat(item.discountValue || 0), // From new schema
+                    discountAmount: parseFloat(item.discountAmount || 0), // From new schema
+                    discountRate: parseFloat(item.discountValue || 0), // Map discountValue to discountRate for form
+                    discount: parseFloat(item.discountAmount || 0), // Map discountAmount to discount for form
+                    lineBasic: parseFloat(item.lineBasic || 0), // From new schema
+                    lineTotal: parseFloat(item.lineTotal || 0), // From new schema
+                    total: parseFloat(item.lineTotal || item.total || 0), // Use lineTotal with fallback
+                    isSerialized: item.isSerialized || false,
                     serialNumbers: item.serialNumbers || [],
-                    currentStock: item.currentStock
+                    currentStock: parseFloat(item.currentStock || 0)
                 })) || []
             };
             
@@ -514,8 +543,8 @@ const SalesInvoicePage = () => {
                     />
                 )}
 
-                <SalesInvoiceForm
-                    key={isEditMode ? selectedInvoice?.id : 'new'}
+                <FastSalesInvoiceForm
+                    key={isEditMode ? selectedInvoice?.id : 'new-fast'}
                     isOpen={modals.main}
                     toggle={() => toggleModal('main', false)}
                     isEditMode={isEditMode}
@@ -523,6 +552,8 @@ const SalesInvoicePage = () => {
                     onSubmit={handleSubmitInvoice}
                     isLoading={apiLoading}
                     apiError={state.apiError}
+                    contacts={contacts}
+                        products={products}
                 />
 
                 <SalesInvoiceViewModal

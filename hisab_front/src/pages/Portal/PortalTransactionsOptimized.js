@@ -470,7 +470,7 @@ const PortalTransactionsOptimized = ({ contactData, type = 'all' }) => {
               <div className="table-responsive">
                 <Table className="table-hover mb-0">
                   <thead>
-                    <tr style={{ backgroundColor: '#f8f9fa' }}>
+                                            <tr style={{ backgroundColor: 'var(--vz-light-bg-subtle)' }}>
                       <th className="border-0 fw-semibold">Date</th>
                       <th className="border-0 fw-semibold">Type</th>
                       <th className="border-0 fw-semibold">Invoice/Ref</th>

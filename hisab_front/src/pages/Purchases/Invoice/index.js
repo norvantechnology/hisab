@@ -2,12 +2,13 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Container, Row, Col, Card, CardBody, Button, Alert } from "reactstrap";
 import { RiAddLine, RiCloseLine, RiDownload2Line } from "react-icons/ri";
 import { toast, ToastContainer } from "react-toastify";
+import { useSearchParams } from 'react-router-dom';
 
 // Components
 import BreadCrumb from "../../../Components/Common/BreadCrumb";
 import PurchaseInvoiceFilter from "../../../Components/Purchases/Invoice/PurchaseInvoiceFilter";
 import PurchaseInvoiceTable from "../../../Components/Purchases/Invoice/PurchaseInvoiceTable";
-import PurchaseInvoiceForm from "../../../Components/Purchases/Invoice/PurchaseInvoiceForm";
+import FastPurchaseInvoiceForm from "../../../Components/Purchases/Invoice/FastPurchaseInvoiceForm";
 import PurchaseInvoiceViewModal from "../../../Components/Purchases/Invoice/PurchaseInvoiceViewModal";
 import ShareModal from "../../../Components/Common/ShareModal";
 import PaymentForm from "../../../Components/Payments/PaymentForm";
@@ -21,10 +22,12 @@ import { listPurchases, createPurchase, updatePurchases, deletePurchase, getPurc
 import { createPayment } from '../../../services/payment';
 import { getBankAccounts } from '../../../services/bankAccount';
 import { getContacts } from '../../../services/contacts';
+import { listProducts } from '../../../services/products';
 import useCompanySelectionState from '../../../hooks/useCompanySelection';
 
 const PurchaseInvoicePage = () => {
     const currentMonthRange = getCurrentMonthRange();
+    const [searchParams, setSearchParams] = useSearchParams();
     const [state, setState] = useState({
         invoices: [],
         loading: false,
@@ -60,6 +63,7 @@ const PurchaseInvoicePage = () => {
         pdfLoading: null,
         bankAccounts: [],
         contacts: [],
+        products: [],
         selectedInvoiceForPayment: null
     });
 
@@ -76,28 +80,47 @@ const PurchaseInvoicePage = () => {
         pdfLoading,
         bankAccounts,
         contacts,
+        products,
         selectedInvoiceForPayment
     } = state;
 
     // Use the modern company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
 
+    // Check for add parameter and auto-open add form
+    useEffect(() => {
+        const shouldAdd = searchParams.get('add');
+        if (shouldAdd === 'true') {
+            // Clear the parameter from URL
+            setSearchParams({});
+            // Open the add form
+            setState(prev => ({
+                ...prev,
+                isEditMode: false,
+                selectedInvoice: null,
+                modals: { ...prev.modals, main: true }
+            }));
+        }
+    }, [searchParams, setSearchParams]);
+
     const fetchBankAccountsAndContacts = async () => {
         if (!selectedCompanyId) return;
 
         try {
-            const [bankAccountsResponse, contactsResponse] = await Promise.all([
+            const [bankAccountsResponse, contactsResponse, productsResponse] = await Promise.all([
                 getBankAccounts({}),
-                getContacts({})
+                getContacts({}),
+                listProducts({ limit: 1000 }) // Fetch products for fast search
             ]);
 
             setState(prev => ({
                 ...prev,
                 bankAccounts: bankAccountsResponse?.success ? bankAccountsResponse.accounts || [] : [],
-                contacts: contactsResponse?.success ? contactsResponse.contacts || [] : []
+                contacts: contactsResponse?.success ? contactsResponse.contacts || [] : [],
+                products: productsResponse?.success ? productsResponse.data || [] : []
             }));
         } catch (error) {
-            console.error('Error fetching bank accounts and contacts:', error);
+            console.error('Error fetching data:', error);
         }
     };
 
@@ -204,6 +227,7 @@ const PurchaseInvoicePage = () => {
             const transformedInvoice = {
                 ...existingInvoice,
                 date: existingInvoice.invoiceDate,
+                discountScope: existingInvoice.discountScope || existingInvoice.discountType, // Handle backward compatibility
                 items: existingInvoice.items?.map(item => ({
                     id: item.id,
                     productId: item.productId,
@@ -213,8 +237,9 @@ const PurchaseInvoicePage = () => {
                     rate: item.rate,
                     taxRate: item.taxRate,
                     taxAmount: item.taxAmount,
-                    discount: item.discount,
-                    discountRate: item.discountRate,
+                    discountType: item.discountType || 'rupees',
+                    discountValue: item.discountValue || 0,
+                    discountAmount: item.discountAmount || 0,
                     total: item.total,
                     isSerialized: item.isSerialized,
                     serialNumbers: item.serialNumbers || [],
@@ -502,7 +527,7 @@ const PurchaseInvoicePage = () => {
                     />
                 )}
 
-                <PurchaseInvoiceForm
+                <FastPurchaseInvoiceForm
                     key={isEditMode ? selectedInvoice?.id : 'new'}
                     isOpen={modals.main}
                     toggle={() => toggleModal('main', false)}
@@ -511,6 +536,8 @@ const PurchaseInvoicePage = () => {
                     onSubmit={handleSubmitInvoice}
                     isLoading={apiLoading}
                     apiError={apiError}
+                    contacts={contacts}
+                    products={products}
                 />
 
                 <PurchaseInvoiceViewModal

@@ -45,44 +45,7 @@ const PurchaseInvoiceForm = ({
   apiError = null
 }) => {
   const getInitialItems = useCallback(() => {
-    // Debug: Log the selectedInvoice data when editing
-    if (isEditMode && selectedInvoice) {
-      console.log('=== EDIT MODE DEBUG ===');
-      console.log('Selected Invoice:', selectedInvoice);
-      console.log('Invoice Items:', selectedInvoice.items);
-      
-      // Debug each item individually
-      if (selectedInvoice.items && selectedInvoice.items.length > 0) {
-        console.log('=== INDIVIDUAL ITEMS DEBUG ===');
-        selectedInvoice.items.forEach((item, index) => {
-          console.log(`Item ${index + 1}:`, {
-            id: item.id,
-            name: item.name,
-            quantity: item.quantity,
-            rate: item.rate,
-            rateType: item.rateType,
-            taxRate: item.taxRate,
-            taxAmount: item.taxAmount,
-            discount: item.discount,
-            discountRate: item.discountRate,
-            total: item.total,
-            rawItem: item
-          });
-          
-          // Debug discount calculations
-          if (item.discountRate > 0 || item.discount > 0) {
-            console.log(`Item ${index + 1} Discount Details:`, {
-              discountRate: item.discountRate,
-              discount: item.discount,
-              expectedDiscount: (parseFloat(item.quantity || 0) * parseFloat(item.rate || 0) * parseFloat(item.discountRate || 0)) / 100
-            });
-          }
-        });
-        console.log('=== END INDIVIDUAL ITEMS DEBUG ===');
-      }
-      
-      console.log('=== END EDIT DEBUG ===');
-    }
+
     
     return selectedInvoice?.items?.map(item => {
       // Use the already calculated values from the API response instead of recalculating
@@ -197,12 +160,9 @@ const PurchaseInvoiceForm = ({
   const fetchNextInvoiceNumber = useCallback(async () => {
     if (!isEditMode) {
       try {
-        console.log('Fetching next invoice number for purchase...');
         const response = await getNextInvoiceNumber();
-        console.log('Purchase invoice number response:', response);
         if (response.success && response.nextInvoiceNumber) {
           setSuggestedInvoiceNumber(response.nextInvoiceNumber);
-          console.log('Set suggested purchase invoice number:', response.nextInvoiceNumber);
         }
       } catch (error) {
         console.error('Error fetching next invoice number:', error);
@@ -382,12 +342,7 @@ const PurchaseInvoiceForm = ({
         const calculatedValues = calculateInvoiceTotals(values, items);
         
         // Debug: Log the API payload being sent
-        console.log('=== API PAYLOAD DEBUG ===');
-        console.log('Form values:', values);
-        console.log('Items state:', items);
-        console.log('Calculated values:', calculatedValues);
-        console.log('Items in payload:', calculatedValues.items);
-        console.log('=== END DEBUG ===');
+        
         
         await onSubmit(calculatedValues);
       } catch (error) {
@@ -555,71 +510,56 @@ const PurchaseInvoiceForm = ({
     // Live update all items based on the new rate type
     if (items.length > 0) {
       const updatedItems = items.map(item => {
-        // Recalculate item based on new rate type
-        const quantity = item.isSerialized ? (item.serialNumbers || []).length : item.quantity;
-        const rate = parseFloat(item.rate) || 0;
+        const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity) || 0;
+        let rate = parseFloat(item.rate) || 0;
         const taxRate = parseFloat(item.taxRate) || 0;
         const discountRate = parseFloat(item.discountRate) || 0;
         
-        // Calculate subtotal
-        let subtotal;
-        if (newRateType === 'with_tax') {
-          // Rate is inclusive of tax, extract base rate
-          if (taxRate > 0) {
-            subtotal = quantity * (rate / (1 + (taxRate / 100)));
-          } else {
-            subtotal = quantity * rate;
-          }
-        } else {
-          // Rate is without tax
-          subtotal = quantity * rate;
-        }
-        
-        // Calculate discount
-        const discount = (subtotal * discountRate) / 100;
-        const afterDiscount = subtotal - discount;
-        
-        // Calculate tax amount based on new rate type
-        let taxAmount = 0;
-        const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
-        const shouldCalculateTax = selectedTax && selectedTax.rate > 0;
-        
-        if (shouldCalculateTax) {
-          // Use common utility function for tax calculations
-          const result = calculateItemTaxAndTotal({
-            rate: rate,
-            quantity,
-            taxRate,
-            discountRate,
-            rateType: newRateType,
-            discountValueType: 'rupees',
-            discountValue: discountRate
-          });
+        // Convert rate based on rate type interpretation
+        if (newRateType === 'with_tax' && item.rateType === 'without_tax' && rate > 0 && taxRate > 0) {
+          // Switching from "Without Tax" to "With Tax"
+          // Current rate is base rate, but for "With Tax" we need the total as the rate
+          // So: new rate = base rate * (1 + tax%)
+          rate = rate * (1 + (taxRate / 100));
           
-          taxAmount = result.taxAmount;
+        } else if (newRateType === 'without_tax' && item.rateType === 'with_tax' && rate > 0 && taxRate > 0) {
+          // Switching from "With Tax" to "Without Tax"  
+          // Current rate represents total, but for "Without Tax" we need base rate
+          // So: new rate = total / (1 + tax%)
+          rate = rate / (1 + (taxRate / 100));
+
         }
         
-        // Calculate total
-        const total = afterDiscount + taxAmount;
+        // Use common utility function for tax calculations
+        const result = calculateItemTaxAndTotal({
+          rate,
+          quantity,
+          taxRate,
+          discountRate,
+          rateType: newRateType,
+          discountValueType: 'percentage', // Purchase invoices use percentage discount
+          discountValue: discountRate
+        });
         
         return {
           ...item,
+          rate: parseFloat(rate.toFixed(2)), // Round to avoid precision errors
           rateType: newRateType, // Update item's rate type to match invoice
-          taxAmount: taxAmount,
-          total: total
+          taxAmount: result.taxAmount,
+          discount: result.discount,
+          total: result.total
         };
       });
       
       // Update items state with recalculated values
       setItems(updatedItems);
       
-      // Debug: Log the live update
-      console.log('=== RATE TYPE CHANGE LIVE UPDATE ===');
-      console.log('New Rate Type:', newRateType);
-      console.log('Updated Items:', updatedItems);
-      console.log('=== END LIVE UPDATE ===');
+      // Also update the validation items field
+      validation.setFieldValue('items', updatedItems, true);
+      
+
     }
-  }, [items, validation.values.taxType]);
+  }, [items, validation.values.taxType, validation]);
 
   // Check if status dropdown should be shown
   const shouldShowStatusDropdown = useMemo(() => {
@@ -1006,7 +946,15 @@ const PurchaseInvoiceForm = ({
     
     if (item) {
       // Editing existing item - preserve all properties
-      setCurrentItem(item);
+      // The rate is stored according to its rate type interpretation, so use as-is
+      const displayRate = parseFloat(item.rate || 0);
+      
+
+      
+      setCurrentItem({
+        ...item,
+        rate: displayRate
+      });
     } else {
       // Creating new item - use defaults
       setCurrentItem({

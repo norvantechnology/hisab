@@ -10,19 +10,25 @@ export async function createSale(req, res) {
 
   const {
     invoiceNumber,
-    date,
+    invoiceDate,
+    contactId,
+    bankAccountId,
     taxType,
-    items,
+    rateType,
+    discountScope,
+    discountValueType,
+    discountValue,
+    status,
     internalNotes = '',
+    transportationCharge = 0,
+    roundOff = 0,
     basicAmount,
+    totalItemDiscount,
+    invoiceDiscount,
     totalDiscount,
     taxAmount,
-    roundOff = 0,
-    transportationCharge = 0,
     netReceivable,
-    billToBank,
-    billToContact,
-    status
+    items
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -44,21 +50,9 @@ export async function createSale(req, res) {
     return errorResponse(res, "Status must be either 'paid' or 'pending'", 400);
   }
 
-  let bankAccountId = null;
-  let contactId = null;
-
-  // Handle both billToBank and billToContact - they can both be present
-  if (billToBank) {
-    bankAccountId = parseInt(billToBank);
-  }
-  
-  if (billToContact) {
-    contactId = parseInt(billToContact);
-  }
-
-  // At least one of them should be provided
-  if (!billToBank && !billToContact) {
-    return errorResponse(res, "Either billToBank or billToContact is required", 400);
+  // At least one of contactId or bankAccountId should be provided
+  if (!contactId && !bankAccountId) {
+    return errorResponse(res, "Either contactId or bankAccountId is required", 400);
   }
 
   try {
@@ -80,11 +74,12 @@ export async function createSale(req, res) {
 
       const product = productRes.rows[0];
 
-      // Check stock availability for inventory tracked products
+      // Check stock availability for inventory-tracked products
       if (product.isInventoryTracked) {
-        if (product.currentStock < quantity) {
+        const availableStock = parseFloat(product.currentStock) || 0;
+        if (quantity > availableStock) {
           await client.query("ROLLBACK");
-          return errorResponse(res, `Insufficient stock for product ${productId}. Available: ${product.currentStock}, Required: ${quantity}`, 400);
+          return errorResponse(res, `Insufficient stock for product ${productId}. Available: ${availableStock}, Required: ${quantity}`, 400);
         }
       }
 
@@ -101,7 +96,8 @@ export async function createSale(req, res) {
         }
 
         // Check if serial numbers exist in inventory
-        for (const serialNumber of serialNumbers) {
+        for (const serialObj of serialNumbers) {
+          const serialNumber = serialObj.serialNumber;
           const existingSerial = await client.query(
             `SELECT "id" FROM hisab."serialNumbers" 
              WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3 AND "status" = 'in_stock'`,
@@ -126,39 +122,41 @@ export async function createSale(req, res) {
       paidAmount = 0;
     }
 
-    // Create sale record
+    // Create sale record with new schema
     const saleResult = await client.query(
       `INSERT INTO hisab."sales" (
         "companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", "invoiceDate",
-        "taxType", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
-        "taxAmount", "transportationCharge", "netReceivable", "status", "remaining_amount", "paid_amount"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        "taxType", "rateType", "discountScope", "discountValueType", "discountValue",
+        "basicAmount", "totalItemDiscount", "invoiceDiscount", "totalDiscount", "taxAmount",
+        "transportationCharge", "roundOff", "netReceivable", "status", "remaining_amount", "paid_amount", "internalNotes"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING *`,
       [
-        companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, roundOff, internalNotes, basicAmount, totalDiscount, 
-        taxAmount, transportationCharge, netReceivable, status, remainingAmount, paidAmount
+        companyId, userId, bankAccountId, contactId, invoiceNumber, invoiceDate,
+        taxType, rateType, discountScope, discountValueType, discountValue,
+        basicAmount, totalItemDiscount, invoiceDiscount, totalDiscount, taxAmount,
+        transportationCharge, roundOff, netReceivable, status, remainingAmount, paidAmount, internalNotes
       ]
     );
 
     const saleId = saleResult.rows[0].id;
 
-    // Create sale items and update inventory
+    // Create sale items with new schema
     for (const item of items) {
       const {
-        productId, quantity, rate, taxRate = 0, taxAmount = 0,
-        discount = 0, discountRate = 0, total, serialNumbers = [],
-        discountType = 'percentage'
+        productId, quantity, rate, rateType: itemRateType, taxRate = 0, taxAmount = 0,
+        discountType = 'rupees', discountValue = 0, discountAmount = 0,
+        lineBasic, lineTotal, serialNumbers = []
       } = item;
 
-      // Insert sale item
       const saleItemResult = await client.query(
         `INSERT INTO hisab."sale_items" (
-          "saleId", "productId", quantity, rate, "taxRate", "taxAmount",
-          discount, "discountRate", total, "discountType"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          "saleId", "productId", quantity, rate, "discountType", "discountValue", "discountAmount",
+          "taxRate", "taxAmount", "lineBasic", "lineTotal", "rateType"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
-        [saleId, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total, discountType]
+        [saleId, productId, quantity, rate, discountType, discountValue, discountAmount, 
+         taxRate, taxAmount, lineBasic, lineTotal, itemRateType || rateType]
       );
 
       const saleItemId = saleItemResult.rows[0].id;
@@ -172,12 +170,14 @@ export async function createSale(req, res) {
       );
 
       // Handle serial numbers for serialized products
-      if (serialNumbers.length > 0) {
-        for (const serialNumber of serialNumbers) {
-          // Mark serial number as sold
+      if (serialNumbers && serialNumbers.length > 0) {
+        for (const serialObj of serialNumbers) {
+          const serialNumber = serialObj.serialNumber;
+          
+          // Mark serial number as sold in main serialNumbers table
           await client.query(
             `UPDATE hisab."serialNumbers" 
-             SET "status" = 'sold', "saleDate" = CURRENT_TIMESTAMP
+             SET "status" = 'sold', "updatedAt" = CURRENT_TIMESTAMP
              WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3`,
             [companyId, productId, serialNumber]
           );
@@ -225,19 +225,25 @@ export async function updateSale(req, res) {
   const {
     id,
     invoiceNumber,
-    date,
+    invoiceDate,
+    contactId,
+    bankAccountId,
     taxType,
-    items,
+    rateType,
+    discountScope,
+    discountValueType,
+    discountValue,
+    status,
     internalNotes = '',
+    transportationCharge = 0,
+    roundOff = 0,
     basicAmount,
+    totalItemDiscount,
+    invoiceDiscount,
     totalDiscount,
     taxAmount,
-    roundOff = 0,
-    transportationCharge = 0,
     netReceivable,
-    billToBank,
-    billToContact,
-    status
+    items
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -263,74 +269,10 @@ export async function updateSale(req, res) {
     return errorResponse(res, "Status must be either 'paid' or 'pending'", 400);
   }
 
-  let bankAccountId = null;
-  let contactId = null;
-
-  // Handle both billToBank and billToContact - they can both be present
-  if (billToBank) {
-    bankAccountId = parseInt(billToBank);
-  }
-  
-  if (billToContact) {
-    contactId = parseInt(billToContact);
-  }
-
-  // At least one of them should be provided
-  if (!billToBank && !billToContact) {
-    return errorResponse(res, "Either billToBank or billToContact is required", 400);
-  }
-
   try {
     await client.query("BEGIN");
 
-    // Get existing sale
-    const existingSaleQuery = await client.query(
-      `SELECT * FROM hisab."sales" WHERE "id" = $1 AND "companyId" = $2 FOR UPDATE`,
-      [id, companyId]
-    );
-
-    if (existingSaleQuery.rows.length === 0) {
-      await client.query("ROLLBACK");
-      return errorResponse(res, "Sale not found", 404);
-    }
-
-    const existingSale = existingSaleQuery.rows[0];
-
-    // Get existing sale items
-    const existingItemsQuery = await client.query(
-      `SELECT * FROM hisab."sale_items" WHERE "saleId" = $1`,
-      [id]
-    );
-
-    const existingItems = existingItemsQuery.rows;
-
-    // Reverse existing inventory changes
-    for (const existingItem of existingItems) {
-      // Restore product stock
-      await client.query(
-        `UPDATE hisab."products" 
-         SET "currentStock" = "currentStock" + $1, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $2 AND "companyId" = $3`,
-        [existingItem.quantity, existingItem.productId, companyId]
-      );
-
-      // Restore serial numbers
-      await client.query(
-        `UPDATE hisab."serialNumbers" 
-         SET "status" = 'in_stock', "saleDate" = NULL
-         WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" IN (
-           SELECT "serialNumber" FROM hisab."sale_serial_numbers" 
-           WHERE "saleItemId" = $3
-         )`,
-        [companyId, existingItem.productId, existingItem.id]
-      );
-    }
-
-    // Delete existing sale items and serial numbers
-    await client.query(`DELETE FROM hisab."sale_serial_numbers" WHERE "saleId" = $1`, [id]);
-    await client.query(`DELETE FROM hisab."sale_items" WHERE "saleId" = $1`, [id]);
-
-    // Validate new items and check stock availability
+    // Validate products and serial numbers
     for (const item of items) {
       const { productId, quantity, serialNumbers = [] } = item;
       const productRes = await client.query(
@@ -346,14 +288,6 @@ export async function updateSale(req, res) {
 
       const product = productRes.rows[0];
 
-      // Check stock availability for inventory tracked products
-      if (product.isInventoryTracked) {
-        if (product.currentStock < quantity) {
-          await client.query("ROLLBACK");
-          return errorResponse(res, `Insufficient stock for product ${productId}. Available: ${product.currentStock}, Required: ${quantity}`, 400);
-        }
-      }
-
       // Validate serial numbers for serialized products
       if (product.isSerialized && product.isInventoryTracked) {
         if (!Array.isArray(serialNumbers) || serialNumbers.length === 0) {
@@ -367,7 +301,8 @@ export async function updateSale(req, res) {
         }
 
         // Check if serial numbers exist in inventory
-        for (const serialNumber of serialNumbers) {
+        for (const serialObj of serialNumbers) {
+          const serialNumber = serialObj.serialNumber;
           const existingSerial = await client.query(
             `SELECT "id" FROM hisab."serialNumbers" 
              WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3 AND "status" = 'in_stock'`,
@@ -397,25 +332,11 @@ export async function updateSale(req, res) {
     let remainingAmount, paidAmount;
     
     if (currentPaidAmount > 0) {
-      // There are existing payments, preserve them
-      paidAmount = currentPaidAmount;
-      
-      // If the new total is different, adjust the remaining amount
-      if (netReceivable !== oldNetReceivable) {
-        remainingAmount = Math.max(0, netReceivable - currentPaidAmount);
-        
-        // If paid amount exceeds new total, adjust accordingly
-        if (currentPaidAmount >= netReceivable) {
-          remainingAmount = 0;
-          // Note: We keep paidAmount as is, even if it exceeds netReceivable
-          // This creates an overpayment scenario that can be handled separately
-        }
-      } else {
-        // Total didn't change, keep existing remaining amount
-        remainingAmount = parseFloat(currentSale.remaining_amount || 0);
-      }
+      // Keep existing paid amount, calculate new remaining
+      paidAmount = Math.min(currentPaidAmount, netReceivable);
+      remainingAmount = Math.max(0, netReceivable - paidAmount);
     } else {
-      // No existing payments, use status-based logic
+      // No payments made yet
       if (status === 'paid') {
         remainingAmount = 0;
         paidAmount = netReceivable;
@@ -425,54 +346,71 @@ export async function updateSale(req, res) {
       }
     }
 
+    // Delete existing sale items and serial numbers
+    await client.query(
+      `DELETE FROM hisab."sale_serial_numbers" WHERE "saleId" = $1`,
+      [id]
+    );
+
+    await client.query(
+      `DELETE FROM hisab."sale_items" WHERE "saleId" = $1`,
+      [id]
+    );
+
+    // Update sale record with new schema
     await client.query(
       `UPDATE hisab."sales" SET
-        "bankAccountId" = $1, "contactId" = $2, "invoiceNumber" = $3, "invoiceDate" = $4,
-        "taxType" = $5, "roundOff" = $6, "internalNotes" = $7, "basicAmount" = $8, 
-        "totalDiscount" = $9, "taxAmount" = $10, "transportationCharge" = $11, "netReceivable" = $12,
-        "status" = $13, "remaining_amount" = $14, "paid_amount" = $15, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $16`,
+        "invoiceNumber" = $1, "invoiceDate" = $2, "contactId" = $3, "bankAccountId" = $4,
+        "taxType" = $5, "rateType" = $6, "discountScope" = $7, "discountValueType" = $8, "discountValue" = $9,
+        "basicAmount" = $10, "totalItemDiscount" = $11, "invoiceDiscount" = $12, "totalDiscount" = $13,
+        "taxAmount" = $14, "transportationCharge" = $15, "roundOff" = $16, "netReceivable" = $17,
+        "status" = $18, "remaining_amount" = $19, "paid_amount" = $20, "internalNotes" = $21, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $22 AND "companyId" = $23`,
       [
-        bankAccountId, contactId, invoiceNumber, date, taxType, roundOff, internalNotes, 
-        basicAmount, totalDiscount, taxAmount, transportationCharge, netReceivable, status, remainingAmount, paidAmount, id
+        invoiceNumber, invoiceDate, contactId, bankAccountId,
+        taxType, rateType, discountScope, discountValueType, discountValue,
+        basicAmount, totalItemDiscount, invoiceDiscount, totalDiscount,
+        taxAmount, transportationCharge, roundOff, netReceivable,
+        status, remainingAmount, paidAmount, internalNotes, id, companyId
       ]
     );
 
-    // Create new sale items and update inventory
+    // Add new items and update inventory
     for (const item of items) {
       const {
-        productId, quantity, rate, taxRate = 0, taxAmount = 0,
-        discount = 0, discountRate = 0, total, serialNumbers = [],
-        discountType = 'percentage'
+        productId, quantity, rate, rateType: itemRateType, taxRate = 0, taxAmount = 0,
+        discountType = 'rupees', discountValue = 0, discountAmount = 0,
+        lineBasic, lineTotal, serialNumbers = []
       } = item;
 
-      // Insert sale item
-      const saleItemResult = await client.query(
+      const itemRes = await client.query(
         `INSERT INTO hisab."sale_items" (
-          "saleId", "productId", quantity, rate, "taxRate", "taxAmount",
-          discount, "discountRate", total, "discountType"
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          "saleId", "productId", quantity, rate, "discountType", "discountValue", "discountAmount",
+          "taxRate", "taxAmount", "lineBasic", "lineTotal", "rateType"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
-        [id, productId, quantity, rate, taxRate, taxAmount, discount, discountRate, total, discountType]
+        [id, productId, quantity, rate, discountType, discountValue, discountAmount,
+         taxRate, taxAmount, lineBasic, lineTotal, itemRateType || rateType]
       );
 
-      const saleItemId = saleItemResult.rows[0].id;
+      const saleItemId = itemRes.rows[0].id;
 
-      // Update product stock
       await client.query(
-        `UPDATE hisab."products" 
+        `UPDATE hisab."products"
          SET "currentStock" = "currentStock" - $1, "updatedAt" = CURRENT_TIMESTAMP
          WHERE "id" = $2 AND "companyId" = $3`,
         [quantity, productId, companyId]
       );
 
       // Handle serial numbers for serialized products
-      if (serialNumbers.length > 0) {
-        for (const serialNumber of serialNumbers) {
+      if (serialNumbers && serialNumbers.length > 0) {
+        for (const serialObj of serialNumbers) {
+          const serialNumber = serialObj.serialNumber;
+          
           // Mark serial number as sold
           await client.query(
             `UPDATE hisab."serialNumbers" 
-             SET "status" = 'sold', "saleDate" = CURRENT_TIMESTAMP
+             SET "status" = 'sold', "updatedAt" = CURRENT_TIMESTAMP
              WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3`,
             [companyId, productId, serialNumber]
           );
@@ -502,12 +440,12 @@ export async function updateSale(req, res) {
 
     return successResponse(res, {
       message: "Sale invoice updated successfully",
-      sale: { id, ...req.body }
+      saleId: id
     });
 
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("Sale update error:", error);
+    console.error("Error in updateSale:", error);
     return errorResponse(res, "Failed to update sale invoice", 500);
   } finally {
     client.release();
@@ -686,8 +624,71 @@ export async function getSale(req, res) {
 
     return successResponse(res, {
       sale: {
-        ...sale,
-        items: itemsWithSerialNumbers
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        invoiceDate: sale.invoiceDate,
+        contactId: sale.contactId,
+        bankAccountId: sale.bankAccountId,
+        taxType: sale.taxType,
+        rateType: sale.rateType,
+        discountScope: sale.discountScope, // Use correct schema field
+        discountValueType: sale.discountValueType,
+        discountValue: parseFloat(sale.discountValue || 0),
+        status: sale.status,
+        internalNotes: sale.internalNotes,
+        transportationCharge: parseFloat(sale.transportationCharge || 0),
+        roundOff: parseFloat(sale.roundOff || 0),
+        basicAmount: parseFloat(sale.basicAmount || 0),
+        totalItemDiscount: parseFloat(sale.totalItemDiscount || 0),
+        invoiceDiscount: parseFloat(sale.invoiceDiscount || 0),
+        totalDiscount: parseFloat(sale.totalDiscount || 0),
+        taxAmount: parseFloat(sale.taxAmount || 0),
+        netReceivable: parseFloat(sale.netReceivable || 0),
+        remainingAmount: parseFloat(sale.remaining_amount || 0),
+        paidAmount: parseFloat(sale.paid_amount || 0),
+        createdAt: sale.createdAt,
+        updatedAt: sale.updatedAt,
+        
+        // Contact and bank account details for edit form
+        contact: sale.contactId ? {
+          id: sale.contactId,
+          name: sale.contactName,
+          email: sale.contactEmail,
+          mobile: sale.contactMobile,
+          gstin: sale.contactGstin,
+          billingAddress1: sale.contactBillingAddress1,
+          billingAddress2: sale.contactBillingAddress2,
+          billingCity: sale.contactBillingCity,
+          billingState: sale.contactBillingState,
+          billingPincode: sale.contactBillingPincode,
+          billingCountry: sale.contactBillingCountry
+        } : null,
+        
+        bankAccount: sale.bankAccountId ? {
+          id: sale.bankAccountId,
+          name: sale.accountName,
+          type: sale.accountType
+        } : null,
+        
+        items: itemsWithSerialNumbers.map(item => ({
+          id: item.id,
+          productId: item.productId,
+          name: item.productName,
+          code: item.productCode,
+          quantity: parseFloat(item.quantity || 0),
+          rate: parseFloat(item.rate || 0),
+          rateType: item.rateType || 'without_tax',
+          discountType: item.discountType || 'rupees',
+          discountValue: parseFloat(item.discountValue || 0),
+          discountAmount: parseFloat(item.discountAmount || 0),
+          taxRate: parseFloat(item.taxRate || 0),
+          taxAmount: parseFloat(item.taxAmount || 0),
+          lineBasic: parseFloat(item.lineBasic || 0),
+          lineTotal: parseFloat(item.lineTotal || 0),
+          isSerialized: item.isSerialized || false,
+          serialNumbers: item.serialNumbers || [],
+          currentStock: parseFloat(item.currentStock || 0)
+        }))
       }
     });
 
@@ -999,11 +1000,14 @@ export async function listSales(req, res) {
           taxType: sale.taxType,
           rateType: sale.rateType,
           discountType: sale.discountType,
+          discountScope: sale.discountScope, // Add missing field
           discountValueType: sale.discountValueType,
           discountValue: parseFloat(sale.discountValue || 0),
           roundOff: parseFloat(sale.roundOff || 0),
           internalNotes: sale.internalNotes,
           basicAmount: parseFloat(sale.basicAmount || 0),
+          totalItemDiscount: parseFloat(sale.totalItemDiscount || 0), // Add missing field
+          invoiceDiscount: parseFloat(sale.invoiceDiscount || 0), // Add missing field
           totalDiscount: parseFloat(sale.totalDiscount || 0),
           taxAmount: parseFloat(sale.taxAmount || 0),
           transportationCharge: parseFloat(sale.transportationCharge || 0),
@@ -1041,7 +1045,29 @@ export async function listSales(req, res) {
 
           // Items
           itemsCount: itemsWithSerialNumbers.length,
-          items: itemsWithSerialNumbers
+          items: itemsWithSerialNumbers.map(item => ({
+            id: item.id,
+            productId: item.productId,
+            name: item.productName,
+            code: item.productCode,
+            quantity: parseFloat(item.quantity || 0), // Ensure number
+            rate: parseFloat(item.rate || 0), // Ensure number
+            rateType: item.rateType,
+            discount: parseFloat(item.discount || 0), // Ensure number
+            discountRate: parseFloat(item.discountRate || 0), // Ensure number
+            discountType: item.discountType,
+            discountValue: parseFloat(item.discountValue || 0), // Add missing field
+            discountAmount: parseFloat(item.discountAmount || 0), // Add missing field
+            taxRate: parseFloat(item.taxRate || 0), // Ensure number
+            taxAmount: parseFloat(item.taxAmount || 0), // Ensure number
+            total: parseFloat(item.total || 0), // Ensure number
+            lineBasic: parseFloat(item.lineBasic || 0), // Add missing field
+            lineTotal: parseFloat(item.lineTotal || 0), // Add missing field
+            serialNumbers: item.serialNumbers,
+            isInventoryTracked: item.isInventoryTracked,
+            isSerialized: item.isSerialized,
+            currentStock: parseFloat(item.currentStock || 0) // Ensure number
+          }))
         };
       })
     );

@@ -12,9 +12,12 @@ import {
     Button,
     Row,
     Col,
-    Alert
+    Alert,
+    Badge,
+    Card,
+    CardBody
 } from 'reactstrap';
-import { RiLoader4Line } from 'react-icons/ri';
+import { RiLoader4Line, RiProductHuntLine, RiAddLine, RiDeleteBinLine, RiEyeLine, RiEyeOffLine } from 'react-icons/ri';
 import ReactSelect from 'react-select';
 import { useFormik } from "formik";
 import * as Yup from "yup";
@@ -31,7 +34,7 @@ const ProductForm = ({
     unitsOfMeasurement = [],
     categoriesLoading = false,
     taxCategoriesLoading = false,
-    onAddStockCategory // Add this new prop for handling stock category addition
+    onAddStockCategory
 }) => {
     // Initialize with proper fallbacks
     const getInitialValues = () => ({
@@ -84,8 +87,8 @@ const ProductForm = ({
                 .required("Rate is required"),
             openingStockQty: Yup.number()
                 .min(0, "Quantity must be 0 or greater")
-                .when(['isInventoryTracked', 'productType', 'isEditMode'], {
-                    is: (isInventoryTracked, productType, isEditMode) =>
+                .when(['isInventoryTracked', 'productType'], {
+                    is: (isInventoryTracked, productType) =>
                         isInventoryTracked && productType === 'product' && !isEditMode,
                     then: (schema) => schema.required("Opening stock quantity is required"),
                     otherwise: (schema) => schema
@@ -93,20 +96,20 @@ const ProductForm = ({
             openingStockCostPerQty: Yup.number()
                 .min(0, "Cost must be 0 or greater")
                 .when(['isInventoryTracked', 'productType'], {
-                    is: (isInventoryTracked, productType) => isInventoryTracked && productType === 'product',
+                    is: (isInventoryTracked, productType) => isInventoryTracked && productType === 'product' && !isEditMode,
                     then: (schema) => schema.required("Opening stock cost per quantity is required"),
                     otherwise: (schema) => schema
                 }),
             currentStock: Yup.number()
                 .min(0, "Current stock must be 0 or greater")
-                .when(['isEditMode', 'isInventoryTracked', 'productType'], {
-                    is: (isEditMode, isInventoryTracked, productType) => isEditMode && isInventoryTracked && productType === 'product',
+                .when(['isInventoryTracked', 'productType'], {
+                    is: (isInventoryTracked, productType) => isEditMode && isInventoryTracked && productType === 'product',
                     then: (schema) => schema.required("Current stock is required"),
                     otherwise: (schema) => schema
                 }),
             serialNumbers: Yup.array()
-                .when(['isSerialized', 'productType', 'isEditMode'], {
-                    is: (isSerialized, productType, isEditMode) => isSerialized && productType === 'product',
+                .when(['isSerialized', 'productType'], {
+                    is: (isSerialized, productType) => isSerialized && productType === 'product',
                     then: (schema) => schema
                         .of(Yup.string().required("Serial number is required"))
                         .min(1, "At least one serial number is required")
@@ -119,478 +122,336 @@ const ProductForm = ({
                                 const uniqueValues = new Set(nonEmptyValues);
                                 return uniqueValues.size === nonEmptyValues.length;
                             }
-                        )
-                        .test(
-                            'serial-count-matches-stock',
-                            function (values) {
-                                const { currentStock, openingStockQty } = this.parent;
-                                const expectedCount = isEditMode ? currentStock : openingStockQty;
-                                const actualCount = values ? values.length : 0;
-
-                                if (actualCount !== expectedCount) {
-                                    return this.createError({
-                                        message: `Number of serial numbers (${actualCount}) must match ${isEditMode ? 'current stock' : 'opening stock'} quantity (${expectedCount})`
-                                    });
-                                }
-                                return true;
-                            }
-                        )
-                        .test(
-                            'all-serials-filled',
-                            'All serial numbers must be filled',
-                            function (values) {
-                                if (!values || values.length === 0) return true;
-                                const emptySerials = values.filter(v => !v || v.trim() === '');
-                                if (emptySerials.length > 0) {
-                                    return this.createError({
-                                        message: `${emptySerials.length} serial number(s) are empty. Please fill all serial numbers.`
-                                    });
-                                }
-                                return true;
-                            }
                         ),
-                    otherwise: (schema) => schema.notRequired()
-                }),
-            discount: Yup.number()
-                .min(0, "Discount cannot be negative")
-                .max(100, "Discount cannot exceed 100%"),
-            unitOfMeasurementId: Yup.string()
-                .when(['isInventoryTracked', 'productType'], {
-                    is: (isInventoryTracked, productType) => isInventoryTracked && productType === 'product',
-                    then: (schema) => schema.required("Unit of measurement is required for inventory tracked items"),
-                    otherwise: (schema) => schema
-                }),
-            stockCategoryId: Yup.string()
-                .when(['isInventoryTracked', 'productType'], {
-                    is: (isInventoryTracked, productType) => isInventoryTracked && productType === 'product',
-                    then: (schema) => schema.required("Stock category is required for inventory tracked items"),
                     otherwise: (schema) => schema
                 })
         }),
         onSubmit: async (values) => {
-            if (!validation.isValid) {
-                setShowSubmitError(true);
-                return;
-            }
             setShowSubmitError(false);
+            try {
             await onSubmit(values);
+            } catch (error) {
+                console.error('Form submission error:', error);
+                setShowSubmitError(true);
+            }
         }
     });
 
-    const isProcessing = validation.isSubmitting || isLoading;
+    // Helper functions for options formatting
+    const unitOptions = unitsOfMeasurement.map(unit => ({
+        value: unit.id,
+        label: unit.name
+    }));
 
-    // Reset form when modal is closed or opened
-    useEffect(() => {
-        if (isOpen) {
-            // Reset all local state when modal opens
-            setSerialInputMethod('single');
-            setBulkSerialNumbers('');
-            setPatternPrefix('');
-            setPatternStart(1);
-            setPatternDigits('');
-            setShowPatternSuccess(false);
-            setShowAllSerials(false);
-            setShowSubmitError(false);
-            setStockReductionWarning('');
-            
-            // Reset form values based on selectedProduct
-            validation.resetForm({ values: getInitialValues() });
-        }
-    }, [isOpen, selectedProduct]);
+    const taxOptions = taxCategories.map(tax => ({
+        value: tax.id,
+        label: `${tax.name} (${tax.rate}%)`
+    }));
 
-    // Effect to adjust serial numbers based on current stock in edit mode
-    useEffect(() => {
-        if (isEditMode && validation.values.isSerialized && validation.values.productType === 'product') {
-            const currentSerialCount = validation.values.serialNumbers?.length || 0;
-            const targetCount = parseInt(validation.values.currentStock) || 0;
+    const isProcessing = isLoading;
 
-            if (currentSerialCount !== targetCount && targetCount >= 0) {
-                const currentSerials = [...(validation.values.serialNumbers || [])];
-                let newSerials = [...currentSerials];
+    // Serial number management functions
+    const addSerialNumber = () => {
+        const currentSerials = [...validation.values.serialNumbers];
+        currentSerials.push('');
+        validation.setFieldValue('serialNumbers', currentSerials);
+    };
 
-                if (currentSerialCount < targetCount) {
-                    // Add empty serial numbers
-                    const itemsToAdd = targetCount - currentSerialCount;
-                    for (let i = 0; i < itemsToAdd; i++) {
-                        newSerials.push('');
-                    }
-                    setStockReductionWarning('');
-                } else if (currentSerialCount > targetCount) {
-                    // Only remove empty serial numbers from the end
-                    let itemsToRemove = currentSerialCount - targetCount;
-                    let emptyCountAtEnd = 0;
+    const removeSerialNumber = (index) => {
+        const currentSerials = [...validation.values.serialNumbers];
+        currentSerials.splice(index, 1);
+        validation.setFieldValue('serialNumbers', currentSerials);
+    };
 
-                    // Count empty serials at the end of the array
-                    for (let i = newSerials.length - 1; i >= 0; i--) {
-                        if (!newSerials[i] || newSerials[i].trim() === '') {
-                            emptyCountAtEnd++;
-                        } else {
-                            break;
-                        }
-                    }
-
-                    const canRemove = Math.min(itemsToRemove, emptyCountAtEnd);
-                    if (canRemove > 0) {
-                        newSerials = newSerials.slice(0, newSerials.length - canRemove);
-                        itemsToRemove -= canRemove;
-                    }
-
-                    // If we still need to remove more, show warning
-                    if (itemsToRemove > 0) {
-                        setStockReductionWarning(
-                            `Cannot reduce stock to ${targetCount} because there are ${currentSerialCount - emptyCountAtEnd} filled serial numbers. ` +
-                            `Please manually clear ${itemsToRemove} serial numbers first, or increase the current stock quantity.`
-                        );
-                        return; // Don't update the state
-                    } else {
-                        setStockReductionWarning('');
-                    }
-                }
-
-                // Only update if serial numbers actually changed
-                if (JSON.stringify(newSerials) !== JSON.stringify(currentSerials)) {
-                    validation.setFieldValue('serialNumbers', newSerials);
-                }
-            } else if (targetCount === 0) {
-                validation.setFieldValue('serialNumbers', []);
-                setStockReductionWarning('');
-            }
-        }
-    }, [validation.values.currentStock, isEditMode, validation.values.isSerialized, validation.values.productType]);
-
-    // Effect to adjust serial numbers when opening stock changes (create mode)
-    useEffect(() => {
-        if (!isEditMode && validation.values.isSerialized && validation.values.productType === 'product') {
-            const currentSerialCount = validation.values.serialNumbers?.length || 0;
-            const targetCount = parseInt(validation.values.openingStockQty) || 0;
-
-            if (currentSerialCount !== targetCount && targetCount >= 0) {
-                let newSerials = [...(validation.values.serialNumbers || [])];
-
-                if (currentSerialCount < targetCount) {
-                    const itemsToAdd = targetCount - currentSerialCount;
-                    for (let i = 0; i < itemsToAdd; i++) {
-                        if (serialInputMethod === 'pattern' && patternPrefix) {
-                            const num = patternStart + currentSerialCount + i;
-                            const serial = `${patternPrefix}${num.toString().padStart(patternDigits || 0, '0')}`;
-                            newSerials.push(serial);
-                        } else {
-                            newSerials.push('');
-                        }
-                    }
-                } else if (currentSerialCount > targetCount) {
-                    // Only remove empty serial numbers from the end in create mode
-                    let emptyCountAtEnd = 0;
-                    for (let i = newSerials.length - 1; i >= 0; i--) {
-                        if (!newSerials[i] || newSerials[i].trim() === '') {
-                            emptyCountAtEnd++;
-                        } else {
-                            break;
-                        }
-                    }
-                    
-                    const itemsToRemove = currentSerialCount - targetCount;
-                    const canRemove = Math.min(itemsToRemove, emptyCountAtEnd);
-                    
-                    if (canRemove > 0) {
-                        newSerials = newSerials.slice(0, newSerials.length - canRemove);
-                    }
-                }
-
-                validation.setFieldValue('serialNumbers', newSerials);
-            } else if (targetCount === 0) {
-                validation.setFieldValue('serialNumbers', []);
-            }
-        }
-    }, [
-        validation.values.openingStockQty,
-        validation.values.isSerialized,
-        validation.values.productType,
-        serialInputMethod,
-        patternPrefix,
-        patternStart,
-        patternDigits,
-        isEditMode
-    ]);
-
-    // Effect to handle serialization toggle
-    useEffect(() => {
-        if (!validation.values.isSerialized) {
-            validation.setFieldValue('serialNumbers', []);
-            setStockReductionWarning('');
-        } else if (validation.values.productType === 'product') {
-            // Initialize serial numbers when serialization is enabled
-            const targetCount = isEditMode
-                ? parseInt(validation.values.currentStock) || 0
-                : parseInt(validation.values.openingStockQty) || 0;
-
-            if (targetCount > 0) {
-                const newSerials = Array(targetCount).fill('');
-                validation.setFieldValue('serialNumbers', newSerials);
-            }
-        }
-    }, [validation.values.isSerialized, validation.values.productType]);
-
-    const handleBulkSerialNumbersSubmit = () => {
-        const numbers = bulkSerialNumbers
-            .split('\n')
-            .map(s => s.trim())
-            .filter(s => s !== '');
-
-        if (numbers.length > 0) {
-            validation.setFieldValue('serialNumbers', numbers);
-            if (isEditMode) {
-                validation.setFieldValue('currentStock', numbers.length);
-            } else {
-                validation.setFieldValue('openingStockQty', numbers.length);
-            }
-            setBulkSerialNumbers('');
-            setSerialInputMethod('single');
-        }
+    const updateSerialNumber = (index, value) => {
+        const currentSerials = [...validation.values.serialNumbers];
+        currentSerials[index] = value;
+        validation.setFieldValue('serialNumbers', currentSerials);
     };
 
     const generatePatternSerials = () => {
-        const targetCount = isEditMode
-            ? parseInt(validation.values.currentStock) || 0
-            : parseInt(validation.values.openingStockQty) || 0;
+        if (!patternPrefix || !patternDigits) return;
+        
+        const count = isEditMode ? validation.values.currentStock : validation.values.openingStockQty;
+        const newSerials = [];
+        
+        for (let i = 0; i < count; i++) {
+            const number = (patternStart + i).toString().padStart(parseInt(patternDigits), '0');
+            newSerials.push(`${patternPrefix}${number}`);
+        }
+        
+                    validation.setFieldValue('serialNumbers', newSerials);
+        setShowPatternSuccess(true);
+        setTimeout(() => setShowPatternSuccess(false), 3000);
+    };
 
-        if (targetCount > 0) {
-            const serials = [];
-            for (let i = 0; i < targetCount; i++) {
-                const num = patternStart + i;
-                const serial = `${patternPrefix}${num.toString().padStart(patternDigits || 0, '0')}`;
-                serials.push(serial);
+    const processBulkSerials = () => {
+        if (!bulkSerialNumbers.trim()) return;
+        
+        const serials = bulkSerialNumbers
+            .split(/[\n,]/)
+            .map(s => s.trim())
+            .filter(s => s.length > 0);
+        
+        validation.setFieldValue('serialNumbers', serials);
+        setBulkSerialNumbers('');
+    };
+
+    // Effect to sync serial numbers with stock quantity
+    useEffect(() => {
+        if (validation.values.isSerialized && validation.values.productType === 'product') {
+            const expectedCount = isEditMode ? validation.values.currentStock : validation.values.openingStockQty;
+            const currentCount = validation.values.serialNumbers.length;
+            
+            if (expectedCount > 0 && currentCount !== expectedCount) {
+                const newSerials = [...validation.values.serialNumbers];
+                
+                if (currentCount < expectedCount) {
+                    // Add empty serials
+                    for (let i = currentCount; i < expectedCount; i++) {
+                            newSerials.push('');
+                        }
+                        } else {
+                    // Remove excess serials
+                    newSerials.splice(expectedCount);
+                }
+
+                validation.setFieldValue('serialNumbers', newSerials);
             }
-            validation.setFieldValue('serialNumbers', serials);
-            setShowPatternSuccess(true);
-            setSerialInputMethod('single');
-            setTimeout(() => setShowPatternSuccess(false), 3000);
         }
-    };
+    }, [validation.values.currentStock, validation.values.openingStockQty, validation.values.isSerialized, isEditMode]);
 
-    const getSafeSerialNumbers = () => {
-        try {
-            return Array.isArray(validation.values.serialNumbers)
-                ? validation.values.serialNumbers
-                : [];
-        } catch {
-            return [];
-        }
-    };
-
-    const handleSerialNumberRemove = (indexToRemove) => {
-        const newSerials = [...getSafeSerialNumbers()];
-        newSerials.splice(indexToRemove, 1);
-        validation.setFieldValue('serialNumbers', newSerials);
-
-        // Update the corresponding stock quantity
-        if (isEditMode) {
-            validation.setFieldValue('currentStock', newSerials.length);
+    // Stock reduction warning effect
+    useEffect(() => {
+        if (isEditMode && selectedProduct && validation.values.currentStock < selectedProduct.currentStock) {
+            const reduction = selectedProduct.currentStock - validation.values.currentStock;
+            setStockReductionWarning(`Warning: Reducing stock by ${reduction} units. This will affect inventory calculations.`);
         } else {
-            validation.setFieldValue('openingStockQty', newSerials.length);
+            setStockReductionWarning('');
         }
-    };
-
-    const handleNumberInputWheel = (e) => {
-        e.target.blur();
-    };
-
-    const handlePatternDigitsChange = (e) => {
-        const value = e.target.value;
-        if (value === '' || (value >= 0 && value <= 10)) {
-            setPatternDigits(value === '' ? '' : parseInt(value));
-        }
-    };
-
-    const unitOptions = unitsOfMeasurement?.map(unit => ({
-        value: unit.id,
-        label: `${unit.name} (${unit.symbol})`
-    })) || [];
+    }, [validation.values.currentStock, selectedProduct, isEditMode]);
 
     return (
         <Modal isOpen={isOpen} toggle={toggle} size="lg" className="product-form-modal">
-            <ModalHeader toggle={toggle}>{isEditMode ? 'Edit Product' : 'Create Product'}</ModalHeader>
-            <ModalBody>
+            <ModalHeader toggle={toggle} className="pb-2">
+                <div className="d-flex align-items-center">
+                    <div className="avatar-xs rounded bg-primary-subtle d-flex align-items-center justify-content-center me-2">
+                        <RiProductHuntLine className="text-primary" size={16} />
+                    </div>
+                    <div>
+                        <h5 className="modal-title mb-0">
+                            {isEditMode ? 'Edit Product' : 'Add New Product'}
+                        </h5>
+                        <p className="text-muted mb-0 small">
+                            {isEditMode ? 'Update product information' : 'Create a new product'}
+                        </p>
+                    </div>
+                </div>
+            </ModalHeader>
+
                 <Form onSubmit={validation.handleSubmit}>
-                    {showSubmitError && !validation.isValid && (
-                        <Alert color="danger" className="mb-3">
-                            Please fix all validation errors before submitting.
+                <ModalBody className="py-3">
+                    {showSubmitError && (
+                        <Alert color="danger" className="mb-3 py-2">
+                            <small>There was an error submitting the form. Please check all fields and try again.</small>
                         </Alert>
                     )}
 
-                    <Row>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Product Name *</Label>
+                    {/* Basic Information Section */}
+                    <div className="form-section mb-3">
+                        <h6 className="section-title mb-3">Basic Information</h6>
+                        
+                        <Row className="g-2">
+                            <Col md={8}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Product Name <span className="text-danger">*</span></Label>
                                 <Input
                                     type="text"
                                     name="name"
+                                        placeholder="Enter product name"
                                     {...validation.getFieldProps('name')}
                                     invalid={validation.touched.name && !!validation.errors.name}
                                     disabled={isProcessing}
+                                        className="form-control-sm"
                                 />
                                 <FormFeedback>{validation.errors.name}</FormFeedback>
                             </FormGroup>
                         </Col>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Product Type *</Label>
+                            <Col md={4}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Type <span className="text-danger">*</span></Label>
                                 <Input
                                     type="select"
                                     name="productType"
                                     {...validation.getFieldProps('productType')}
                                     invalid={validation.touched.productType && !!validation.errors.productType}
                                     disabled={isProcessing}
+                                        className="form-control-sm"
                                 >
                                     <option value="product">Product</option>
                                     <option value="service">Service</option>
-                                    <option value="charge">Charge</option>
                                 </Input>
                                 <FormFeedback>{validation.errors.productType}</FormFeedback>
                             </FormGroup>
                         </Col>
                     </Row>
 
-                    <Row>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Item Code *</Label>
+                        <Row className="g-2">
+                            <Col md={4}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Item Code <span className="text-danger">*</span></Label>
                                 <Input
                                     type="text"
                                     name="itemCode"
+                                        placeholder="Enter item code"
                                     {...validation.getFieldProps('itemCode')}
                                     invalid={validation.touched.itemCode && !!validation.errors.itemCode}
                                     disabled={isProcessing}
+                                        className="form-control-sm"
                                 />
                                 <FormFeedback>{validation.errors.itemCode}</FormFeedback>
                             </FormGroup>
                         </Col>
                         {validation.values.productType === 'product' && (
-                            <Col md={6}>
-                                <FormGroup>
-                                    <Label>HSN Code *</Label>
+                                <Col md={4}>
+                                    <FormGroup className="mb-2">
+                                        <Label className="form-label-sm">HSN Code <span className="text-danger">*</span></Label>
                                     <Input
                                         type="text"
                                         name="hsnCode"
+                                            placeholder="Enter HSN code"
                                         {...validation.getFieldProps('hsnCode')}
                                         invalid={validation.touched.hsnCode && !!validation.errors.hsnCode}
                                         disabled={isProcessing}
+                                            className="form-control-sm"
                                     />
                                     <FormFeedback>{validation.errors.hsnCode}</FormFeedback>
                                 </FormGroup>
                             </Col>
                         )}
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Default Invoice Description</Label>
+                            <Col md={4}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Rate <span className="text-danger">*</span></Label>
                                 <Input
-                                    type="text"
-                                    name="defaultInvoiceDescription"
-                                    {...validation.getFieldProps('defaultInvoiceDescription')}
+                                        type="number"
+                                        name="rate"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                        min="0"
+                                        {...validation.getFieldProps('rate')}
+                                        invalid={validation.touched.rate && !!validation.errors.rate}
                                     disabled={isProcessing}
+                                        className="form-control-sm"
                                 />
+                                    <FormFeedback>{validation.errors.rate}</FormFeedback>
                             </FormGroup>
                         </Col>
                     </Row>
 
-                    <FormGroup>
-                        <Label>Description</Label>
-                        <Input
-                            type="textarea"
-                            name="description"
-                            rows="2"
-                            {...validation.getFieldProps('description')}
-                            disabled={isProcessing}
-                        />
-                    </FormGroup>
-
-                    <Row className="mb-3">
+                        {/* Options Row */}
+                        <div className="options-row mb-2">
+                            <div className="d-flex flex-wrap gap-3">
                         {validation.values.productType === 'product' && (
                             <>
-                                <Col md={4}>
-                                    <FormGroup check>
-                                        <Label check>
+                                        <FormGroup check className="form-check-inline">
                                             <Input
                                                 type="checkbox"
+                                                id="isInventoryTracked"
                                                 name="isInventoryTracked"
                                                 checked={validation.values.isInventoryTracked}
                                                 onChange={validation.handleChange}
                                                 disabled={isProcessing}
-                                            /> Inventory Tracked
+                                                className="form-check-input-sm"
+                                            />
+                                            <Label check for="isInventoryTracked" className="form-check-label-sm">
+                                                Inventory Tracked
                                         </Label>
                                     </FormGroup>
-                                </Col>
-                                <Col md={4}>
-                                    <FormGroup check>
-                                        <Label check>
+                                        <FormGroup check className="form-check-inline">
                                             <Input
                                                 type="checkbox"
+                                                id="isSerialized"
                                                 name="isSerialized"
                                                 checked={validation.values.isSerialized}
                                                 onChange={validation.handleChange}
                                                 disabled={isProcessing || !validation.values.isInventoryTracked}
-                                            /> Serialized Product
+                                                className="form-check-input-sm"
+                                            />
+                                            <Label check for="isSerialized" className="form-check-label-sm">
+                                                Serialized
                                         </Label>
                                     </FormGroup>
-                                </Col>
                             </>
                         )}
-                        <Col md={4}>
-                            <FormGroup check>
-                                <Label check>
+                                <FormGroup check className="form-check-inline">
                                     <Input
                                         type="checkbox"
+                                        id="isTaxInclusive"
                                         name="isTaxInclusive"
                                         checked={validation.values.isTaxInclusive}
                                         onChange={validation.handleChange}
                                         disabled={isProcessing}
-                                    /> Price Includes Tax
+                                        className="form-check-input-sm"
+                                    />
+                                    <Label check for="isTaxInclusive" className="form-check-label-sm">
+                                        Tax Inclusive
                                 </Label>
                             </FormGroup>
-                        </Col>
-                    </Row>
+                            </div>
+                        </div>
+                    </div>
 
+                    {/* Categories & Tax Section */}
                     {validation.values.productType === 'product' && (
-                        <Row>
-                            <Col md={6}>
-                                <FormGroup>
-                                    <Label>Unit of Measurement {validation.values.isInventoryTracked && '*'}</Label>
+                        <div className="form-section mb-3">
+                            <h6 className="section-title mb-3">Categories & Tax</h6>
+                            
+                            <Row className="g-2">
+                                <Col md={4}>
+                                    <FormGroup className="mb-2">
+                                        <Label className="form-label-sm">
+                                            Unit of Measurement 
+                                            {validation.values.isInventoryTracked && <span className="text-danger"> *</span>}
+                                        </Label>
                                     <ReactSelect
                                         options={unitOptions}
                                         value={unitOptions.find(opt => opt.value === validation.values.unitOfMeasurementId)}
                                         onChange={(selectedOption) => {
-                                            validation.setFieldValue(
-                                                'unitOfMeasurementId',
-                                                selectedOption?.value || ''
-                                            );
+                                                validation.setFieldValue('unitOfMeasurementId', selectedOption?.value || '');
                                             validation.setFieldTouched('unitOfMeasurementId', true);
                                         }}
-                                        onBlur={() => validation.setFieldTouched('unitOfMeasurementId', true)}
-                                        className="react-select-container"
+                                            className="react-select-container-sm"
                                         classNamePrefix="react-select"
                                         placeholder="Select Unit"
                                         isClearable
                                         isDisabled={isProcessing}
-                                        noOptionsMessage={() => "No units found"}
-                                        menuPlacement="auto"
+                                            styles={{
+                                                control: (provided) => ({
+                                                    ...provided,
+                                                    minHeight: '32px',
+                                                    fontSize: '0.875rem'
+                                                })
+                                            }}
                                     />
                                     {validation.values.isInventoryTracked && validation.touched.unitOfMeasurementId && validation.errors.unitOfMeasurementId && (
-                                        <div className="text-danger small mt-1">
-                                            {validation.errors.unitOfMeasurementId}
-                                        </div>
+                                            <div className="text-danger small mt-1">{validation.errors.unitOfMeasurementId}</div>
                                     )}
                                 </FormGroup>
                             </Col>
-                            <Col md={6}>
-                                <FormGroup>
-                                    <Label>Stock Category {validation.values.isInventoryTracked && '*'}</Label>
-                                    <div className="d-flex gap-2">
+                                <Col md={4}>
+                                    <FormGroup className="mb-2">
+                                        <Label className="form-label-sm">
+                                            Stock Category 
+                                            {validation.values.isInventoryTracked && <span className="text-danger"> *</span>}
+                                        </Label>
+                                        <div className="d-flex gap-1">
                                         <Input
                                             type="select"
                                             name="stockCategoryId"
                                             {...validation.getFieldProps('stockCategoryId')}
                                             invalid={validation.touched.stockCategoryId && !!validation.errors.stockCategoryId}
                                             disabled={isProcessing || categoriesLoading}
+                                                className="form-control-sm"
                                             style={{ flex: 1 }}
                                         >
                                             <option value="">Select</option>
@@ -600,429 +461,365 @@ const ProductForm = ({
                                                 </option>
                                             ))}
                                         </Input>
+                                            {onAddStockCategory && (
                                         <Button
-                                            color="outline-primary"
+                                                    type="button"
+                                                    color="light"
                                             size="sm"
                                             onClick={onAddStockCategory}
-                                            disabled={isProcessing || categoriesLoading}
-                                            style={{ minWidth: '60px' }}
+                                                    disabled={isProcessing}
+                                                    title="Add Stock Category"
+                                                    className="btn-icon"
                                         >
-                                            Add
+                                                    <RiAddLine size={14} />
                                         </Button>
+                                            )}
                                     </div>
-                                    {validation.values.isInventoryTracked && (
                                         <FormFeedback>{validation.errors.stockCategoryId}</FormFeedback>
-                                    )}
                                 </FormGroup>
                             </Col>
-                        </Row>
-                    )}
-
-                    <Row>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Rate *</Label>
-                                <Input
-                                    type="number"
-                                    name="rate"
-                                    step="0.01"
-                                    min="0"
-                                    {...validation.getFieldProps('rate')}
-                                    invalid={validation.touched.rate && !!validation.errors.rate}
-                                    disabled={isProcessing}
-                                    onWheel={handleNumberInputWheel}
-                                />
-                                <FormFeedback>{validation.errors.rate}</FormFeedback>
-                            </FormGroup>
-                        </Col>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Discount (%)</Label>
-                                <Input
-                                    type="number"
-                                    name="discount"
-                                    step="0.01"
-                                    min="0"
-                                    max="100"
-                                    {...validation.getFieldProps('discount')}
-                                    invalid={validation.touched.discount && !!validation.errors.discount}
-                                    disabled={isProcessing}
-                                    onWheel={handleNumberInputWheel}
-                                />
-                                <FormFeedback>{validation.errors.discount}</FormFeedback>
+                                <Col md={4}>
+                                    <FormGroup className="mb-2">
+                                        <Label className="form-label-sm">Tax Category</Label>
+                                        <ReactSelect
+                                            options={taxOptions}
+                                            value={taxOptions.find(opt => opt.value === validation.values.taxCategoryId)}
+                                            onChange={(selectedOption) => {
+                                                validation.setFieldValue('taxCategoryId', selectedOption?.value || '');
+                                                validation.setFieldTouched('taxCategoryId', true);
+                                            }}
+                                            className="react-select-container-sm"
+                                            classNamePrefix="react-select"
+                                            placeholder="Select Tax"
+                                            isClearable
+                                            isDisabled={isProcessing || taxCategoriesLoading}
+                                            styles={{
+                                                control: (provided) => ({
+                                                    ...provided,
+                                                    minHeight: '32px',
+                                                    fontSize: '0.875rem'
+                                                })
+                                            }}
+                                        />
                             </FormGroup>
                         </Col>
                     </Row>
+                        </div>
+                    )}
 
+                    {/* Inventory Section */}
                     {validation.values.isInventoryTracked && validation.values.productType === 'product' && (
-                        <Row>
-                            <Col md={isEditMode ? 4 : 6}>
-                                <FormGroup>
-                                    <Label>{isEditMode ? 'Opening Stock Qty' : 'Opening Stock Qty *'}</Label>
+                        <div className="form-section mb-3">
+                            <h6 className="section-title mb-3">Inventory Information</h6>
+                            
+                            {stockReductionWarning && (
+                                <Alert color="warning" className="mb-2 py-2">
+                                    <small>{stockReductionWarning}</small>
+                                </Alert>
+                            )}
+                            
+                            <Row className="g-2">
+                                {!isEditMode ? (
+                                    <>
+                                        <Col md={6}>
+                                            <FormGroup className="mb-2">
+                                                <Label className="form-label-sm">Opening Stock Qty <span className="text-danger">*</span></Label>
                                     <Input
                                         type="number"
                                         name="openingStockQty"
-                                        step="1"
+                                                    placeholder="0"
                                         min="0"
+                                                    step="1"
                                         {...validation.getFieldProps('openingStockQty')}
                                         invalid={validation.touched.openingStockQty && !!validation.errors.openingStockQty}
-                                        disabled={isProcessing || isEditMode}
-                                        onWheel={handleNumberInputWheel}
+                                                    disabled={isProcessing}
+                                                    className="form-control-sm"
                                     />
                                     <FormFeedback>{validation.errors.openingStockQty}</FormFeedback>
                                 </FormGroup>
                             </Col>
-                            <Col md={isEditMode ? 4 : 6}>
-                                <FormGroup>
-                                    <Label>Opening Stock Cost/Qty *</Label>
+                                        <Col md={6}>
+                                            <FormGroup className="mb-2">
+                                                <Label className="form-label-sm">Opening Cost Per Unit <span className="text-danger">*</span></Label>
                                     <Input
                                         type="number"
                                         name="openingStockCostPerQty"
-                                        step="0.01"
+                                                    placeholder="0.00"
                                         min="0"
+                                                    step="0.01"
                                         {...validation.getFieldProps('openingStockCostPerQty')}
                                         invalid={validation.touched.openingStockCostPerQty && !!validation.errors.openingStockCostPerQty}
                                         disabled={isProcessing}
-                                        onWheel={handleNumberInputWheel}
+                                                    className="form-control-sm"
                                     />
                                     <FormFeedback>{validation.errors.openingStockCostPerQty}</FormFeedback>
                                 </FormGroup>
                             </Col>
-                            {isEditMode && (
-                                <Col md={4}>
-                                    <FormGroup>
-                                        <Label>Current Stock *</Label>
+                                    </>
+                                ) : (
+                                    <Col md={6}>
+                                        <FormGroup className="mb-2">
+                                            <Label className="form-label-sm">Current Stock <span className="text-danger">*</span></Label>
                                         <Input
                                             type="number"
                                             name="currentStock"
-                                            step="1"
+                                                placeholder="0"
                                             min="0"
+                                                step="1"
                                             {...validation.getFieldProps('currentStock')}
                                             invalid={validation.touched.currentStock && !!validation.errors.currentStock}
                                             disabled={isProcessing}
-                                            onWheel={handleNumberInputWheel}
+                                                className="form-control-sm"
                                         />
                                         <FormFeedback>{validation.errors.currentStock}</FormFeedback>
                                     </FormGroup>
                                 </Col>
                             )}
                         </Row>
+                            </div>
                     )}
 
-                    <Row>
-                        <Col md={6}>
-                            <FormGroup>
-                                <Label>Tax Category</Label>
-                                <Input
-                                    type="select"
-                                    name="taxCategoryId"
-                                    {...validation.getFieldProps('taxCategoryId')}
-                                    disabled={isProcessing || taxCategoriesLoading}
-                                >
-                                    <option value="">Select</option>
-                                    {taxCategories.map(taxCategory => (
-                                        <option key={taxCategory.id} value={taxCategory.id}>
-                                            {taxCategory.name} ({taxCategory.rate}%)
-                                        </option>
-                                    ))}
-                                </Input>
-                            </FormGroup>
-                        </Col>
-                    </Row>
-
+                    {/* Serial Numbers Section */}
                     {validation.values.isSerialized && validation.values.productType === 'product' && (
-                        <FormGroup className="serial-numbers-section">
-                            <Label>Serial Numbers *</Label>
-                            {stockReductionWarning && (
-                                <Alert color="warning" className="mb-2">
-                                    {stockReductionWarning}
-                                </Alert>
-                            )}
-                            <div className="mb-2">
-                                <small className="text-muted">
-                                    {isEditMode
-                                        ? `${validation.values.currentStock} serial numbers required (matches current stock)`
-                                        : `${validation.values.openingStockQty} serial numbers required (matches opening stock)`}
-                                </small>
-                            </div>
-
-                            {/* Display serial numbers validation error */}
-                            {validation.touched.serialNumbers && validation.errors.serialNumbers && typeof validation.errors.serialNumbers === 'string' && (
-                                <Alert color="danger" className="mb-2">
-                                    {validation.errors.serialNumbers}
-                                </Alert>
-                            )}
-
-                            <div className="serial-input-methods mb-3">
-                                <div className="d-flex flex-wrap gap-3 mb-3">
+                        <div className="form-section mb-3">
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                                <h6 className="section-title mb-0">Serial Numbers</h6>
+                                <div className="d-flex gap-1">
                                     <Button
-                                        color={serialInputMethod === 'single' ? 'primary' : 'secondary'}
-                                        onClick={() => {
-                                            setSerialInputMethod('single');
-                                            setShowAllSerials(false);
-                                        }}
+                                        type="button"
+                                        color="light"
+                                        size="sm"
+                                        onClick={() => setSerialInputMethod(serialInputMethod === 'single' ? 'bulk' : 'single')}
                                         disabled={isProcessing}
-                                        className="flex-grow-1"
+                                        className="btn-sm-compact"
                                     >
-                                        Single Entry
+                                        {serialInputMethod === 'single' ? 'Bulk' : 'Single'}
                                     </Button>
                                     <Button
-                                        color={serialInputMethod === 'bulk' ? 'primary' : 'secondary'}
-                                        onClick={() => setSerialInputMethod('bulk')}
+                                        type="button"
+                                        color="light"
+                                        size="sm"
+                                        onClick={() => setShowAllSerials(!showAllSerials)}
                                         disabled={isProcessing}
-                                        className="flex-grow-1"
+                                        className="btn-sm-compact"
                                     >
-                                        Bulk Entry
+                                        {showAllSerials ? <RiEyeOffLine size={12} /> : <RiEyeLine size={12} />}
                                     </Button>
-                                    <Button
-                                        color={serialInputMethod === 'pattern' ? 'primary' : 'secondary'}
-                                        onClick={() => setSerialInputMethod('pattern')}
-                                        disabled={isProcessing}
-                                        className="flex-grow-1"
-                                    >
-                                        Pattern
-                                    </Button>
+                                </div>
                                 </div>
 
                                 {serialInputMethod === 'bulk' && (
-                                    <div className="bulk-entry-container mb-3 p-3 border rounded">
-                                        <p className="small text-muted">Enter one serial number per line:</p>
+                                <Card className="mb-2">
+                                    <CardBody className="p-2">
+                                        <div className="mb-2">
+                                            <Label className="form-label-sm">Bulk Serial Numbers</Label>
                                         <Input
                                             type="textarea"
-                                            rows="5"
+                                                rows="2"
                                             value={bulkSerialNumbers}
                                             onChange={(e) => setBulkSerialNumbers(e.target.value)}
+                                                placeholder="Enter serial numbers separated by new lines or commas"
                                             disabled={isProcessing}
-                                            className="mb-2"
+                                                className="form-control-sm"
                                         />
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <small className="text-muted">
-                                                {bulkSerialNumbers.split('\n').filter(l => l.trim() !== '').length} serial numbers detected
-                                            </small>
                                             <Button
+                                                type="button"
                                                 color="primary"
-                                                onClick={handleBulkSerialNumbersSubmit}
-                                                disabled={isProcessing || !bulkSerialNumbers.trim()}
                                                 size="sm"
+                                                onClick={processBulkSerials}
+                                                disabled={isProcessing || !bulkSerialNumbers.trim()}
+                                                className="mt-1 btn-sm-compact"
                                             >
-                                                Apply Serial Numbers
+                                                Process
                                             </Button>
                                         </div>
-                                    </div>
-                                )}
 
-                                {serialInputMethod === 'pattern' && (
-                                    <div className="pattern-generator-container mb-3 p-3 border rounded">
-                                        <Row>
-                                            <Col md={4}>
-                                                <FormGroup>
-                                                    <Label>Prefix</Label>
+                                        <div className="border-top pt-2">
+                                            <Label className="form-label-sm">Pattern Generator</Label>
+                                            <Row className="g-1">
+                                                <Col md={3}>
                                                     <Input
                                                         type="text"
+                                                        placeholder="Prefix"
                                                         value={patternPrefix}
                                                         onChange={(e) => setPatternPrefix(e.target.value)}
                                                         disabled={isProcessing}
-                                                        placeholder="ABC"
+                                                        className="form-control-sm"
                                                     />
-                                                </FormGroup>
                                             </Col>
                                             <Col md={3}>
-                                                <FormGroup>
-                                                    <Label>Start Number</Label>
                                                     <Input
                                                         type="number"
-                                                        min="1"
+                                                        placeholder="Start"
                                                         value={patternStart}
                                                         onChange={(e) => setPatternStart(parseInt(e.target.value) || 1)}
                                                         disabled={isProcessing}
-                                                        onWheel={handleNumberInputWheel}
+                                                        className="form-control-sm"
                                                     />
-                                                </FormGroup>
                                             </Col>
                                             <Col md={3}>
-                                                <FormGroup>
-                                                    <Label>Digits</Label>
                                                     <Input
                                                         type="number"
-                                                        min="0"
-                                                        max="10"
+                                                        placeholder="Digits"
                                                         value={patternDigits}
-                                                        onChange={handlePatternDigitsChange}
+                                                        onChange={(e) => setPatternDigits(e.target.value)}
                                                         disabled={isProcessing}
-                                                        onWheel={handleNumberInputWheel}
+                                                        className="form-control-sm"
                                                     />
-                                                </FormGroup>
                                             </Col>
-                                            <Col md={2} className="d-flex align-items-end">
+                                                <Col md={3}>
                                                 <Button
-                                                    color="primary"
+                                                        type="button"
+                                                        color="success"
+                                                        size="sm"
                                                     onClick={generatePatternSerials}
-                                                    disabled={isProcessing || !patternPrefix}
-                                                    className="w-100"
+                                                        disabled={isProcessing || !patternPrefix || !patternDigits}
+                                                        className="w-100 btn-sm-compact"
                                                 >
                                                     Generate
                                                 </Button>
                                             </Col>
                                         </Row>
-                                        <div className="mt-2">
-                                            <small className="text-muted d-block">
-                                                Example: {patternPrefix || 'ABC'}{patternStart.toString().padStart(patternDigits || 0, '0')},
-                                                {patternPrefix || 'ABC'}{(patternStart + 1).toString().padStart(patternDigits || 0, '0')},
-                                                {patternPrefix || 'ABC'}{(patternStart + 2).toString().padStart(patternDigits || 0, '0')}, ...
-                                            </small>
                                             {showPatternSuccess && (
-                                                <Alert color="success" className="mt-2 p-2 small">
-                                                    Successfully generated {isEditMode
-                                                        ? validation.values.currentStock
-                                                        : validation.values.openingStockQty} serial numbers
-                                                </Alert>
+                                                <div className="text-success small mt-1">Generated successfully!</div>
                                             )}
                                         </div>
-                                    </div>
+                                    </CardBody>
+                                </Card>
                                 )}
-                            </div>
 
-                            {(serialInputMethod === 'single' || showPatternSuccess) && (
+                            {/* Serial Numbers List */}
+                            <div className="serial-numbers-container">
+                                {validation.values.serialNumbers.length > 0 && (
                                 <div className="serial-numbers-list">
-                                    {showAllSerials || getSafeSerialNumbers().length <= 10 ? (
-                                        getSafeSerialNumbers().map((serial, index) => (
-                                            <div key={`serial-${index}`} className="serial-number-item d-flex mb-2 align-items-center">
-                                                <div className="serial-number-index badge bg-light text-dark me-2">
-                                                    {index + 1}
-                                                </div>
-                                                <Input
-                                                    type="text"
-                                                    value={serial || ''}
-                                                    onChange={(e) => {
-                                                        const newSerials = [...getSafeSerialNumbers()];
-                                                        newSerials[index] = e.target.value;
-                                                        validation.setFieldValue('serialNumbers', newSerials);
-                                                    }}
-                                                    onBlur={() => validation.setFieldTouched('serialNumbers', true)}
-                                                    invalid={
-                                                        validation.touched.serialNumbers &&
-                                                        validation.errors.serialNumbers &&
-                                                        Array.isArray(validation.errors.serialNumbers) &&
-                                                        validation.errors.serialNumbers[index]
-                                                    }
-                                                    disabled={isProcessing}
-                                                    className="flex-grow-1 me-2"
-                                                />
-                                                {getSafeSerialNumbers().length > 1 && (
-                                                    <Button
-                                                        color="danger"
-                                                        onClick={() => handleSerialNumberRemove(index)}
-                                                        disabled={isProcessing}
-                                                        size="sm"
-                                                        className="serial-number-remove"
-                                                    >
-                                                        ×
-                                                    </Button>
+                                        <div className="d-flex justify-content-between align-items-center mb-2">
+                                            <small className="text-muted">
+                                                Serial Numbers ({validation.values.serialNumbers.length})
+                                            </small>
+                                            {validation.values.serialNumbers.length > 1 && (
+                                                <Badge color="light" className="badge-simple">
+                                                    {showAllSerials ? 'All' : `First ${Math.min(5, validation.values.serialNumbers.length)}`}
+                                                </Badge>
                                                 )}
                                             </div>
-                                        ))
-                                    ) : (
-                                        <>
-                                            {getSafeSerialNumbers().slice(0, 3).map((serial, index) => (
-                                                <div key={`serial-${index}`} className="serial-number-item d-flex mb-2 align-items-center">
-                                                    <div className="serial-number-index badge bg-light text-dark me-2">
+                                        
+                                        <div className="serial-inputs" style={{ maxHeight: showAllSerials ? '200px' : '120px', overflowY: 'auto' }}>
+                                            {validation.values.serialNumbers
+                                                .slice(0, showAllSerials ? undefined : 5)
+                                                .map((serial, index) => (
+                                                <div key={index} className="d-flex gap-1 mb-1">
+                                                    <div className="serial-number-badge">
                                                         {index + 1}
                                                     </div>
                                                     <Input
                                                         type="text"
-                                                        value={serial || ''}
-                                                        onChange={(e) => {
-                                                            const newSerials = [...getSafeSerialNumbers()];
-                                                            newSerials[index] = e.target.value;
-                                                            validation.setFieldValue('serialNumbers', newSerials);
-                                                        }}
-                                                        onBlur={() => validation.setFieldTouched('serialNumbers', true)}
-                                                        invalid={
-                                                            validation.touched.serialNumbers &&
-                                                            validation.errors.serialNumbers &&
-                                                            Array.isArray(validation.errors.serialNumbers) &&
-                                                            validation.errors.serialNumbers[index]
-                                                        }
+                                                        placeholder={`Serial ${index + 1}`}
+                                                        value={serial}
+                                                        onChange={(e) => updateSerialNumber(index, e.target.value)}
                                                         disabled={isProcessing}
-                                                        className="flex-grow-1 me-2"
+                                                        className="form-control-sm"
+                                                        style={{ flex: 1 }}
                                                     />
+                                                    {validation.values.serialNumbers.length > 1 && (
                                                     <Button
-                                                        color="danger"
-                                                        onClick={() => handleSerialNumberRemove(index)}
-                                                        disabled={isProcessing}
+                                                            type="button"
+                                                            color="light"
                                                         size="sm"
-                                                        className="serial-number-remove"
+                                                            onClick={() => removeSerialNumber(index)}
+                                                            disabled={isProcessing}
+                                                            className="btn-icon-sm"
                                                     >
-                                                        ×
+                                                            <RiDeleteBinLine size={12} />
                                                     </Button>
+                                                    )}
                                                 </div>
                                             ))}
-                                            <div className="text-center my-2">
-                                                <Button
-                                                    color="link"
-                                                    onClick={() => setShowAllSerials(true)}
-                                                    size="sm"
-                                                >
-                                                    Show all {getSafeSerialNumbers().length} serial numbers
-                                                </Button>
                                             </div>
-                                            {getSafeSerialNumbers().slice(-3).map((serial, index) => {
-                                                const realIndex = getSafeSerialNumbers().length - 3 + index;
-                                                return (
-                                                    <div key={`serial-${realIndex}`} className="serial-number-item d-flex mb-2 align-items-center">
-                                                        <div className="serial-number-index badge bg-light text-dark me-2">
-                                                            {realIndex + 1}
+
+                                        {!showAllSerials && validation.values.serialNumbers.length > 5 && (
+                                            <div className="text-center mt-1">
+                                                <small className="text-muted">
+                                                    +{validation.values.serialNumbers.length - 5} more
+                                                </small>
                                                         </div>
-                                                        <Input
-                                                            type="text"
-                                                            value={serial || ''}
-                                                            onChange={(e) => {
-                                                                const newSerials = [...getSafeSerialNumbers()];
-                                                                newSerials[realIndex] = e.target.value;
-                                                                validation.setFieldValue('serialNumbers', newSerials);
-                                                            }}
-                                                            onBlur={() => validation.setFieldTouched('serialNumbers', true)}
-                                                            invalid={
-                                                                validation.touched.serialNumbers &&
-                                                                validation.errors.serialNumbers &&
-                                                                Array.isArray(validation.errors.serialNumbers) &&
-                                                                validation.errors.serialNumbers[realIndex]
-                                                            }
-                                                            disabled={isProcessing}
-                                                            className="flex-grow-1 me-2"
-                                                        />
+                                        )}
+
+                                        <div className="mt-2">
                                                         <Button
-                                                            color="danger"
-                                                            onClick={() => handleSerialNumberRemove(realIndex)}
-                                                            disabled={isProcessing}
+                                                type="button"
+                                                color="light"
                                                             size="sm"
-                                                            className="serial-number-remove"
+                                                onClick={addSerialNumber}
+                                                disabled={isProcessing}
+                                                className="btn-sm-compact"
                                                         >
-                                                            ×
+                                                <RiAddLine size={12} className="me-1" />
+                                                Add Serial
                                                         </Button>
                                                     </div>
-                                                );
-                                            })}
-                                        </>
+                                    </div>
                                     )}
+                            </div>
+
+                            {validation.touched.serialNumbers && validation.errors.serialNumbers && (
+                                <div className="text-danger small mt-2">
+                                    {validation.errors.serialNumbers}
                                 </div>
                             )}
-                        </FormGroup>
+                        </div>
                     )}
 
-                    <ModalFooter>
-                        <Button color="light" onClick={toggle} disabled={isProcessing}>
+                    {/* Description Section */}
+                    <div className="form-section">
+                        <h6 className="section-title mb-3">Additional Information</h6>
+                        
+                        <Row className="g-2">
+                            <Col md={6}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Description</Label>
+                                    <Input
+                                        type="textarea"
+                                        name="description"
+                                        rows="2"
+                                        placeholder="Product description"
+                                        {...validation.getFieldProps('description')}
+                                        disabled={isProcessing}
+                                        className="form-control-sm"
+                                    />
+                                </FormGroup>
+                            </Col>
+                            <Col md={6}>
+                                <FormGroup className="mb-2">
+                                    <Label className="form-label-sm">Invoice Description</Label>
+                                    <Input
+                                        type="textarea"
+                                        name="defaultInvoiceDescription"
+                                        rows="2"
+                                        placeholder="Default description for invoices"
+                                        {...validation.getFieldProps('defaultInvoiceDescription')}
+                                        disabled={isProcessing}
+                                        className="form-control-sm"
+                                    />
+                                </FormGroup>
+                            </Col>
+                        </Row>
+                    </div>
+                </ModalBody>
+
+                <ModalFooter className="py-2">
+                    <Button 
+                        color="light" 
+                        onClick={toggle} 
+                        disabled={isProcessing}
+                        className="px-3"
+                    >
                             Cancel
                         </Button>
                         <Button
                             color="primary"
                             type="submit"
                             disabled={isProcessing || !validation.isValid}
-                            onClick={() => {
-                                if (!validation.isValid) {
-                                    setShowSubmitError(true);
-                                }
-                            }}
+                        className="px-3"
                         >
                             {isProcessing ? (
                                 <>
@@ -1035,7 +832,148 @@ const ProductForm = ({
                         </Button>
                     </ModalFooter>
                 </Form>
-            </ModalBody>
+
+            <style jsx>{`
+                .product-form-modal .modal-content {
+                    border-radius: 8px;
+                    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+                }
+
+                .avatar-xs {
+                    width: 1.75rem;
+                    height: 1.75rem;
+                }
+
+                .bg-primary-subtle {
+                    background-color: rgba(13, 110, 253, 0.1) !important;
+                }
+
+                .form-section {
+                                    background: var(--vz-body-bg);
+                border: 1px solid var(--vz-border-color);
+                    border-radius: 6px;
+                    padding: 0.75rem;
+                }
+
+                .section-title {
+                    color: var(--vz-secondary-color);
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                    margin: 0;
+                }
+
+                .form-control-sm {
+                    font-size: 0.875rem;
+                    padding: 0.375rem 0.75rem;
+                    height: 32px;
+                }
+
+                .form-label-sm {
+                    font-size: 0.8rem;
+                    font-weight: 500;
+                    color: var(--vz-secondary-color);
+                    margin-bottom: 0.25rem;
+                }
+
+                .form-check-input-sm {
+                    transform: scale(0.9);
+                }
+
+                .form-check-label-sm {
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                }
+
+                .options-row {
+                    background: var(--vz-light-bg-subtle);
+                    border-radius: 6px;
+                    padding: 0.5rem;
+                    border: 1px solid var(--vz-border-color);
+                }
+
+                .react-select-container-sm .react-select__control {
+                    min-height: 32px;
+                    font-size: 0.875rem;
+                }
+
+                .btn-icon {
+                    width: 32px;
+                    height: 32px;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .btn-icon-sm {
+                    width: 28px;
+                    height: 28px;
+                    padding: 0;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                }
+
+                .btn-sm-compact {
+                    font-size: 0.75rem;
+                    padding: 0.25rem 0.5rem;
+                    line-height: 1.2;
+                }
+
+                .serial-numbers-container {
+                    background: var(--vz-light-bg-subtle);
+                    border-radius: 6px;
+                    padding: 0.5rem;
+                    border: 1px solid var(--vz-border-color);
+                }
+
+                .serial-number-badge {
+                    background: var(--vz-secondary-color);
+                    color: white;
+                    font-size: 0.7rem;
+                    font-weight: 500;
+                    width: 20px;
+                    height: 28px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 4px;
+                    flex-shrink: 0;
+                }
+
+                .badge-simple {
+                    background-color: var(--vz-light-bg-subtle);
+                    color: var(--vz-secondary-color);
+                    border: 1px solid var(--vz-border-color);
+                    font-weight: 500;
+                    font-size: 0.75rem;
+                }
+
+                .serial-inputs::-webkit-scrollbar {
+                    width: 4px;
+                }
+
+                .serial-inputs::-webkit-scrollbar-track {
+                    background: #f1f1f1;
+                    border-radius: 2px;
+                }
+
+                .serial-inputs::-webkit-scrollbar-thumb {
+                    background: #c1c1c1;
+                    border-radius: 2px;
+                }
+
+                .spin {
+                    animation: spin 1s linear infinite;
+                }
+
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+            `}</style>
         </Modal>
     );
 };

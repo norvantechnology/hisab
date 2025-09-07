@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Row, Col, Nav, NavItem, NavLink, TabContent, TabPane, Card, CardBody, Table, Spinner, Input, Form, FormGroup, Label, Alert } from 'reactstrap';
-import { RiWalletLine, RiCheckLine, RiCloseLine } from 'react-icons/ri';
+import { RiWalletLine, RiCheckLine, RiCloseLine, RiUserLine, RiMapPinLine, RiFileTextLine, RiPhoneLine, RiMailLine } from 'react-icons/ri';
 import classnames from 'classnames';
 import ReactSelect from 'react-select';
 import { getPendingTransactions } from '../../services/payment';
@@ -234,30 +234,6 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
         }
     };
 
-    const getContactTypeBadge = () => {
-        const isCustomer = contact?.isCustomer;
-        const isVendor = contact?.isVendor;
-        let type = '';
-        let color = '';
-
-        if (isCustomer && isVendor) {
-            type = 'Customer & Vendor';
-            color = 'info';
-        } else if (isCustomer) {
-            type = 'Customer';
-            color = 'primary';
-        } else if (isVendor) {
-            type = 'Vendor';
-            color = 'warning';
-        }
-
-        return type ? (
-            <Badge color={color} className={`badge-soft-${color}`}>
-                {type}
-            </Badge>
-        ) : null;
-    };
-
     const getBalanceBadge = () => {
         // Use calculated balance if available, otherwise fall back to current balance
         const calculatedBalance = contact?.calculatedBalance;
@@ -284,9 +260,19 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
     };
 
     return (
-        <Modal isOpen={isOpen} toggle={toggle} size="xl">
-            <ModalHeader toggle={toggle}>Contact Details</ModalHeader>
-            <ModalBody>
+        <Modal isOpen={isOpen} toggle={toggle} size="lg" className="contact-view-modal">
+            <ModalHeader toggle={toggle} className="pb-2">
+                <div className="d-flex align-items-center">
+                    <div className="rounded bg-primary-subtle d-flex align-items-center justify-content-center me-2" style={{width: '1.75rem', height: '1.75rem'}}>
+                        <RiUserLine className="text-primary" size={16} />
+                    </div>
+                    <div>
+                        <h5 className="modal-title mb-0">Contact Details</h5>
+                        <p className="text-muted mb-0 small">Complete contact information and transactions</p>
+                    </div>
+                </div>
+            </ModalHeader>
+            <ModalBody className="py-3">
                 {contact && (
                     <div>
                         <Nav tabs>
@@ -313,91 +299,85 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                         <TabContent activeTab={activeTab}>
                             <TabPane tabId="1">
                                 <div className="mt-3">
-                                    {/* Header Card with Key Information */}
-                                    <Card className="border-0 shadow-sm mb-3">
-                                        <CardBody className="bg-light">
-                                            <Row className="align-items-center">
-                                                <Col md={6}>
-                                                    <div>
-                                                        <h6 className="text-muted mb-1">Contact Name</h6>
-                                                        <h4 className="mb-2 text-dark">{contact.name}</h4>
-                                                        <div className="d-flex gap-2 flex-wrap">
-                                                            {getContactTypeBadge()}
-                                                        </div>
+                                    {/* Compact Contact Header */}
+                                    <div className="bg-light rounded p-3 mb-3 border">
+                                        <Row className="align-items-center">
+                                            <Col md={6}>
+                                                <h4 className="mb-2 fw-semibold">{contact.name}</h4>
+                                                <div className="d-flex flex-wrap gap-1">
+                                                    <Badge color="light" className="border px-2 py-1 small">
+                                                        {contact?.isCustomer && contact?.isVendor ? 'Customer & Vendor' :
+                                                         contact?.isCustomer ? 'Customer' :
+                                                         contact?.isVendor ? 'Vendor' : 'Contact'}
+                                                    </Badge>
+                                                    {contact.gstin && (
+                                                        <Badge color="light" className="border px-2 py-1 small">
+                                                            GSTIN: {contact.gstin}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </Col>
+                                            <Col md={6}>
+                                                <div className="text-end">
+                                                    <div className="text-muted small mb-1">Current Balance</div>
+                                                    <div className="h4 mb-0">
+                                                        {getBalanceBadge()}
                                                     </div>
-                                                </Col>
-                                                <Col md={3}>
-                                                    <div className="text-center">
-                                                        <h6 className="text-muted mb-1">GSTIN</h6>
-                                                        <div className="fw-medium">{contact.gstin || 'N/A'}</div>
-                                                    </div>
-                                                </Col>
-                                                <Col md={3}>
-                                                    <div className="text-center">
-                                                        <h6 className="text-muted mb-1">Current Balance</h6>
-                                                        <div>{getBalanceBadge()}</div>
-                                                    </div>
-                                                </Col>
-                                            </Row>
-                                        </CardBody>
-                                    </Card>
+                                                </div>
+                                            </Col>
+                                        </Row>
+                                    </div>
 
                                     {/* Contact Information Card */}
-                                    <Card className="border-0 shadow-sm mb-3">
+                                    <Card className="border shadow-sm mb-3">
                                         <CardBody>
-                                            <h6 className="card-title text-muted mb-3">
-                                                <i className="ri-phone-line me-2"></i>
+                                            <h6 className="text-muted mb-3 text-uppercase fw-semibold" style={{fontSize: '0.8rem', letterSpacing: '0.5px'}}>
+                                                <RiPhoneLine className="me-1" size={14} />
                                                 Contact Information
                                             </h6>
-                                            <Row>
-                                                <Col md={3}>
-                                                    <div className="text-center">
-                                                        <label className="form-label text-muted small">Mobile</label>
-                                                        <div className="fw-medium">{contact.mobile || 'N/A'}</div>
-                                                    </div>
-                                                </Col>
-                                                <Col md={4}>
-                                                    <div className="text-center">
-                                                        <label className="form-label text-muted small">Email</label>
-                                                        <div className="fw-medium">{contact.email || 'N/A'}</div>
-                                                    </div>
-                                                </Col>
-                                                <Col md={3}>
-                                                    <div className="text-center">
-                                                        <label className="form-label text-muted small">Due Days</label>
-                                                        <div className="fw-medium">{contact.dueDays ? `${contact.dueDays} days` : 'N/A'}</div>
-                                                    </div>
-                                                </Col>
-                                                <Col md={2}>
-                                                    <div className="text-center">
-                                                        <label className="form-label text-muted small">Created</label>
-                                                        <div className="fw-medium">
-                                                            <small>
-                                                                {new Date(contact.createdAt).toLocaleDateString('en-US', {
-                                                                    month: 'short',
-                                                                    day: 'numeric',
-                                                                    year: 'numeric'
-                                                                })}
-                                                            </small>
-                                                        </div>
-                                                    </div>
-                                                </Col>
-                                            </Row>
+                                            <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid var(--vz-border-color)'}}>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-secondary-color)', fontWeight: '500', margin: '0'}}>Mobile:</span>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-body-color)', fontWeight: '500', textAlign: 'right'}}>{contact.mobile || 'N/A'}</span>
+                                                </div>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid var(--vz-border-color)'}}>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-secondary-color)', fontWeight: '500', margin: '0'}}>Email:</span>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-body-color)', fontWeight: '500', textAlign: 'right'}}>{contact.email || 'N/A'}</span>
+                                                </div>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid var(--vz-border-color)'}}>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-secondary-color)', fontWeight: '500', margin: '0'}}>Due Days:</span>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-body-color)', fontWeight: '500', textAlign: 'right'}}>{contact.dueDays ? `${contact.dueDays} days` : 'N/A'}</span>
+                                                </div>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0', borderBottom: '1px solid var(--vz-border-color)'}}>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-secondary-color)', fontWeight: '500', margin: '0'}}>Created:</span>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-body-color)', fontWeight: '500', textAlign: 'right'}}>
+                                                        {new Date(contact.createdAt).toLocaleDateString('en-US', {
+                                                            month: 'short',
+                                                            day: 'numeric',
+                                                            year: 'numeric'
+                                                        })}
+                                                    </span>
+                                                </div>
+                                                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 0'}}>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-secondary-color)', fontWeight: '500', margin: '0'}}>Created By:</span>
+                                                    <span style={{fontSize: '0.875rem', color: 'var(--vz-body-color)', fontWeight: '500', textAlign: 'right'}}>{contact.createdByName || 'System'}</span>
+                                                </div>
+                                            </div>
                                         </CardBody>
                                     </Card>
 
                                     {/* Addresses Card */}
-                                    <Card className="border-0 shadow-sm mb-3">
+                                    <Card className="border shadow-sm mb-3">
                                         <CardBody>
-                                            <h6 className="card-title text-muted mb-3">
-                                                <i className="ri-map-pin-line me-2"></i>
+                                            <h6 className="text-muted mb-3 text-uppercase fw-semibold" style={{fontSize: '0.8rem', letterSpacing: '0.5px'}}>
+                                                <RiMapPinLine className="me-1" size={14} />
                                                 Addresses
                                             </h6>
-                                            <Row>
+                                            <Row className="g-2">
                                                 <Col md={6}>
                                                     <div className="border rounded p-3 bg-light h-100">
-                                                        <h6 className="text-primary mb-2">Billing Address</h6>
-                                                        <address className="mb-0 small">
+                                                        <h6 className="text-muted mb-2 text-uppercase fw-semibold" style={{fontSize: '0.8rem', letterSpacing: '0.5px'}}>Billing Address</h6>
+                                                        <address className="mb-0 small text-muted">
                                                             {contact.billingAddress1 || 'N/A'}<br />
                                                             {contact.billingAddress2 && <>{contact.billingAddress2}<br /></>}
                                                             {contact.billingCity && contact.billingState && (
@@ -410,8 +390,8 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                 </Col>
                                                 <Col md={6}>
                                                     <div className="border rounded p-3 bg-light h-100">
-                                                        <h6 className="text-success mb-2">Shipping Address</h6>
-                                                        <address className="mb-0 small">
+                                                        <h6 className="text-muted mb-2 text-uppercase fw-semibold" style={{fontSize: '0.8rem', letterSpacing: '0.5px'}}>Shipping Address</h6>
+                                                        <address className="mb-0 small text-muted">
                                                             {contact.shippingAddress1 || 'N/A'}<br />
                                                             {contact.shippingAddress2 && <>{contact.shippingAddress2}<br /></>}
                                                             {contact.shippingCity && contact.shippingState && (
@@ -428,32 +408,18 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
 
                                     {/* Notes Section - Only show if notes exist */}
                                     {contact.notes && (
-                                        <Card className="border-0 shadow-sm mb-3">
+                                        <Card className="border shadow-sm">
                                             <CardBody>
-                                                <h6 className="card-title text-muted mb-3">
-                                                    <i className="ri-file-text-line me-2"></i>
+                                                <h6 className="text-muted mb-3 text-uppercase fw-semibold" style={{fontSize: '0.8rem', letterSpacing: '0.5px'}}>
+                                                    <RiFileTextLine className="me-1" size={14} />
                                                     Notes
                                                 </h6>
-                                                <div className="bg-light rounded p-3">
-                                                    <p className="mb-0">{contact.notes}</p>
+                                                <div className="bg-light rounded p-3 border-start border-primary border-3">
+                                                    <p className="mb-0 small">{contact.notes}</p>
                                                 </div>
                                             </CardBody>
                                         </Card>
                                     )}
-
-                                    {/* Created By Information */}
-                                    <Card className="border-0 shadow-sm">
-                                        <CardBody className="bg-light">
-                                            <h6 className="card-title text-muted mb-2">
-                                                <i className="ri-user-line me-2"></i>
-                                                Record Information
-                                            </h6>
-                                            <div className="text-center">
-                                                <label className="form-label text-muted small">Created By</label>
-                                                <div className="fw-medium">{contact.createdByName || 'System'}</div>
-                                            </div>
-                                        </CardBody>
-                                    </Card>
                                 </div>
                             </TabPane>
 
@@ -476,10 +442,10 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                     <div className="text-center">
                                                         <h6 className="text-muted mb-2">Balance Status</h6>
                                                         <Badge 
-                                                            color={transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'danger'}
-                                                            className={`badge-soft-${transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'danger'}`}
+                                                            color={transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'warning'}
+                                                            className={`badge-soft-${transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'warning'}`}
                                                         >
-                                                            {transactionsSummary?.payableStatus === 'receivable' ? 'They owe us' : 'We owe them'}
+                                                            {transactionsSummary?.payableStatus === 'receivable' ? 'Receivable' : 'Payable'}
                                                         </Badge>
                                                     </div>
                                                 </Col>
@@ -489,7 +455,7 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
 
                                     {/* Pending Purchases Table */}
                                     <Card>
-                                        <div className="card-header d-flex justify-content-between align-items-center">
+                                        <div className="card-header d-flex justify-content-between align-items-center bg-light">
                                             <h6 className="mb-0">All Pending Transactions (Including Current Balance)</h6>
                                             {pendingTransactions.length > 0 && !showPaymentForm && (
                                                 <Button 
@@ -583,10 +549,10 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                                                     ₹{Math.abs(calculateTotalPayment().netAmount).toFixed(2)}
                                                                                 </div>
                                                                                 <Badge 
-                                                                                    color={calculateTotalPayment().type === 'payable' ? 'danger' : 'success'}
+                                                                                    color={calculateTotalPayment().type === 'payable' ? 'warning' : 'success'}
                                                                                     className="mt-1"
                                                                                 >
-                                                                                    {calculateTotalPayment().type === 'payable' ? 'We Pay' : 'We Receive'}
+                                                                                    {calculateTotalPayment().type === 'payable' ? 'Payable' : 'Receivable'}
                                                                                 </Badge>
                                                                             </div>
                                                                         </Col>
@@ -594,8 +560,8 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                                     <div className="text-center mt-2">
                                                                         <small className="text-muted">
                                                                             {calculateTotalPayment().type === 'payable' 
-                                                                                ? 'This is the amount you will pay to settle the selected transactions'
-                                                                                : 'This is the amount you will receive from the selected transactions'
+                                                                                ? 'Amount to be paid for selected transactions'
+                                                                                : 'Amount to be received from selected transactions'
                                                                             }
                                                                         </small>
                                                                     </div>
@@ -667,8 +633,8 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                                     </td>
                                                                     <td>
                                                                         <Badge 
-                                                                            color={transaction.balanceType === 'receivable' ? 'success' : 'danger'}
-                                                                            className={`badge-soft-${transaction.balanceType === 'receivable' ? 'success' : 'danger'}`}
+                                                                            color={transaction.balanceType === 'receivable' ? 'success' : 'warning'}
+                                                                            className={`badge-soft-${transaction.balanceType === 'receivable' ? 'success' : 'warning'}`}
                                                                         >
                                                                             {transaction.balanceType === 'receivable' ? 'Receivable' : 'Payable'}
                                                                         </Badge>
@@ -704,7 +670,7 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                 </Table>
                                             ) : (
                                                 <div className="text-center py-4 text-muted">
-                                                    <i className="ri-file-list-3-line" style={{ fontSize: '2rem' }}></i>
+                                                    <RiFileTextLine size={32} className="mb-2" />
                                                     <div className="mt-2">No pending transactions found</div>
                                                 </div>
                                             )}
@@ -716,17 +682,17 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                     </div>
                 )}
             </ModalBody>
-            <ModalFooter>
+            <ModalFooter className="py-2">
                 {showPaymentForm ? (
                     <>
-                        <Button color="secondary" onClick={handleCancelPayment} disabled={isSubmittingPayment}>
+                        <Button color="light" onClick={handleCancelPayment} disabled={isSubmittingPayment} className="px-3">
                             Cancel
                         </Button>
                         <Button 
                             color="primary" 
                             onClick={handlePaymentSubmit}
                             disabled={isSubmittingPayment || selectedTransactions.length === 0 || !selectedBankAccount}
-                            className="d-flex align-items-center"
+                            className="px-3"
                         >
                             {isSubmittingPayment ? (
                                 <>
@@ -742,9 +708,11 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                         </Button>
                     </>
                 ) : (
-                <Button color="secondary" onClick={toggle}>Close</Button>
+                    <Button color="light" onClick={toggle} className="px-3">Close</Button>
                 )}
             </ModalFooter>
+
+
         </Modal>
     );
 };

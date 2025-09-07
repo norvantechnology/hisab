@@ -13,7 +13,7 @@ export async function createPurchase(req, res) {
     date,
     taxType,
     rateType = 'without_tax',
-    discountType,
+    discountScope, // Changed from discountType to discountScope
     discountValueType = 'percentage',
     discountValue = 0,
     items,
@@ -149,14 +149,14 @@ export async function createPurchase(req, res) {
     const purchaseRes = await client.query(
       `INSERT INTO hisab."purchases"
        ("companyId", "userId", "bankAccountId", "contactId", "invoiceNumber", 
-        "invoiceDate", "taxType", "rateType", "discountType", "discountValueType", 
+        "invoiceDate", "taxType", "rateType", "discountScope", "discountValueType", 
         "discountValue", "roundOff", "internalNotes", "basicAmount", "totalDiscount", 
         "taxAmount", "transportationCharge", "netPayable", "status", "remaining_amount", "paid_amount")
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
        RETURNING id`,
       [
         companyId, userId, bankAccountId, contactId, invoiceNumber, date,
-        taxType, rateType, discountType, discountValueType, discountValue,
+        taxType, rateType, discountScope, discountValueType, discountValue,
         roundOff, internalNotes, basicAmount, totalDiscount, taxAmount,
         transportationCharge, netPayable, status, remainingAmount, paidAmount
       ]
@@ -165,17 +165,18 @@ export async function createPurchase(req, res) {
 
     for (const item of items) {
       const { productId, quantity: qty, rate, rateType: itemRateType, taxRate, taxAmount: itemTaxAmount,
-        discount, discountRate, total, serialNumbers = [] } = item;
+        discountType: itemDiscountType = 'rupees', discountValue: itemDiscountValue = 0, 
+        discountAmount: itemDiscountAmount = 0, total, serialNumbers = [] } = item;
 
       const purchaseItemResult = await client.query(
         `INSERT INTO hisab."purchase_items"
-         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discount", 
-         "discountRate", "taxRate", "taxAmount", "total", "serialNumbers")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discountType", 
+         "discountValue", "discountAmount", "taxRate", "taxAmount", "total", "serialNumbers")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
-          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, discount,
-          discountRate, taxRate, itemTaxAmount, total,
+          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, itemDiscountType,
+          itemDiscountValue, itemDiscountAmount, taxRate, itemTaxAmount, total,
           serialNumbers.length > 0 ? serialNumbers : null
         ]
       );
@@ -201,9 +202,9 @@ export async function createPurchase(req, res) {
         for (const serialNumber of serialNumbers) {
           await client.query(
             `INSERT INTO hisab."serialNumbers"
-             ("companyId", "productId", "serialNumber", "status", "purchaseDate", "purchaseItemId")
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [companyId, productId, serialNumber, 'in_stock', date, purchaseItemId]
+             ("companyId", "productId", "serialNumber", "status", "purchaseDate")
+             VALUES ($1, $2, $3, $4, $5)`,
+            [companyId, productId, serialNumber, 'in_stock', date]
           );
         }
       }
@@ -233,9 +234,6 @@ export async function createPurchase(req, res) {
     
     // Provide more specific error messages
     if (error.code === '23503') {
-      if (error.constraint === 'serialNumbers_purchaseItemId_fkey') {
-        return errorResponse(res, "Error creating serial numbers: Invalid purchase item reference", 400);
-      }
       return errorResponse(res, "Foreign key constraint violation", 400);
     } else if (error.code === '23505') {
       return errorResponse(res, "Duplicate entry found", 400);
@@ -270,7 +268,7 @@ export async function updatePurchase(req, res) {
     date,
     taxType,
     rateType = 'without_tax',
-    discountType,
+    discountScope, // Changed from discountType to discountScope
     discountValueType = 'percentage',
     discountValue = 0,
     items = [],
@@ -374,17 +372,21 @@ export async function updatePurchase(req, res) {
 
         for (const serialNumber of serialNumbers) {
           const existingSerial = await client.query(
-            `SELECT "id" FROM hisab."serialNumbers" 
-             WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3
-             AND ("purchaseItemId" NOT IN (
-               SELECT id FROM hisab."purchase_items" WHERE "purchaseId" = $4
-             ) OR "purchaseItemId" IS NULL)`,
-            [companyId, productId, serialNumber, purchaseId]
+            `SELECT "id", "status" FROM hisab."serialNumbers"
+             WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3`,
+            [companyId, productId, serialNumber]
           );
 
+          // Check if serial number already exists and is not available for purchase
           if (existingSerial.rows.length > 0) {
-            await client.query("ROLLBACK");
-            return errorResponse(res, `Serial number ${serialNumber} already exists for product ${productId}`, 400);
+            const existingRecord = existingSerial.rows[0];
+            
+            // If the serial number exists and is not available (sold, returned, defective), it's a conflict
+            if (existingRecord.status !== 'in_stock') {
+              await client.query("ROLLBACK");
+              return errorResponse(res, `Serial number ${serialNumber} is not available for product ${productId} (status: ${existingRecord.status})`, 400);
+            }
+            // If it exists and is in_stock, we can potentially use it (will be handled by the update logic)
           }
         }
       }
@@ -438,11 +440,16 @@ export async function updatePurchase(req, res) {
       );
 
       if (oldItem.isSerialized && oldItem.isInventoryTracked) {
-        await client.query(
-          `DELETE FROM hisab."serialNumbers"
-           WHERE "companyId" = $1 AND "productId" = $2 AND "purchaseItemId" = $3`,
-          [companyId, oldItem.productId, oldItem.id]
-        );
+        // For serialized products, we need to delete serial numbers based on the stored serialNumbers array
+        if (oldItem.serialNumbers && oldItem.serialNumbers.length > 0) {
+          for (const serialNumber of oldItem.serialNumbers) {
+            await client.query(
+              `DELETE FROM hisab."serialNumbers"
+               WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3 AND "status" = 'in_stock'`,
+              [companyId, oldItem.productId, serialNumber]
+            );
+          }
+        }
       }
     }
 
@@ -513,7 +520,7 @@ export async function updatePurchase(req, res) {
            "invoiceDate" = $4,
            "taxType" = $5,
            "rateType" = $6,
-           "discountType" = $7,
+           "discountScope" = $7,
            "discountValue" = $8,
            "discountValueType" = $9,
            "roundOff" = $10,
@@ -535,7 +542,7 @@ export async function updatePurchase(req, res) {
         date,
         taxType,
         rateType,
-        discountType,
+        discountScope,
         discountValue,
         discountValueType,
         roundOff,
@@ -562,21 +569,22 @@ export async function updatePurchase(req, res) {
         rateType: itemRateType,
         taxRate,
         taxAmount: itemTaxAmount,
-        discount,
-        discountRate,
+        discountType: itemDiscountType = 'rupees',
+        discountValue: itemDiscountValue = 0,
+        discountAmount: itemDiscountAmount = 0,
         total,
         serialNumbers = []
       } = item;
 
       const itemRes = await client.query(
         `INSERT INTO hisab."purchase_items"
-         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discount", 
-         "discountRate", "taxRate", "taxAmount", "total", "serialNumbers")
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ("purchaseId", "companyId", "productId", "qty", "rate", "rateType", "discountType", 
+         "discountValue", "discountAmount", "taxRate", "taxAmount", "total", "serialNumbers")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id`,
         [
-          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, discount,
-          discountRate, taxRate, itemTaxAmount, total,
+          purchaseId, companyId, productId, qty, rate, itemRateType || rateType, itemDiscountType,
+          itemDiscountValue, itemDiscountAmount, taxRate, itemTaxAmount, total,
           serialNumbers.length > 0 ? serialNumbers : null
         ]
       );
@@ -602,9 +610,9 @@ export async function updatePurchase(req, res) {
         for (const serialNumber of serialNumbers) {
           await client.query(
             `INSERT INTO hisab."serialNumbers"
-             ("companyId", "productId", "serialNumber", "status", "purchaseDate", "purchaseItemId")
-             VALUES ($1, $2, $3, $4, $5, $6)`,
-            [companyId, productId, serialNumber, 'in_stock', date, purchaseItemId]
+             ("companyId", "productId", "serialNumber", "status", "purchaseDate")
+             VALUES ($1, $2, $3, $4, $5)`,
+            [companyId, productId, serialNumber, 'in_stock', date]
           );
         }
       }
@@ -634,9 +642,6 @@ export async function updatePurchase(req, res) {
     
     // Provide more specific error messages
     if (error.code === '23503') {
-      if (error.constraint === 'serialNumbers_purchaseItemId_fkey') {
-        return errorResponse(res, "Error creating serial numbers: Invalid purchase item reference", 400);
-      }
       return errorResponse(res, "Foreign key constraint violation", 400);
     } else if (error.code === '23505') {
       return errorResponse(res, "Duplicate entry found", 400);
@@ -729,19 +734,22 @@ export async function deletePurchase(req, res) {
         }
 
         // For serialized products, check if serial numbers are still available
-        if (item.isSerialized) {
-          const serialsInStock = await client.query(
-            `SELECT COUNT(*) as count FROM hisab."serialNumbers"
-       WHERE "companyId" = $1 AND "productId" = $2 AND "purchaseItemId" = $3 AND "status" = 'in_stock'`,
-            [companyId, item.productId, item.id]
-          );
-
-          if (parseInt(serialsInStock.rows[0].count) < requiredQty) {
-            await client.query("ROLLBACK");
-            return errorResponse(res,
-              `Some serial numbers for product ID ${item.productId} have already been sold and cannot be deleted`,
-              400
+        if (item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0) {
+          // Check each serial number from the purchase item
+          for (const serialNumber of item.serialNumbers) {
+            const serialStatus = await client.query(
+              `SELECT "status" FROM hisab."serialNumbers"
+               WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3`,
+              [companyId, item.productId, serialNumber]
             );
+
+            if (serialStatus.rows.length === 0 || serialStatus.rows[0].status !== 'in_stock') {
+              await client.query("ROLLBACK");
+              return errorResponse(res,
+                `Serial number ${serialNumber} for product ID ${item.productId} has been sold or is not available and cannot be deleted`,
+                400
+              );
+            }
           }
         }
       }
@@ -760,12 +768,14 @@ export async function deletePurchase(req, res) {
         );
 
         // For serialized products, remove serial numbers
-        if (item.isSerialized) {
-          await client.query(
-            `DELETE FROM hisab."serialNumbers"
-             WHERE "companyId" = $1 AND "productId" = $2 AND "purchaseItemId" = $3`,
-            [companyId, item.productId, item.id]
-          );
+        if (item.isSerialized && item.serialNumbers && item.serialNumbers.length > 0) {
+          for (const serialNumber of item.serialNumbers) {
+            await client.query(
+              `DELETE FROM hisab."serialNumbers"
+               WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" = $3 AND "status" = 'in_stock'`,
+              [companyId, item.productId, serialNumber]
+            );
+          }
         }
       }
     }
@@ -908,12 +918,8 @@ export async function getPurchase(req, res) {
         let serialNumbers = [];
 
         if (item.isInventoryTracked && item.isSerialized) {
-          const serialsRes = await client.query(
-            `SELECT "serialNumber" FROM hisab."serialNumbers"
-             WHERE "companyId" = $1 AND "productId" = $2 AND "purchaseDate" = $3`,
-            [companyId, item.productId, purchase.invoiceDate]
-          );
-          serialNumbers = serialsRes.rows.map(row => row.serialNumber);
+          // Get serial numbers from the stored serialNumbers array in purchase_items
+          serialNumbers = item.serialNumbers || [];
         }
 
         return {
@@ -926,8 +932,9 @@ export async function getPurchase(req, res) {
           rateType: item.rateType || 'without_tax',
           taxRate: parseFloat(item.taxRate || 0),
           taxAmount: parseFloat(item.taxAmount || 0),
-          discount: parseFloat(item.discount || 0),
-          discountRate: parseFloat(item.discountRate || 0),
+          discountType: item.discountType || 'rupees',
+          discountValue: parseFloat(item.discountValue || 0),
+          discountAmount: parseFloat(item.discountAmount || 0),
           total: parseFloat(item.total || 0),
           isSerialized: item.isSerialized || false,
           isInventoryTracked: item.isInventoryTracked || false,
@@ -1191,7 +1198,7 @@ export async function listPurchases(req, res) {
         p."invoiceDate",
         p."taxType",
         p."rateType",
-        p."discountType",
+        p."discountScope",
         p."discountValueType",
         p."discountValue",
         p."roundOff",
@@ -1288,8 +1295,9 @@ export async function listPurchases(req, res) {
           pi."qty",
           pi."rate",
           pi."rateType",
-          pi."discount",
-          pi."discountRate",
+          pi."discountType",
+          pi."discountValue",
+          pi."discountAmount",
           pi."taxRate",
           pi."taxAmount",
           pi."total",
@@ -1306,40 +1314,8 @@ export async function listPurchases(req, res) {
 
       const itemsResult = await client.query(itemsQuery, [purchaseIds, companyId]);
 
-      // Get serial numbers if requested
-      let serialNumbersMap = new Map();
-      if (includeSerialNumbers === 'true') {
-        // Method 1: Try to get from serialNumbers table using purchaseItemId
-        // (This is the correct approach based on your create/update functions)
-        const serialsQuery = `
-          SELECT 
-            pi."id" as "purchaseItemId",
-            pi."purchaseId",
-            pi."productId",
-            COALESCE(
-              json_agg(
-                CASE 
-                  WHEN sn."serialNumber" IS NOT NULL 
-                  THEN sn."serialNumber" 
-                  ELSE NULL 
-                END
-              ) FILTER (WHERE sn."serialNumber" IS NOT NULL), 
-              '[]'::json
-            ) as "serialNumbers"
-          FROM hisab."purchase_items" pi
-          LEFT JOIN hisab."serialNumbers" sn ON sn."purchaseItemId" = pi."id" AND sn."companyId" = pi."companyId"
-          WHERE pi."purchaseId" = ANY($1) AND pi."companyId" = $2
-          GROUP BY pi."id", pi."purchaseId", pi."productId"
-        `;
-
-        const serialsResult = await client.query(serialsQuery, [purchaseIds, companyId]);
-
-        // Create a map for quick lookup
-        serialsResult.rows.forEach(row => {
-          const key = `${row.purchaseItemId}`;
-          serialNumbersMap.set(key, row.serialNumbers || []);
-        });
-      }
+      // Serial numbers are now stored directly in purchase_items table
+      // No need for separate query since includeSerialNumbers will be handled in item processing
 
       // Group items by purchase
       const itemsByPurchase = new Map();
@@ -1351,14 +1327,8 @@ export async function listPurchases(req, res) {
         // Get serial numbers for this item
         let serialNumbers = [];
         if (includeSerialNumbers === 'true') {
-          // First try from serialNumbers table
-          serialNumbers = serialNumbersMap.get(`${item.id}`) || [];
-
-          // If no serial numbers found in serialNumbers table and we have stored serial numbers
-          // (fallback for data stored directly in purchase_items table)
-          if (serialNumbers.length === 0 && item.storedSerialNumbers) {
-            serialNumbers = Array.isArray(item.storedSerialNumbers) ? item.storedSerialNumbers : [];
-          }
+          // Get serial numbers from the stored serialNumbers array in purchase_items
+          serialNumbers = Array.isArray(item.storedSerialNumbers) ? item.storedSerialNumbers : [];
         }
 
         itemsByPurchase.get(item.purchaseId).push({
@@ -1369,8 +1339,9 @@ export async function listPurchases(req, res) {
           quantity: item.qty,
           rate: parseFloat(item.rate || 0),
           rateType: item.rateType || 'without_tax',
-          discount: parseFloat(item.discount || 0),
-          discountRate: parseFloat(item.discountRate || 0),
+          discountType: item.discountType || 'rupees',
+          discountValue: parseFloat(item.discountValue || 0),
+          discountAmount: parseFloat(item.discountAmount || 0),
           taxRate: parseFloat(item.taxRate || 0),
           taxAmount: parseFloat(item.taxAmount || 0),
           total: parseFloat(item.total || 0),
@@ -1391,7 +1362,7 @@ export async function listPurchases(req, res) {
           invoiceDate: row.invoiceDate,
           taxType: row.taxType,
           rateType: row.rateType,
-          discountType: row.discountType,
+          discountScope: row.discountScope,
           discountValueType: row.discountValueType,
           discountValue: parseFloat(row.discountValue || 0),
           roundOff: parseFloat(row.roundOff || 0),

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col } from 'reactstrap';
-import { RiLoader4Line } from 'react-icons/ri';
+import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col, Card, CardBody, Badge } from 'reactstrap';
+import { RiLoader4Line, RiUserLine, RiMapPinLine, RiWalletLine, RiGlobalLine } from 'react-icons/ri';
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import { toast } from 'react-toastify';
@@ -265,330 +265,400 @@ An email has been sent to ${selectedContact.email}.`,
   };
 
   return (
-    <Modal isOpen={isOpen} toggle={toggle} size="lg">
-      <ModalHeader toggle={toggle}>
-        {isEditMode ? 'Edit Contact' : 'Create Contact'}
+    <Modal isOpen={isOpen} toggle={toggle} size="lg" className="contact-form-modal">
+      <ModalHeader toggle={toggle} className="pb-2">
+        <div className="d-flex align-items-center">
+          <div className="avatar-xs rounded bg-primary-subtle d-flex align-items-center justify-content-center me-2">
+            <RiUserLine className="text-primary" size={16} />
+          </div>
+          <div>
+            <h5 className="modal-title mb-0">
+              {isEditMode ? 'Edit Contact' : 'Add New Contact'}
+            </h5>
+            <p className="text-muted mb-0 small">
+              {isEditMode ? 'Update contact information' : 'Create a new contact'}
+            </p>
+          </div>
+        </div>
       </ModalHeader>
-      <ModalBody>
+      <ModalBody className="py-3">
         <Form onSubmit={handleFormSubmit}>
-          <Row>
-            <Col md={6}>
-              <FormGroup>
-                <Label>GSTIN</Label>
-                <Input
-                  type="text"
-                  name="gstin"
-                  placeholder="27AAHCS1234F1Z1"
-                  value={validation.values.gstin}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.gstin && !!validation.errors.gstin}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.gstin}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={6}>
-              <FormGroup>
-                <Label>Name <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="name"
-                  value={validation.values.name}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.name && !!validation.errors.name}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.name}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+          {/* Basic Information Section */}
+          <div className="form-section mb-3">
+            <h6 className="section-title mb-3">Basic Information</h6>
+            
+            <Row className="g-2">
+              <Col md={8}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Contact Name <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="name"
+                    placeholder="Enter contact name"
+                    value={validation.values.name}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.name && !!validation.errors.name}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.name}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Contact Type <span className="text-danger">*</span></Label>
+                  <Input
+                    type="select"
+                    name="contactType"
+                    value={validation.values.contactType}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.contactType && !!validation.errors.contactType}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  >
+                    {contactTypes.map(contactType => (
+                      <option key={contactType.value} value={contactType.value}>
+                        {contactType.label}
+                      </option>
+                    ))}
+                  </Input>
+                  <FormFeedback>{validation.errors.contactType}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
 
-          <Row>
-            <Col md={6}>
-              <FormGroup>
-                <Label>Mobile <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="mobile"
-                  value={validation.values.mobile}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.mobile && !!validation.errors.mobile}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.mobile}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={6}>
-              <FormGroup>
-                <Label>
-                  Email
-                  {validation.values.enablePortal && <span className="text-danger">*</span>}
-                </Label>
-                <Input
-                  type="email"
-                  name="email"
-                  value={validation.values.email}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.email && !!validation.errors.email}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.email}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+            <Row className="g-2">
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Mobile <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="mobile"
+                    placeholder="10-digit mobile number"
+                    value={validation.values.mobile}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.mobile && !!validation.errors.mobile}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.mobile}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">
+                    Email
+                    {validation.values.enablePortal && <span className="text-danger"> *</span>}
+                  </Label>
+                  <Input
+                    type="email"
+                    name="email"
+                    placeholder="contact@example.com"
+                    value={validation.values.email}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.email && !!validation.errors.email}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.email}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">GSTIN</Label>
+                  <Input
+                    type="text"
+                    name="gstin"
+                    placeholder="27AAHCS1234F1Z1"
+                    value={validation.values.gstin}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.gstin && !!validation.errors.gstin}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.gstin}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
 
-          <Row>
-            <Col md={4}>
-              <FormGroup>
-                <Label>Due Days</Label>
-                <Input
-                  type="number"
-                  name="dueDays"
-                  min="0"
-                  value={validation.values.dueDays}
-                  onChange={handleNumericChange('dueDays')}
-                  onBlur={handleNumericBlur('dueDays')}
-                  invalid={validation.touched.dueDays && !!validation.errors.dueDays}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.dueDays}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={4}>
-              <FormGroup>
-                <Label>Contact Type <span className="text-danger">*</span></Label>
-                <Input
-                  type="select"
-                  name="contactType"
-                  value={validation.values.contactType}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.contactType && !!validation.errors.contactType}
-                  disabled={isProcessing}
-                >
-                  {contactTypes.map(contactType => (
-                    <option key={contactType.value} value={contactType.value}>
-                      {contactType.label}
-                    </option>
-                  ))}
-                </Input>
-                <FormFeedback>{validation.errors.contactType}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+            <Row className="g-2">
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Due Days</Label>
+                  <Input
+                    type="number"
+                    name="dueDays"
+                    min="0"
+                    placeholder="0"
+                    value={validation.values.dueDays}
+                    onChange={handleNumericChange('dueDays')}
+                    onBlur={handleNumericBlur('dueDays')}
+                    invalid={validation.touched.dueDays && !!validation.errors.dueDays}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.dueDays}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={8}>
+                <FormGroup check className="mt-4">
+                  <Input
+                    type="checkbox"
+                    id="enablePortal"
+                    name="enablePortal"
+                    checked={validation.values.enablePortal}
+                    onChange={validation.handleChange}
+                    disabled={isProcessing}
+                    className="form-check-input-sm"
+                  />
+                  <Label check for="enablePortal" className="form-check-label-sm">
+                    Enable customer portal access
+                  </Label>
+                  {validation.values.enablePortal && (
+                    <small className="text-info d-block mt-1">
+                      Email address is required when portal access is enabled
+                    </small>
+                  )}
+                </FormGroup>
+              </Col>
+            </Row>
+          </div>
 
-          <h5 className="mt-4">Billing Address</h5>
-          <Row>
-            <Col md={12}>
-              <FormGroup>
-                <Label>Address Line 1 <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="billingAddress1"
-                  value={validation.values.billingAddress1}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingAddress1 && !!validation.errors.billingAddress1}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingAddress1}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+          {/* Billing Address Section */}
+          <div className="form-section mb-3">
+            <h6 className="section-title mb-3">
+              <RiMapPinLine className="me-1" size={14} />
+              Billing Address
+            </h6>
+            
+            <Row className="g-2">
+              <Col md={8}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Address Line 1 <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="billingAddress1"
+                    placeholder="Enter address line 1"
+                    value={validation.values.billingAddress1}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingAddress1 && !!validation.errors.billingAddress1}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingAddress1}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Address Line 2</Label>
+                  <Input
+                    type="text"
+                    name="billingAddress2"
+                    placeholder="Optional"
+                    value={validation.values.billingAddress2}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingAddress2 && !!validation.errors.billingAddress2}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingAddress2}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
 
-          <Row>
-            <Col md={12}>
-              <FormGroup>
-                <Label>Address Line 2</Label>
-                <Input
-                  type="text"
-                  name="billingAddress2"
-                  value={validation.values.billingAddress2}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingAddress2 && !!validation.errors.billingAddress2}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingAddress2}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+            <Row className="g-2">
+              <Col md={4}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">City <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="billingCity"
+                    placeholder="Enter city"
+                    value={validation.values.billingCity}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingCity && !!validation.errors.billingCity}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingCity}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={3}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Pincode <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="billingPincode"
+                    placeholder="000000"
+                    value={validation.values.billingPincode}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingPincode && !!validation.errors.billingPincode}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingPincode}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={3}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">State <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="billingState"
+                    placeholder="Enter state"
+                    value={validation.values.billingState}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingState && !!validation.errors.billingState}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingState}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={2}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Country <span className="text-danger">*</span></Label>
+                  <Input
+                    type="text"
+                    name="billingCountry"
+                    value={validation.values.billingCountry}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.billingCountry && !!validation.errors.billingCountry}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.billingCountry}</FormFeedback>
+                </FormGroup>
+              </Col>
+            </Row>
 
-          <Row>
-            <Col md={4}>
-              <FormGroup>
-                <Label>City <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="billingCity"
-                  value={validation.values.billingCity}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingCity && !!validation.errors.billingCity}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingCity}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={4}>
-              <FormGroup>
-                <Label>Pincode <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="billingPincode"
-                  value={validation.values.billingPincode}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingPincode && !!validation.errors.billingPincode}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingPincode}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={4}>
-              <FormGroup>
-                <Label>State <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="billingState"
-                  value={validation.values.billingState}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingState && !!validation.errors.billingState}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingState}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
+            <FormGroup check className="mt-2">
+              <Input
+                type="checkbox"
+                id="isShippingSame"
+                name="isShippingSame"
+                checked={validation.values.isShippingSame}
+                onChange={handleShippingSameChange}
+                disabled={isProcessing}
+                className="form-check-input-sm"
+              />
+              <Label check for="isShippingSame" className="form-check-label-sm">
+                Shipping address same as billing address
+              </Label>
+            </FormGroup>
+          </div>
 
-          <Row>
-            <Col md={12}>
-              <FormGroup>
-                <Label>Country <span className="text-danger">*</span></Label>
-                <Input
-                  type="text"
-                  name="billingCountry"
-                  value={validation.values.billingCountry}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.billingCountry && !!validation.errors.billingCountry}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.billingCountry}</FormFeedback>
-              </FormGroup>
-            </Col>
-          </Row>
-
-          <FormGroup check className="mt-3">
-            <Input
-              type="checkbox"
-              id="isShippingSame"
-              name="isShippingSame"
-              checked={validation.values.isShippingSame}
-              onChange={handleShippingSameChange}
-              disabled={isProcessing}
-            />
-            <Label check for="isShippingSame">
-              Shipping address same as billing address
-            </Label>
-          </FormGroup>
-
+          {/* Shipping Address Section */}
           {!validation.values.isShippingSame && (
-            <>
-              <h5 className="mt-4">Shipping Address</h5>
-              <Row>
-                <Col md={12}>
-                  <FormGroup>
-                    <Label>Address Line 1 <span className="text-danger">*</span></Label>
+            <div className="form-section mb-3">
+              <h6 className="section-title mb-3">
+                <RiGlobalLine className="me-1" size={14} />
+                Shipping Address
+              </h6>
+              
+              <Row className="g-2">
+                <Col md={8}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">Address Line 1 <span className="text-danger">*</span></Label>
                     <Input
                       type="text"
                       name="shippingAddress1"
+                      placeholder="Enter shipping address line 1"
                       value={validation.values.shippingAddress1}
                       onChange={validation.handleChange}
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingAddress1 && !!validation.errors.shippingAddress1}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingAddress1}</FormFeedback>
                   </FormGroup>
                 </Col>
-              </Row>
-
-              <Row>
-                <Col md={12}>
-                  <FormGroup>
-                    <Label>Address Line 2</Label>
+                <Col md={4}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">Address Line 2</Label>
                     <Input
                       type="text"
                       name="shippingAddress2"
+                      placeholder="Optional"
                       value={validation.values.shippingAddress2}
                       onChange={validation.handleChange}
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingAddress2 && !!validation.errors.shippingAddress2}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingAddress2}</FormFeedback>
                   </FormGroup>
                 </Col>
               </Row>
 
-              <Row>
+              <Row className="g-2">
                 <Col md={4}>
-                  <FormGroup>
-                    <Label>City <span className="text-danger">*</span></Label>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">City <span className="text-danger">*</span></Label>
                     <Input
                       type="text"
                       name="shippingCity"
+                      placeholder="Enter city"
                       value={validation.values.shippingCity}
                       onChange={validation.handleChange}
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingCity && !!validation.errors.shippingCity}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingCity}</FormFeedback>
                   </FormGroup>
                 </Col>
-                <Col md={4}>
-                  <FormGroup>
-                    <Label>Pincode <span className="text-danger">*</span></Label>
+                <Col md={3}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">Pincode <span className="text-danger">*</span></Label>
                     <Input
                       type="text"
                       name="shippingPincode"
+                      placeholder="000000"
                       value={validation.values.shippingPincode}
                       onChange={validation.handleChange}
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingPincode && !!validation.errors.shippingPincode}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingPincode}</FormFeedback>
                   </FormGroup>
                 </Col>
-                <Col md={4}>
-                  <FormGroup>
-                    <Label>State <span className="text-danger">*</span></Label>
+                <Col md={3}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">State <span className="text-danger">*</span></Label>
                     <Input
                       type="text"
                       name="shippingState"
+                      placeholder="Enter state"
                       value={validation.values.shippingState}
                       onChange={validation.handleChange}
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingState && !!validation.errors.shippingState}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingState}</FormFeedback>
                   </FormGroup>
                 </Col>
-              </Row>
-
-              <Row>
-                <Col md={12}>
-                  <FormGroup>
-                    <Label>Country <span className="text-danger">*</span></Label>
+                <Col md={2}>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">Country <span className="text-danger">*</span></Label>
                     <Input
                       type="text"
                       name="shippingCountry"
@@ -597,113 +667,105 @@ An email has been sent to ${selectedContact.email}.`,
                       onBlur={validation.handleBlur}
                       invalid={validation.touched.shippingCountry && !!validation.errors.shippingCountry}
                       disabled={isProcessing}
+                      className="form-control-sm"
                     />
                     <FormFeedback>{validation.errors.shippingCountry}</FormFeedback>
                   </FormGroup>
                 </Col>
               </Row>
-            </>
+            </div>
           )}
 
-          <h5 className="mt-4">Financial Details</h5>
-          <Row>
-            <Col md={6}>
-              <FormGroup>
-                <Label>Opening Balance</Label>
-                <Input
-                  type="number"
-                  name="openingBalance"
-                  min="0"
-                  step="0.01"
-                  value={validation.values.openingBalance}
-                  onChange={handleNumericChange('openingBalance')}
-                  onBlur={handleNumericBlur('openingBalance')}
-                  invalid={validation.touched.openingBalance && !!validation.errors.openingBalance}
-                  disabled={isProcessing}
-                />
-                <FormFeedback>{validation.errors.openingBalance}</FormFeedback>
-              </FormGroup>
-            </Col>
-            <Col md={6}>
-              <FormGroup>
-                <Label>
-                  Balance Type 
-                  {validation.values.openingBalance > 0 && <span className="text-danger">*</span>}
-                  {validation.values.openingBalance === 0 && <small className="text-success"> (Auto: Receivable)</small>}
-                </Label>
-                <Input
-                  type="select"
-                  name="openingBalanceType"
-                  value={validation.values.openingBalanceType}
-                  onChange={validation.handleChange}
-                  onBlur={validation.handleBlur}
-                  invalid={validation.touched.openingBalanceType && !!validation.errors.openingBalanceType}
-                  disabled={isProcessing}
-                >
+          {/* Financial Details Section */}
+          <div className="form-section mb-3">
+            <h6 className="section-title mb-3">
+              <RiWalletLine className="me-1" size={14} />
+              Financial Details
+            </h6>
+            
+            <Row className="g-2">
+              <Col md={6}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">Opening Balance</Label>
+                  <Input
+                    type="number"
+                    name="openingBalance"
+                    min="0"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={validation.values.openingBalance}
+                    onChange={handleNumericChange('openingBalance')}
+                    onBlur={handleNumericBlur('openingBalance')}
+                    invalid={validation.touched.openingBalance && !!validation.errors.openingBalance}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  />
+                  <FormFeedback>{validation.errors.openingBalance}</FormFeedback>
+                </FormGroup>
+              </Col>
+              <Col md={6}>
+                <FormGroup className="mb-2">
+                  <Label className="form-label-sm">
+                    Balance Type 
+                    {validation.values.openingBalance > 0 && <span className="text-danger"> *</span>}
+                  </Label>
+                  <Input
+                    type="select"
+                    name="openingBalanceType"
+                    value={validation.values.openingBalanceType}
+                    onChange={validation.handleChange}
+                    onBlur={validation.handleBlur}
+                    invalid={validation.touched.openingBalanceType && !!validation.errors.openingBalanceType}
+                    disabled={isProcessing}
+                    className="form-control-sm"
+                  >
+                    {validation.values.openingBalance > 0 && (
+                      <option value="none" disabled>Please Select Balance Type</option>
+                    )}
+                    {balanceTypes
+                      .filter(balanceType => 
+                        validation.values.openingBalance === 0 || balanceType.value !== 'none'
+                      )
+                      .map(balanceType => (
+                      <option key={balanceType.value} value={balanceType.value}>
+                        {balanceType.label}
+                      </option>
+                    ))}
+                  </Input>
+                  <FormFeedback>{validation.errors.openingBalanceType}</FormFeedback>
                   {validation.values.openingBalance > 0 && (
-                    <option value="none" disabled>Please Select Balance Type</option>
+                    <small className="text-warning">
+                      Please select Receivable or Payable when amount is greater than 0
+                    </small>
                   )}
-                  {balanceTypes
-                    .filter(balanceType => 
-                      validation.values.openingBalance === 0 || balanceType.value !== 'none'
-                    )
-                    .map(balanceType => (
-                    <option key={balanceType.value} value={balanceType.value}>
-                      {balanceType.label}
-                    </option>
-                  ))}
-                </Input>
-                <FormFeedback>{validation.errors.openingBalanceType}</FormFeedback>
-                {validation.values.openingBalance > 0 && (
-                  <small className="text-danger">
-                    Please select Receivable or Payable when amount is greater than 0
-                  </small>
-                )}
-                {validation.values.openingBalance === 0 && (
-                  <small className="text-success">
-                    Automatically set to Receivable when amount is 0
-                  </small>
-                )}
-              </FormGroup>
-            </Col>
-          </Row>
+                  {validation.values.openingBalance === 0 && (
+                    <small className="text-muted">
+                      Automatically set to Receivable when amount is 0
+                    </small>
+                  )}
+                </FormGroup>
+              </Col>
+            </Row>
+          </div>
 
-          <FormGroup check className="mt-3">
-            <Input
-              type="checkbox"
-              id="enablePortal"
-              name="enablePortal"
-              checked={validation.values.enablePortal}
-              onChange={validation.handleChange}
-              disabled={isProcessing}
-            />
-            <Label check for="enablePortal">
-              Enable customer portal access
-            </Label>
-            {validation.values.enablePortal && (
-              <small className="text-info d-block mt-1">
-                <i className="mdi mdi-information-outline me-1"></i>
-                Email address is required when portal access is enabled
-              </small>
-            )}
-          </FormGroup>
-
+          {/* Portal Access Section */}
           {isEditMode && selectedContact?.enablePortal && (
-            <div className="mt-3 p-3 bg-light rounded">
-              <h6 className="mb-2">Portal Access</h6>
-              <p className="text-muted small mb-2">
+            <div className="form-section mb-3">
+              <h6 className="section-title mb-3">Portal Access</h6>
+              <p className="text-muted small mb-3">
                 Generate a portal access token to send to the customer via email.
               </p>
               
-              <Row>
+              <Row className="g-2">
                 <Col md={6}>
-                  <FormGroup>
-                    <Label>Token Expiry Time</Label>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">Token Expiry Time</Label>
                     <Input
                       type="select"
                       id="tokenExpiry"
                       defaultValue="24"
                       disabled={isProcessing}
+                      className="form-control-sm"
                     >
                       {PORTAL_EXPIRY_OPTIONS.map(option => (
                         <option key={option.value} value={option.value}>
@@ -714,11 +776,11 @@ An email has been sent to ${selectedContact.email}.`,
                   </FormGroup>
                 </Col>
                 <Col md={6}>
-                  <FormGroup>
-                    <Label>&nbsp;</Label>
+                  <FormGroup className="mb-2">
+                    <Label className="form-label-sm">&nbsp;</Label>
                     <div>
                       <Button
-                        color="outline-primary"
+                        color="primary"
                         size="sm"
                         onClick={() => {
                           const expirySelect = document.getElementById('tokenExpiry');
@@ -726,7 +788,7 @@ An email has been sent to ${selectedContact.email}.`,
                           handleGeneratePortalAccess(expiryHours);
                         }}
                         disabled={isProcessing || isGeneratingToken}
-                        style={{ width: '100%' }}
+                        className="w-100 btn-sm-compact"
                       >
                         {isGeneratingToken ? (
                           <>
@@ -734,7 +796,7 @@ An email has been sent to ${selectedContact.email}.`,
                             Generating...
                           </>
                         ) : (
-                          'Generate Portal Access Token'
+                          'Generate Token'
                         )}
                       </Button>
                     </div>
@@ -744,47 +806,191 @@ An email has been sent to ${selectedContact.email}.`,
             </div>
           )}
 
-          <FormGroup>
-            <Label>Notes</Label>
-            <Input
-              type="textarea"
-              name="notes"
-              rows="3"
-              value={validation.values.notes}
-              onChange={validation.handleChange}
-              onBlur={validation.handleBlur}
-              placeholder="Additional notes about this contact"
-              disabled={isProcessing}
-            />
-          </FormGroup>
-
-          <ModalFooter>
-            <Button
-              color="light"
-              onClick={toggle}
-              disabled={isProcessing}
-            >
-              Cancel
-            </Button>
-            <Button
-              color="primary"
-              type="submit"
-              disabled={isProcessing}
-            >
-              {isProcessing ? (
-                <>
-                  <RiLoader4Line className="spin me-1" />
-                  {isEditMode ? 'Updating...' : 'Creating...'}
-                </>
-              ) : (
-                isEditMode ? 'Update Contact' : 'Create Contact'
-              )}
-            </Button>
-          </ModalFooter>
+          {/* Notes Section */}
+          <div className="form-section">
+            <h6 className="section-title mb-3">Additional Information</h6>
+            <FormGroup className="mb-0">
+              <Label className="form-label-sm">Notes</Label>
+              <Input
+                type="textarea"
+                name="notes"
+                rows="2"
+                value={validation.values.notes}
+                onChange={validation.handleChange}
+                onBlur={validation.handleBlur}
+                placeholder="Additional notes about this contact"
+                disabled={isProcessing}
+                className="form-control-sm"
+              />
+            </FormGroup>
+          </div>
         </Form>
       </ModalBody>
+      
+      <ModalFooter className="py-2">
+        <Button
+          color="light"
+          onClick={toggle}
+          disabled={isProcessing}
+          className="px-3"
+        >
+          Cancel
+        </Button>
+        <Button
+          color="primary"
+          type="submit"
+          disabled={isProcessing}
+          className="px-3"
+        >
+          {isProcessing ? (
+            <>
+              <RiLoader4Line className="spin me-1" />
+              {isEditMode ? 'Updating...' : 'Creating...'}
+            </>
+          ) : (
+            isEditMode ? 'Update Contact' : 'Create Contact'
+          )}
+        </Button>
+      </ModalFooter>
+
+      <style jsx>{`
+        .contact-form-modal .modal-content {
+          border-radius: 8px;
+          box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .avatar-xs {
+          width: 1.75rem;
+          height: 1.75rem;
+        }
+
+        .bg-primary-subtle {
+          background-color: rgba(13, 110, 253, 0.1) !important;
+        }
+
+        .form-section {
+          background: var(--vz-body-bg);
+          border: 1px solid var(--vz-border-color);
+          border-radius: 6px;
+          padding: 0.75rem;
+        }
+
+        .section-title {
+          color: var(--vz-secondary-color);
+          font-size: 0.8rem;
+          font-weight: 600;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin: 0;
+        }
+
+        .form-control-sm {
+          font-size: 0.875rem;
+          padding: 0.375rem 0.75rem;
+          height: 32px;
+        }
+
+        .form-label-sm {
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: var(--vz-secondary-color);
+          margin-bottom: 0.25rem;
+        }
+
+        .form-check-input-sm {
+          transform: scale(0.9);
+        }
+
+        .form-check-label-sm {
+          font-size: 0.875rem;
+          font-weight: 500;
+        }
+
+        .btn-sm-compact {
+          font-size: 0.75rem;
+          padding: 0.25rem 0.5rem;
+          line-height: 1.2;
+        }
+
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </Modal>
   );
 };
 
 export default ContactForm;
+
+/* Add styles for the redesigned form */
+const styles = `
+  .contact-form-modal .modal-content {
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  }
+
+  .avatar-xs {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .bg-primary-subtle {
+    background-color: rgba(13, 110, 253, 0.1) !important;
+  }
+
+  .form-section {
+    background: var(--vz-body-bg);
+    border: 1px solid var(--vz-border-color);
+    border-radius: 6px;
+    padding: 0.75rem;
+  }
+
+  .section-title {
+    color: var(--vz-secondary-color);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+  }
+
+  .form-control-sm {
+    font-size: 0.875rem;
+    padding: 0.375rem 0.75rem;
+    height: 32px;
+  }
+
+  .form-label-sm {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--vz-secondary-color);
+    margin-bottom: 0.25rem;
+  }
+
+  .form-check-input-sm {
+    transform: scale(0.9);
+  }
+
+  .form-check-label-sm {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .btn-sm-compact {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+    line-height: 1.2;
+  }
+`;
+
+// Inject styles
+if (typeof document !== 'undefined') {
+  const styleElement = document.createElement('style');
+  styleElement.textContent = styles;
+  document.head.appendChild(styleElement);
+}

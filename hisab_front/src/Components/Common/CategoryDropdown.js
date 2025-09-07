@@ -1,4 +1,4 @@
-import React from 'react';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                import React from 'react';
 import ReactSelect from 'react-select';
 
 const CategoryDropdown = ({
@@ -85,20 +85,20 @@ const CategoryDropdown = ({
                 option: (provided, state) => ({
                     ...provided,
                     backgroundColor: state.isSelected 
-                        ? '#007bff' 
+                        ? 'var(--vz-primary)' 
                         : state.isFocused && state.data.isAddOption 
-                        ? '#f8f9fa' 
+                        ? 'var(--vz-light-bg-subtle)' 
                         : state.isFocused 
-                        ? '#e9ecef' 
-                        : 'white',
+                        ? 'var(--vz-secondary-bg)' 
+                        : 'var(--vz-body-bg)',
                     color: state.isSelected 
                         ? 'white' 
                         : state.data.isAddOption 
-                        ? '#007bff' 
-                        : '#495057',
+                        ? 'var(--vz-primary)' 
+                        : 'var(--vz-body-color)',
                     cursor: 'pointer',
                     '&:hover': {
-                        backgroundColor: state.data.isAddOption ? '#f8f9fa' : '#e9ecef'
+                        backgroundColor: state.data.isAddOption ? 'var(--vz-light-bg-subtle)' : 'var(--vz-secondary-bg)'
                     }
                 })
             }}

@@ -321,17 +321,23 @@ const BankAccountContactDropdown = ({
               <div {...props}>
                 {children}
                 <div 
-                  className="p-2 text-center border-top"
-                  style={{ 
-                    backgroundColor: '#ffffff', 
-                    borderTop: '1px solid #dee2e6',
-                    cursor: 'pointer'
-                  }}
+                  className="add-contact-option"
                   onClick={() => setIsContactModalOpen(true)}
                 >
-                  <div className="text-primary">
-                    <RiUserLine className="me-2" />
-                    Add New Contact
+                  <div className="d-flex align-items-center">
+                    <div className="option-icon me-2">
+                      <span className="text-muted" style={{ fontSize: '14px' }}>
+                        <RiUserLine />
+                      </span>
+                    </div>
+                    <div className="option-content">
+                      <div className="option-title text-primary">
+                        Add New Contact
+                      </div>
+                      <div className="option-subtitle">
+                        Create a new contact
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -352,32 +358,60 @@ const BankAccountContactDropdown = ({
           return "No options";
         }}
         styles={{
+          control: (provided, state) => ({
+            ...provided,
+            minHeight: '36px',
+            fontSize: '0.875rem',
+            border: state.isFocused ? '1px solid var(--vz-primary)' : '1px solid var(--vz-border-color)',
+            boxShadow: state.isFocused ? '0 0 0 0.2rem rgba(13, 110, 253, 0.1)' : 'none',
+            '&:hover': {
+              borderColor: 'var(--vz-primary)'
+            }
+          }),
           menu: (provided) => ({
             ...provided,
-            border: '1px solid #dee2e6',
-            borderRadius: '8px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
-            overflow: 'hidden'
+            border: '1px solid var(--vz-border-color)',
+            borderRadius: '6px',
+            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
+            overflow: 'hidden',
+            zIndex: 1050
           }),
           option: (provided, state) => ({
             ...provided,
-            backgroundColor: state.isFocused ? '#e3f2fd' : 'white',
-            color: '#333',
-            padding: '6px 12px',
-            borderBottom: '1px solid #f0f0f0',
+            backgroundColor: state.isFocused ? 'var(--vz-light-bg-subtle)' : 'var(--vz-body-bg)',
+            color: 'var(--vz-body-color)',
+            padding: '8px 12px',
+            fontSize: '0.875rem',
             cursor: 'pointer',
+            borderBottom: '1px solid var(--vz-border-color)',
             '&:hover': {
-              backgroundColor: '#e3f2fd'
+              backgroundColor: 'var(--vz-light-bg-subtle)'
+            },
+            '&:last-child': {
+              borderBottom: 'none'
             }
           }),
           groupHeading: (provided) => ({
             ...provided,
             margin: 0,
-            padding: 0
+            padding: 0,
+            fontSize: '0.75rem',
+            fontWeight: 600
           }),
           menuList: (provided) => ({
             ...provided,
-            padding: 0
+            padding: 0,
+            maxHeight: '200px'
+          }),
+          placeholder: (provided) => ({
+            ...provided,
+            color: 'var(--vz-secondary-color)',
+            fontSize: '0.875rem'
+          }),
+          singleValue: (provided) => ({
+            ...provided,
+            fontSize: '0.875rem',
+            color: 'var(--vz-body-color)'
           })
         }}
         formatOptionLabel={(option) => {
@@ -390,28 +424,40 @@ const BankAccountContactDropdown = ({
             const account = option.account;
             const accountType = ACCOUNT_TYPES[account.accountType] || ACCOUNT_TYPES.bank;
             return (
-              <div className="d-flex align-items-center py-0">
-                <span className={`text-${accountType.color} me-2`} style={{ fontSize: '16px' }}>
-                  {getAccountIcon(account.accountType)}
-                </span>
-                <div>
-                  <div className="fw-medium">
-                    {account.accountName} ({ACCOUNT_TYPES[account.accountType]?.label || account.accountType})
-                    {!account.isActive && <span className="text-danger ms-2">(Inactive)</span>}
+              <div className="d-flex align-items-center">
+                <div className="option-icon me-2">
+                  <span className="text-muted" style={{ fontSize: '14px' }}>
+                    {getAccountIcon(account.accountType)}
+                  </span>
+                </div>
+                <div className="option-content">
+                  <div className="option-title">
+                    {account.accountName}
+                    {!account.isActive && <span className="text-danger ms-1">(Inactive)</span>}
+                  </div>
+                  <div className="option-subtitle">
+                    {ACCOUNT_TYPES[account.accountType]?.label || account.accountType}
                   </div>
                 </div>
               </div>
             );
           } else if (option.type === 'contact' && option.contact) {
             return (
-              <div className="d-flex align-items-center py-0">
-                <span className="text-info me-2" style={{ fontSize: '16px' }}>
-                  {getContactIcon()}
-                </span>
-                <div>
-                  <div className="fw-medium">
-                    {option.contact.name}{option.contact.gstin ? ` (${option.contact.gstin})` : ''}
+              <div className="d-flex align-items-center">
+                <div className="option-icon me-2">
+                  <span className="text-muted" style={{ fontSize: '14px' }}>
+                    {getContactIcon()}
+                  </span>
+                </div>
+                <div className="option-content">
+                  <div className="option-title">
+                    {option.contact.name}
                   </div>
+                  {option.contact.gstin && (
+                    <div className="option-subtitle">
+                      GSTIN: {option.contact.gstin}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -421,13 +467,8 @@ const BankAccountContactDropdown = ({
           return option.label || '';
         }}
         formatGroupLabel={(data) => (
-          <div className="d-flex align-items-center fw-bold text-primary py-1 px-2" style={{ 
-            backgroundColor: '#f8f9fa', 
-            borderBottom: '2px solid #dee2e6',
-            marginTop: '4px',
-            fontSize: '14px'
-          }}>
-            {data.label}
+          <div className="group-header">
+            <span className="group-title">{data.label}</span>
           </div>
         )}
       />
@@ -441,6 +482,86 @@ const BankAccountContactDropdown = ({
         onSubmit={handleContactSubmit}
         isLoading={isCreatingContact}
       />
+
+      <style jsx>{`
+        .option-icon {
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+
+        .option-content {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .option-title {
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: var(--vz-body-color);
+          line-height: 1.2;
+          margin-bottom: 0.125rem;
+        }
+
+        .option-subtitle {
+          font-size: 0.75rem;
+          color: var(--vz-secondary-color);
+          line-height: 1.1;
+        }
+
+        .group-header {
+          background: var(--vz-light-bg-subtle);
+          padding: 0.5rem 0.75rem;
+          border-bottom: 1px solid var(--vz-border-color);
+          margin: 0;
+        }
+
+        .group-title {
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: var(--vz-body-color);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .add-contact-option {
+          background: var(--vz-light-bg-subtle);
+          border-top: 1px solid var(--vz-border-color);
+          padding: 0.75rem;
+          cursor: pointer;
+          transition: background-color 0.2s ease;
+        }
+
+        .add-contact-option:hover {
+          background: var(--vz-secondary-bg);
+        }
+
+        .react-select-container {
+          position: relative;
+        }
+
+        .react-select__menu {
+          border-radius: 6px;
+          overflow: hidden;
+        }
+
+        .react-select__option {
+          transition: background-color 0.2s ease;
+        }
+
+        .react-select__group-heading {
+          padding: 0;
+          margin: 0;
+        }
+
+        .react-select__control--is-focused {
+          border-color: var(--vz-primary) !important;
+          box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.1) !important;
+        }
+      `}</style>
     </>
   );
 };

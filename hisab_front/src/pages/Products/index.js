@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast, ToastContainer } from 'react-toastify';
 import { RiDownload2Line, RiAddLine, RiUpload2Line } from 'react-icons/ri';
+import { useSearchParams } from 'react-router-dom';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ProductForm from '../../Components/Products/ProductForm';
 import ProductTable from '../../Components/Products/ProductTable';
@@ -20,6 +21,7 @@ import useCompanySelectionState from '../../hooks/useCompanySelection';
 import { sampleProductData, productFields } from '../../data/productData';
 
 const ProductsPage = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
     // State management
     const [state, setState] = useState({
         products: [],
@@ -82,6 +84,22 @@ const ProductsPage = () => {
 
     // Use the modern company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
+
+    // Check for add parameter and auto-open add form
+    useEffect(() => {
+        const shouldAdd = searchParams.get('add');
+        if (shouldAdd === 'true') {
+            // Clear the parameter from URL
+            setSearchParams({});
+            // Open the add form
+            setState(prev => ({
+                ...prev,
+                isEditMode: false,
+                selectedProduct: null,
+                modals: { ...prev.modals, main: true }
+            }));
+        }
+    }, [searchParams, setSearchParams]);
 
     // Fetch categories and tax categories
     const fetchCategories = async () => {

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast, ToastContainer } from 'react-toastify';
 import { RiDownload2Line, RiAddLine, RiUpload2Line } from 'react-icons/ri';
+import { useSearchParams } from 'react-router-dom';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ContactsFilter from '../../Components/Contacts/ContactsFilter';
 import ContactsTable from '../../Components/Contacts/ContactsTable';
@@ -20,6 +21,7 @@ import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const ContactsPage = () => {
     document.title = "Contacts | Vyavhar - React Admin & Dashboard Template";
+    const [searchParams, setSearchParams] = useSearchParams();
 
     const [state, setState] = useState({
         contacts: [],
@@ -92,6 +94,22 @@ const ContactsPage = () => {
 
     // Use the new company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
+
+    // Check for add parameter and auto-open add form
+    useEffect(() => {
+        const shouldAdd = searchParams.get('add');
+        if (shouldAdd === 'true') {
+            // Clear the parameter from URL
+            setSearchParams({});
+            // Open the add form
+            setState(prev => ({
+                ...prev,
+                modal: true,
+                isEdit: false,
+                selectedContact: null
+            }));
+        }
+    }, [searchParams, setSearchParams]);
 
     // API calls with loading states
     const fetchData = async () => {

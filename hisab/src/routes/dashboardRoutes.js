@@ -2,10 +2,8 @@ import express from 'express';
 import pool from '../config/dbConnection.js';
 import { 
   getBusinessAnalytics, 
-  getCashFlowAnalytics, 
-  getProductPerformance, 
   getQuickStats,
-  getDashboardFilters
+  exportDashboardData
 } from '../controllers/dashboardController.js';
 import { authenticateUser } from '../middleware/index.js';
 
@@ -71,10 +69,8 @@ router.get('/debug-sales', async (req, res) => {
 });
 
 // Business Analytics Dashboard Routes
-router.get('/filters', getDashboardFilters);
 router.get('/analytics', getBusinessAnalytics);
-router.get('/cash-flow', getCashFlowAnalytics);
-router.get('/product-performance', getProductPerformance);
 router.get('/quick-stats', getQuickStats);
+router.get('/export', exportDashboardData);
 
 export default router; 

@@ -19,7 +19,6 @@ async function checkNewColumnsExist(client) {
 }
 
 export async function createPayment(req, res) {
-  console.log('💳 createPayment received request body:', req.body);
   
   const {
     contactId,
@@ -31,15 +30,6 @@ export async function createPayment(req, res) {
     transactionAllocations
   } = req.body;
 
-  console.log('📋 Extracted fields:', {
-    contactId,
-    bankAccountId,
-    date,
-    description,
-    adjustmentType,
-    adjustmentValue,
-    transactionAllocationsLength: transactionAllocations?.length
-  });
 
   const { companyId, id: currentUserId } = req.currentUser || {};
 
@@ -53,7 +43,6 @@ export async function createPayment(req, res) {
   if (!transactionAllocations?.length) missingFields.push('transactionAllocations');
   
   if (missingFields.length > 0) {
-    console.log('❌ Missing fields:', missingFields);
     return errorResponse(res, `Required fields are missing: ${missingFields.join(', ')}`, 400);
   }
   if (adjustmentType && !['discount', 'extra_receipt', 'surcharge', 'none'].includes(adjustmentType)) {
@@ -474,7 +463,6 @@ export async function createPayment(req, res) {
     // OPTIMIZATION 7: Generate PDF asynchronously (don't wait for it)
     setImmediate(async () => {
       try {
-        console.log(`🚀 Generating PDF for payment ${newPaymentId} asynchronously...`);
         const pdfUrl = await generatePaymentPDFInternal(newPaymentId, companyId);
         
         const pdfClient = await pool.connect();
@@ -485,7 +473,6 @@ export async function createPayment(req, res) {
              WHERE "id" = $2 AND "companyId" = $3`,
             [pdfUrl, newPaymentId, companyId]
           );
-          console.log(`✅ PDF generated and saved for payment ${newPaymentId}`);
         } finally {
           pdfClient.release();
         }
@@ -894,12 +881,10 @@ export async function updatePayment(req, res) {
     await client.query("COMMIT");
 
     // Wait for PDF regeneration to complete before returning response
-    console.log(`🚀 Regenerating PDF for payment ${id} before returning response...`);
     let pdfRegenerationResult = null;
     
     try {
       const pdfUrl = await generatePaymentPDFInternal(id, companyId);
-      console.log(`📄 PDF regenerated successfully: ${pdfUrl}`);
       
       // Update payment record with PDF URL using a new connection
       const pdfClient = await pool.connect();
@@ -910,7 +895,6 @@ export async function updatePayment(req, res) {
            WHERE "id" = $2 AND "companyId" = $3`,
           [pdfUrl, id, companyId]
         );
-        console.log(`✅ PDF URL updated in database for payment ${id}. API response ready.`);
         pdfRegenerationResult = { success: true, pdfUrl };
       } finally {
         pdfClient.release();
@@ -1423,7 +1407,6 @@ export async function deletePayment(req, res) {
 
   } catch (error) {
     await client.query("ROLLBACK");
-    console.error("Payment deletion error:", error);
     return errorResponse(res, "Error deleting payment", 500);
   } finally {
     client.release();
@@ -1564,7 +1547,8 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(purchase.remainingAmount) || parseFloat(purchase.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: purchase.id,
+          id: `purchase_${purchase.id}`, // Create unique ID with type prefix
+          originalId: purchase.id, // Keep original ID for backend operations
           type: 'purchase',
           description: `Purchase#${purchase.invoiceNumber}`,
           amount: parseFloat(purchase.amount),
@@ -1582,7 +1566,8 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(sale.remainingAmount) || parseFloat(sale.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: sale.id,
+          id: `sale_${sale.id}`, // Create unique ID with type prefix
+          originalId: sale.id, // Keep original ID for backend operations
           type: 'sale',
           description: `Sale#${sale.invoiceNumber}`,
           amount: parseFloat(sale.amount),
@@ -1597,43 +1582,36 @@ export async function getPendingTransactions(req, res) {
 
     // Add pending expenses (amounts we owe them)
     pendingExpenses.rows.forEach(expense => {
-      const amount = parseFloat(expense.amount);
-      if (amount > 0) {
+      const pendingAmount = parseFloat(expense.remainingAmount) || parseFloat(expense.amount);
+      if (pendingAmount > 0) {
         transactions.push({
-          id: expense.id,
+          id: `expense_${expense.id}`, // Create unique ID with type prefix
+          originalId: expense.id, // Keep original ID for backend operations
           type: 'expense',
-          description: `Expense: ${expense.categoryName || 'Uncategorized'}`,
-          amount: amount,
-          paidAmount: 0,
+          description: `Expense#${expense.id}`,
+          amount: parseFloat(expense.amount),
+          paidAmount: parseFloat(expense.paidAmount) || 0,
           balanceType: 'payable', // We owe them for expenses
           date: expense.date,
-          dueDate: expense.dueDate,
-          pendingAmount: amount,
-          notes: expense.notes,
-          categoryName: expense.categoryName
+          pendingAmount: pendingAmount
         });
       }
     });
 
     // Add pending incomes (amounts they owe us)
     pendingIncomes.rows.forEach(income => {
-      const totalAmount = parseFloat(income.amount);
-      const paidAmount = parseFloat(income.paid_amount || 0);
-      const pendingAmount = parseFloat(income.remaining_amount || totalAmount);
-      
+      const pendingAmount = parseFloat(income.remainingAmount) || parseFloat(income.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: income.id,
+          id: `income_${income.id}`, // Create unique ID with type prefix
+          originalId: income.id, // Keep original ID for backend operations
           type: 'income',
-          description: `Income: ${income.categoryName || 'Uncategorized'}`,
-          amount: totalAmount,
-          paidAmount: paidAmount,
+          description: `Income#${income.id}`,
+          amount: parseFloat(income.amount),
+          paidAmount: parseFloat(income.paidAmount) || 0,
           balanceType: 'receivable', // They owe us for incomes
           date: income.date,
-          dueDate: income.dueDate,
-          pendingAmount: pendingAmount,
-          notes: income.notes,
-          categoryName: income.categoryName
+          pendingAmount: pendingAmount
         });
       }
     });
@@ -1650,14 +1628,6 @@ export async function getPendingTransactions(req, res) {
     const netPendingAmount = totalPendingPayable - totalPendingReceivable;
     const netBalanceType = netPendingAmount >= 0 ? 'payable' : 'receivable';
 
-    // Debug logging
-    console.log('=== Pending Transactions Debug ===');
-    console.log('Current Balance:', currentBalance, 'Type:', contact.currentBalanceType);
-    console.log('Total Pending Payable:', totalPendingPayable);
-    console.log('Total Pending Receivable:', totalPendingReceivable);
-    console.log('Net Pending Amount:', netPendingAmount);
-    console.log('Net Balance Type:', netBalanceType);
-    console.log('Transactions count:', transactions.length);
     transactions.forEach((t, i) => {
       console.log(`Transaction ${i + 1}:`, t.description, 'Amount:', t.pendingAmount, 'Type:', t.balanceType);
     });
@@ -1865,7 +1835,6 @@ export async function listPayments(req, res) {
     }
 
     const client = await pool.connect();
-
     try {
       // Execute both queries in parallel
       const [paymentsResult, countResult] = await Promise.all([
@@ -1919,11 +1888,15 @@ export async function listPayments(req, res) {
                 pur."invoiceNumber" as "purchaseInvoiceNumber",
                 pur."remaining_amount" as "purchasePendingAmount",
                 pur."status" as "purchaseStatus",
+                pur."invoiceDate" as "purchaseDate",
+                pur."netPayable" as "purchaseOriginalAmount",
                 pur_contact."name" as "purchaseSupplierName",
                 -- Sale data
                 s."invoiceNumber" as "saleInvoiceNumber",
                 s."remaining_amount" as "salePendingAmount",
                 s."status" as "saleStatus",
+                s."invoiceDate" as "saleDate",
+                s."netReceivable" as "saleOriginalAmount",
                 s_contact."name" as "saleCustomerName",
                 -- Expense data
                 exp."amount" as "expenseAmount",
@@ -1968,6 +1941,8 @@ export async function listPayments(req, res) {
                 pur."invoiceNumber" as "purchaseInvoiceNumber",
                 pur."remaining_amount" as "purchasePendingAmount",
                 pur."status" as "purchaseStatus",
+                pur."invoiceDate" as "purchaseDate",
+                pur."netPayable" as "purchaseOriginalAmount",
                 pur_contact."name" as "purchaseSupplierName"
               FROM hisab."payment_allocations" pa
               LEFT JOIN hisab."purchases" pur ON pa."purchaseId" = pur."id" AND pa."allocationType" = 'purchase'
@@ -2012,16 +1987,24 @@ export async function listPayments(req, res) {
             }
 
             // Transform allocation data based on transaction type
-            let transformedAllocation = { ...allocation };
+            let transformedAllocation = { 
+              ...allocation,
+              originalAmount: allocation.amount, // Add originalAmount for PaymentViewModal
+              type: allocation.allocationType, // Add type alias for allocationType
+              date: null // Will be set based on transaction type
+            };
             
             switch (allocation.allocationType) {
               case 'current-balance':
                 transformedAllocation.description = 'Current Balance Settlement';
                 transformedAllocation.reference = 'Current Balance';
                 transformedAllocation.transactionId = 'current-balance';
+                transformedAllocation.date = new Date().toISOString(); // Current date for balance
+                transformedAllocation.originalAmount = allocation.amount;
                 if (contactBalances[allocation.paymentId]) {
                   transformedAllocation.pendingAmount = contactBalances[allocation.paymentId].pendingAmount;
                   transformedAllocation.balanceType = contactBalances[allocation.paymentId].balanceType;
+                  transformedAllocation.originalAmount = contactBalances[allocation.paymentId].pendingAmount || allocation.amount;
                 }
                 break;
                 
@@ -2033,8 +2016,10 @@ export async function listPayments(req, res) {
                   `Invoice #${allocation.purchaseInvoiceNumber}` : 
                   `Purchase #${allocation.purchaseId}`;
                 transformedAllocation.pendingAmount = allocation.purchasePendingAmount;
+                transformedAllocation.originalAmount = allocation.purchaseOriginalAmount || allocation.amount;
                 transformedAllocation.status = allocation.purchaseStatus;
                 transformedAllocation.transactionId = allocation.purchaseId;
+                transformedAllocation.date = allocation.purchaseDate;
                 break;
                 
               case 'sale':
@@ -2045,41 +2030,49 @@ export async function listPayments(req, res) {
                   `Invoice #${allocation.saleInvoiceNumber}` : 
                   `Sale #${allocation.saleId}`;
                 transformedAllocation.pendingAmount = allocation.salePendingAmount;
+                transformedAllocation.originalAmount = allocation.saleOriginalAmount || allocation.amount;
                 transformedAllocation.status = allocation.saleStatus;
                 transformedAllocation.transactionId = allocation.saleId;
+                transformedAllocation.date = allocation.saleDate;
                 break;
                 
               case 'expense':
                 transformedAllocation.description = 'Expense Payment';
                 transformedAllocation.reference = `Expense #${allocation.expenseId}`;
                 transformedAllocation.pendingAmount = allocation.expenseAmount;
+                transformedAllocation.originalAmount = allocation.expenseAmount || allocation.amount;
                 transformedAllocation.status = allocation.expenseStatus;
                 transformedAllocation.transactionId = allocation.expenseId;
+                transformedAllocation.date = allocation.expenseDate;
                 break;
                 
               case 'income':
                 transformedAllocation.description = 'Income Receipt';
                 transformedAllocation.reference = `Income #${allocation.incomeId}`;
                 transformedAllocation.pendingAmount = allocation.incomeAmount;
+                transformedAllocation.originalAmount = allocation.incomeAmount || allocation.amount;
                 transformedAllocation.status = allocation.incomeStatus;
                 transformedAllocation.transactionId = allocation.incomeId;
+                transformedAllocation.date = allocation.incomeDate;
                 break;
                 
               default:
                 transformedAllocation.description = 'Payment allocation';
                 transformedAllocation.reference = 'Unknown';
+                transformedAllocation.originalAmount = allocation.amount;
                 transformedAllocation.transactionId = null;
+                transformedAllocation.date = new Date().toISOString();
             }
 
             allocationsByPayment[allocation.paymentId].push(transformedAllocation);
           });
 
           payments.forEach(payment => {
-            payment.allocations = allocationsByPayment[payment.id] || [];
+            payment.transactions = allocationsByPayment[payment.id] || [];
           });
         } else {
           payments.forEach(payment => {
-            payment.allocations = [];
+            payment.transactions = [];
           });
         }
       }
@@ -2359,7 +2352,6 @@ export async function generatePaymentInvoicePDF(req, res) {
 
     // If PDF doesn't exist or force regenerate is requested, generate new PDF
     if (!pdfUrl || forceRegenerate) {
-      console.log(`Generating ${forceRegenerate ? 'new' : 'missing'} PDF for payment ${paymentId}`);
       
       const newPdfUrl = await generatePaymentPDFInternal(paymentId, companyId);
       

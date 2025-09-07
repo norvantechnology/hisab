@@ -71,7 +71,7 @@ const PortalProfile = ({ contactData }) => {
         <h2 style={{ marginBottom: '0.5rem', fontWeight: 'bold', color: '#2c3e50' }}>
           Profile Information
         </h2>
-        <p style={{ color: '#6c757d', fontSize: '0.875rem' }}>
+        <p style={{ color: 'var(--vz-secondary-color)', fontSize: '0.875rem' }}>
           Your account details and contact information
         </p>
       </div>
@@ -102,11 +102,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Name:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Name:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.name || 'N/A'}</span>
               </div>
             </Col>
@@ -116,11 +116,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Email:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Email:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.email || 'N/A'}</span>
               </div>
             </Col>
@@ -130,11 +130,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Phone:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Phone:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.phone || 'N/A'}</span>
               </div>
             </Col>
@@ -144,11 +144,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Contact Type:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Contact Type:</span>
                 <Badge color={contact.type === 'customer' ? 'success' : 'primary'}>
                   {contact.type || 'N/A'}
                 </Badge>
@@ -184,11 +184,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Address:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Address:</span>
                 <span style={{ fontWeight: 'bold', textAlign: 'right' }}>
                   {contact.address || 'N/A'}
                 </span>
@@ -200,11 +200,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>City:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>City:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.city || 'N/A'}</span>
               </div>
             </Col>
@@ -214,11 +214,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>State:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>State:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.state || 'N/A'}</span>
               </div>
             </Col>
@@ -228,11 +228,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Pincode:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Pincode:</span>
                 <span style={{ fontWeight: 'bold' }}>{contact.pincode || 'N/A'}</span>
               </div>
             </Col>
@@ -265,11 +265,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Opening Balance:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Opening Balance:</span>
                 <span style={{ fontWeight: 'bold' }}>
                   {formatCurrency(contact.openingBalance || 0)}
                 </span>
@@ -281,11 +281,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Opening Balance Type:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Opening Balance Type:</span>
                 <Badge color={contact.openingBalanceType === 'receivable' ? 'success' : 'danger'}>
                   {contact.openingBalanceType === 'receivable' ? 'Credit' : 
                    contact.openingBalanceType === 'payable' ? 'Debit' : 
@@ -299,11 +299,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Current Balance:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Current Balance:</span>
                 <span style={{ 
                   fontWeight: 'bold',
                   color: contact.currentBalanceType === 'receivable' ? '#28a745' : '#dc3545'
@@ -318,11 +318,11 @@ const PortalProfile = ({ contactData }) => {
                 justifyContent: 'space-between',
                 alignItems: 'center',
                 padding: '0.5rem',
-                background: '#f8f9fa',
+                background: 'var(--vz-light-bg-subtle)',
                 borderRadius: '6px',
                 marginBottom: '0.5rem'
               }}>
-                <span style={{ color: '#6c757d' }}>Balance Type:</span>
+                <span style={{ color: 'var(--vz-secondary-color)' }}>Balance Type:</span>
                 <Badge color={contact.currentBalanceType === 'receivable' ? 'success' : 'danger'}>
                   {contact.currentBalanceType === 'receivable' ? 'Credit' : 
                    contact.currentBalanceType === 'payable' ? 'Debit' : 

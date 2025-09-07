@@ -583,7 +583,7 @@ const ItemModal = ({
                 onKeyDown={handleKeyPress}
                 placeholder="0"
                 invalid={!!errors.discountRate}
-              />
+                />
               <Button
                 color={itemDiscountType === 'percentage' ? 'primary' : 'outline-secondary'}
                 size="sm"
@@ -652,7 +652,7 @@ const ItemModal = ({
             <Col md={4}>
               <Label className="form-label fw-medium small">Count: {serialNumbers.length}</Label>
               <div className="small text-muted">Stock: {localCurrentItem?.currentStock || 0}</div>
-            </Col>
+          </Col>
         </Row>
 
           {/* Added Serial Numbers */}

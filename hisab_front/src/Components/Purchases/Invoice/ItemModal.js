@@ -63,9 +63,13 @@ const ItemModal = ({
         setSerialNumbers([]);
       }
       
-      // Initialize rate input
+            // Initialize rate input - use the rate as-is since it should already be in the correct format
       if (currentItem.rate !== undefined && currentItem.rate !== null) {
-        setRateInput(String(currentItem.rate));
+        const displayRate = parseFloat(currentItem.rate);
+        
+
+        
+        setRateInput(String(displayRate.toFixed(2)));
       } else {
         setRateInput('');
       }
@@ -92,9 +96,10 @@ const ItemModal = ({
         setSerialNumbers(currentItem.serialNumbers);
       }
       
-      // Update rate input
+            // Update rate input - use the rate as-is since it should already be in the correct format
       if (currentItem.rate !== undefined && currentItem.rate !== null) {
-        setRateInput(String(currentItem.rate));
+        const displayRate = parseFloat(currentItem.rate);
+        setRateInput(String(displayRate.toFixed(2)));
       }
       
       // Update discount rate input
@@ -389,13 +394,13 @@ const ItemModal = ({
     const discountRate = parseFloat(discountRateInput);
     const validDiscountRate = !isNaN(discountRate) && discountRate > 0 ? discountRate : 0;
 
-    // Use the common tax calculation function
+        // Use the common tax calculation function
     const result = calculateItemTaxAndTotal({
       rate: validRate,
       quantity,
       taxRate,
       discountRate: validDiscountRate,
-              rateType: validation.values.rateType || 'without_tax', // Use main form's rateType
+      rateType: validation.values.rateType || 'without_tax', // Always use form's current rateType for calculations
       discountValueType: 'percentage', // Purchase modals use percentage discount
       discountValue: validDiscountRate
     });
@@ -720,18 +725,16 @@ const ItemModal = ({
   ]);
 
   const handleSave = useCallback(() => {
-    console.log('=== handleSave called ===');
-    console.log('localCurrentItem:', localCurrentItem);
-    console.log('rateInput:', rateInput);
-    console.log('discountRateInput:', discountRateInput);
-    console.log('calculatedValues:', calculatedValues);
-    
     if (!validateForm()) {
-      console.log('Validation failed, errors:', errors);
       return;
     }
+
+    // Store the rate based on the current form's rate type interpretation
+    let rateToStore = parseFloat(rateInput) || 0;
+    const formRateType = rateType || 'without_tax'; // Use current form's rate type
+    const itemTaxRate = parseFloat(localCurrentItem?.taxRate) || 0;
     
-    console.log('Validation passed, calling saveItem');
+
 
     const itemToSave = {
       ...localCurrentItem,
@@ -739,9 +742,9 @@ const ItemModal = ({
       code: localCurrentItem?.code,
       serialNumbers: localCurrentItem?.isSerialized ? serialNumbers : undefined,
       quantity: localCurrentItem?.isSerialized ? serialNumbers.length : localCurrentItem?.quantity,
-      rate: parseFloat(rateInput) || 0,
-      rateType: localCurrentItem?.rateType || 'without_tax', // Preserve rateType
-      taxRate: localCurrentItem?.taxRate || 0, // Preserve taxRate
+      rate: rateToStore, // Store rate according to current form's rate type interpretation
+      rateType: formRateType, // Use current form's rate type
+      taxRate: itemTaxRate, // Preserve taxRate
       discountRate: parseFloat(discountRateInput) || 0,
       subtotal: calculatedValues.subtotal,
       discount: calculatedValues.discount,
@@ -749,7 +752,6 @@ const ItemModal = ({
       total: calculatedValues.total
     };
 
-    console.log('Item to save:', itemToSave);
     saveItem(itemToSave);
   }, [localCurrentItem, serialNumbers, saveItem, validateForm, calculatedValues, rateInput, discountRateInput, errors]);
 

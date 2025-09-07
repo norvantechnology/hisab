@@ -17,20 +17,11 @@ export const getQuickStats = () => {
     });
 };
 
-// Get cash flow analytics with optional period
-export const getCashFlowAnalytics = (period = '6months') => {
+// Export dashboard data
+export const exportDashboardData = (format = 'csv', filters = {}) => {
     return apiCall({
         method: 'get',
-        endpoint: '/dashboard/cash-flow',
-        params: { period }
-    });
-};
-
-// Get product performance analytics
-export const getProductPerformance = (period = '3months') => {
-    return apiCall({
-        method: 'get',
-        endpoint: '/dashboard/product-performance',
-        params: { period }
+        endpoint: '/dashboard/export',
+        params: { format, ...filters }
     });
 };

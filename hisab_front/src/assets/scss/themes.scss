@@ -312,4 +312,107 @@ input:-webkit-autofill:active{
   }
 }
 
+/* Global React-Select Theme Support */
+.react-select-container {
+  .react-select__control {
+    border-color: var(--#{$prefix}border-color);
+    background-color: var(--#{$prefix}body-bg);
+    
+    &:hover {
+      border-color: var(--#{$prefix}primary);
+    }
+    
+    &--is-focused {
+      border-color: var(--#{$prefix}primary);
+      box-shadow: 0 0 0 0.2rem rgba(var(--#{$prefix}primary-rgb), 0.1);
+    }
+  }
+  
+  .react-select__menu {
+    background-color: var(--#{$prefix}body-bg);
+    border: 1px solid var(--#{$prefix}border-color);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+  }
+  
+  .react-select__option {
+    background-color: var(--#{$prefix}body-bg);
+    color: var(--#{$prefix}body-color);
+    
+    &--is-focused {
+      background-color: var(--#{$prefix}light-bg-subtle);
+    }
+    
+    &--is-selected {
+      background-color: var(--#{$prefix}primary);
+      color: white;
+    }
+  }
+  
+  .react-select__single-value {
+    color: var(--#{$prefix}body-color);
+  }
+  
+  .react-select__placeholder {
+    color: var(--#{$prefix}secondary-color);
+  }
+  
+  .react-select__input-container {
+    color: var(--#{$prefix}body-color);
+  }
+}
+
+/* Dark theme specific overrides */
+[data-bs-theme="dark"] {
+  .react-select-container {
+    .react-select__menu {
+      box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1);
+    }
+    
+    .react-select__option {
+      &--is-focused {
+        background-color: var(--#{$prefix}dark-bg-subtle);
+      }
+    }
+  }
+}
+
+/* Common Theme Utilities for Consistent Styling */
+.badge-simple {
+  background-color: var(--#{$prefix}light-bg-subtle) !important;
+  color: var(--#{$prefix}secondary-color) !important;
+  border: 1px solid var(--#{$prefix}border-color) !important;
+}
+
+.info-section {
+  background: var(--#{$prefix}body-bg) !important;
+  border: 1px solid var(--#{$prefix}border-color) !important;
+}
+
+.section-title {
+  color: var(--#{$prefix}secondary-color) !important;
+}
+
+.description-content,
+.address-content {
+  background: var(--#{$prefix}light-bg-subtle) !important;
+}
+
+.form-section {
+  background: var(--#{$prefix}body-bg) !important;
+  border: 1px solid var(--#{$prefix}border-color) !important;
+}
+
+/* Dark theme overrides for common utilities */
+[data-bs-theme="dark"] {
+  .badge-simple {
+    background-color: var(--#{$prefix}dark-bg-subtle) !important;
+    color: var(--#{$prefix}light-text-emphasis) !important;
+  }
+  
+  .description-content,
+  .address-content {
+    background: var(--#{$prefix}dark-bg-subtle) !important;
+  }
+}
+
 
