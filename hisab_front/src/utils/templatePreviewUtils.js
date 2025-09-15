@@ -13,7 +13,13 @@ export const generateSampleData = (moduleType, companyInfo = {}) => {
         companyName: 'Norvan Technology',
         companyAddress: '203, platinum point, surat, gujarat, 394101',
         companyGstin: 'GSTIN123456789', // Show in preview
-        companyLogoUrl: companyInfo?.logoUrl, // Use actual logo URL or undefined for proper conditional
+        companyLogoUrl: (() => {
+          const logoUrl = companyInfo?.logoUrl;
+          if (!logoUrl || logoUrl.trim() === '') {
+            return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+          }
+          return logoUrl;
+        })(), // Return null when no logo to properly hide logo sections
         invoiceNumber: 'SI-0012',
         invoiceDate: today,
         customerName: 'જ્યોતિના કાર્ડિયમ',
@@ -54,7 +60,13 @@ export const generateSampleData = (moduleType, companyInfo = {}) => {
         companyName: 'Sample Company',
         companyAddress: 'Address Line 1, City, State - 000000',
         companyGstin: 'GSTIN123456789',
-        companyLogoUrl: companyInfo?.logoUrl, // Use actual logo URL or undefined for proper conditional
+        companyLogoUrl: (() => {
+          const logoUrl = companyInfo?.logoUrl;
+          if (!logoUrl || logoUrl.trim() === '') {
+            return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+          }
+          return logoUrl;
+        })(), // Return null when no logo to properly hide logo sections
         invoiceNumber: 'PI-0001',
         invoiceDate: today,
         supplierName: 'Sample Supplier',
@@ -98,7 +110,13 @@ export const generateSampleData = (moduleType, companyInfo = {}) => {
         companyName: 'Sample Company',
         companyAddress: 'Address Line 1, City, State - 000000',
         companyGstin: 'GSTIN123456789',
-        companyLogoUrl: companyInfo?.logoUrl, // Use actual logo URL or undefined for proper conditional
+        companyLogoUrl: (() => {
+          const logoUrl = companyInfo?.logoUrl;
+          if (!logoUrl || logoUrl.trim() === '') {
+            return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+          }
+          return logoUrl;
+        })(), // Return null when no logo to properly hide logo sections
         receiptNumber: 'RCP-0001',
         receiptDate: today,
         customerName: 'Sample Customer',

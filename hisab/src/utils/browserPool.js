@@ -41,7 +41,14 @@ class BrowserPool {
         '--disable-renderer-backgrounding',
         '--disable-features=TranslateUI',
         '--disable-default-apps',
-        '--disable-sync'
+        '--disable-sync',
+        // Font-related arguments for better Unicode support
+        '--font-render-hinting=none',
+        '--disable-font-subpixel-positioning',
+        '--enable-font-antialiasing',
+        '--force-color-profile=srgb',
+        // Allow access to system fonts
+        '--disable-features=VizDisplayCompositor'
       ]
     });
   }

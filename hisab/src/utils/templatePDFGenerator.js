@@ -720,14 +720,13 @@ export const createSalesInvoiceTemplateData = (invoiceData) => {
     ].filter(Boolean).join(', '),
     companyGstin: company?.gstin || '',
     companyLogoUrl: (() => {
-      const logoUrl = company?.logoUrl || undefined;
-      console.log('🖼️ Logo URL Debug:', { 
-        originalLogoUrl: company?.logoUrl, 
-        processedLogoUrl: logoUrl,
-        companyName: company?.name 
-      });
+      // Return null/undefined if no logo exists to properly hide logo sections
+      const logoUrl = company?.logoUrl;
+      if (!logoUrl || logoUrl.trim() === '') {
+        return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+      }
       return logoUrl;
-    })(), // Don't show placeholder if no logo
+    })(),
 
     // Invoice details
     invoiceNumber: sale?.invoiceNumber || '',
@@ -834,7 +833,13 @@ export const createPurchaseInvoiceTemplateData = (invoiceData) => {
       company?.pincode
     ].filter(Boolean).join(', '),
     companyGstin: company?.gstin || '',
-    companyLogoUrl: company?.logoUrl || undefined,
+    companyLogoUrl: (() => {
+      const logoUrl = company?.logoUrl;
+      if (!logoUrl || logoUrl.trim() === '') {
+        return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+      }
+      return logoUrl;
+    })(),
     companyPan: company?.pan || 'ABCDE1234F',
     companyCin: company?.cin || 'U12345AB1234PTC123456',
 
@@ -972,7 +977,13 @@ export const createPaymentReceiptTemplateData = (paymentData) => {
       company?.pincode
     ].filter(Boolean).join(', '),
     companyGstin: company?.gstin || '',
-    companyLogoUrl: company?.logoUrl || undefined,
+    companyLogoUrl: (() => {
+      const logoUrl = company?.logoUrl;
+      if (!logoUrl || logoUrl.trim() === '') {
+        return null; // This will make {{#companyLogoUrl}} conditional blocks hide
+      }
+      return logoUrl;
+    })(),
     companyPan: company?.pan || 'ABCDE1234F',
     companyCin: company?.cin || 'U12345AB1234PTC123456',
 
