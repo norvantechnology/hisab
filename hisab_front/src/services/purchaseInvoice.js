@@ -17,7 +17,7 @@ export const createPurchase = async (data) => {
 export const updatePurchases = async (data) => {
     return apiCall({
         method: 'put',
-        endpoint: '/purchase/updatePurchases',
+        endpoint: '/purchase/updatePurchase',
         data,
     });
 };
@@ -43,11 +43,18 @@ export const getNextInvoiceNumber = async () => {
     });
 };
 
-export const generatePurchaseInvoicePDF = async (purchaseId) => {
+export const generatePurchaseInvoicePDF = async (purchaseId, copies = 2) => {
     return apiCall({
         method: 'get',
         endpoint: '/purchase/generateInvoicePDF',
-        params: { id: purchaseId }
+        params: { id: purchaseId, copies: copies }
+    });
+};
+
+export const getPurchaseInvoiceForPrint = async (purchaseId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/purchase/getInvoiceForPrint/${purchaseId}`
     });
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { Container, Row, Col, Card, CardBody, Button, Alert } from "reactstrap";
-import { RiAddLine, RiCloseLine, RiDownload2Line } from "react-icons/ri";
+import { Container, Row, Col, Card, CardBody, Button, Alert, Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
+import { RiAddLine, RiCloseLine, RiDownload2Line, RiSettings3Line } from "react-icons/ri";
 import { toast,ToastContainer } from "react-toastify";
 import { useSearchParams } from 'react-router-dom';
 import ExportCSVModal from "../../../Components/Common/ExportCSVModal";
@@ -14,13 +14,18 @@ import SalesInvoiceFilter from "../../../Components/Sales/Invoice/SalesInvoiceFi
 import ShareModal from "../../../Components/Common/ShareModal";
 import DeleteModal from "../../../Components/Common/DeleteModal";
 import PaymentForm from "../../../Components/Payments/PaymentForm";
+import PrintPreferencesManager from "../../../Components/Common/PrintPreferencesManager";
+
 
 // Services & Utils
-import { listSales, createSale, updateSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice } from "../../../services/salesInvoice";
+import { listSales, createSale, updateSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice, getSalesInvoiceForPrint } from "../../../services/salesInvoice";
+import { getTemplates } from "../../../services/templates";
+import { generatePreviewHTML, adjustTemplateForCopies, generateMultipleCopies } from "../../../utils/templatePreviewUtils";
 import { createPayment } from '../../../services/payment';
 import { getBankAccounts } from '../../../services/bankAccount';
 import { getContacts } from '../../../services/contacts';
 import { listProducts } from '../../../services/products';
+import { getDefaultCopies } from '../../../services/copyPreferences';
 import useCompanySelectionState from '../../../hooks/useCompanySelection';
 import { getCurrentMonthRange } from '../../../utils/dateUtils';
 import Loader from '../../../Components/Common/Loader';
@@ -54,7 +59,8 @@ const SalesInvoicePage = () => {
             view: false,
             export: false,
             payment: false,
-            share: false
+            share: false,
+            settings: false
         },
         selectedInvoice: null,
         isEditMode: false,
@@ -310,13 +316,132 @@ const SalesInvoicePage = () => {
         }
     };
 
-    const handleGeneratePDF = async (invoice) => {
+    const handlePrint = async (invoice) => {
         try {
+            // Direct print with user's default copies (no popup)
+            const copyPreferenceResponse = await getDefaultCopies('sales');
+            const defaultCopies = copyPreferenceResponse.defaultCopies || 2;
+            
+            // Use the view modal's direct print logic
+            const invoiceResponse = await getSalesInvoiceForPrint(invoice.id);
+            if (!invoiceResponse.success) {
+                toast.error('Failed to fetch invoice data for printing');
+                return;
+            }
+
+            // Get default template
+            const templatesResponse = await getTemplates('sales');
+            const templates = templatesResponse.templates || [];
+            const defaultTemplate = templates.find(t => t.default === true);
+            
+            if (!defaultTemplate) {
+                toast.error('No default template found. Please set a default template first.');
+                return;
+            }
+
+            // Process template and print directly
+            const invoiceData = invoiceResponse.invoiceData;
+            
+
+            
+            let processedHtml = generatePreviewHTML(defaultTemplate, invoiceData);
+            processedHtml = adjustTemplateForCopies(processedHtml, defaultCopies);
+            
+            if (defaultCopies > 1) {
+                processedHtml = generateMultipleCopies(processedHtml, defaultCopies);
+            }
+
+            // Add print CSS
+            const pageSetupCSS = `
+                <style>
+                    @page { size: A4 portrait; margin: 3mm; }
+                    body { width: 794px; height: 1123px; margin: 0; padding: 0; background: white; font-family: 'Noto Sans Gujarati', Arial, sans-serif; }
+                    @media print {
+                        body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .invoice-container { page-break-inside: avoid; }
+                        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    }
+                </style>
+            </head>`;
+            processedHtml = processedHtml.replace('</head>', pageSetupCSS);
+
+            // Open print window
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(processedHtml);
+            printWindow.document.close();
+            
+            // Wait for content and images to load then print
+            printWindow.onload = () => {
+                // Wait for all images to load
+                const images = printWindow.document.images;
+                let loadedImages = 0;
+                const totalImages = images.length;
+                
+                if (totalImages === 0) {
+                    // No images, print immediately
+                    setTimeout(() => {
+                        printWindow.focus();
+                        printWindow.print();
+                        printWindow.close();
+                        toast.success(`Invoice printed with ${defaultCopies} ${defaultCopies === 1 ? 'copy' : 'copies'}!`);
+                    }, 300);
+                    return;
+                }
+                
+                const checkAllImagesLoaded = () => {
+                    loadedImages++;
+                    if (loadedImages >= totalImages) {
+                        // All images loaded, now print
+                        setTimeout(() => {
+                            printWindow.focus();
+                            printWindow.print();
+                            printWindow.close();
+                            toast.success(`Invoice printed with ${defaultCopies} ${defaultCopies === 1 ? 'copy' : 'copies'}!`);
+                        }, 500);
+                    }
+                };
+                
+                // Add load event listeners to all images
+                Array.from(images).forEach((img, index) => {
+                    if (img.complete) {
+                        checkAllImagesLoaded();
+                    } else {
+                        img.addEventListener('load', checkAllImagesLoaded);
+                        img.addEventListener('error', checkAllImagesLoaded); // Also proceed on error
+                        
+                        // Fallback timeout for stuck images
+                        setTimeout(() => {
+                            if (loadedImages < totalImages) {
+                                console.log(`Image ${index} taking too long, proceeding with print`);
+                                checkAllImagesLoaded();
+                            }
+                        }, 3000);
+                    }
+                });
+            };
+
+        } catch (error) {
+            console.error('Print error:', error);
+            toast.error('Failed to print invoice');
+        }
+    };
+
+    const handleGeneratePDF = async (invoice, copies = null) => {
+        try {
+            let finalCopies = copies;
+            
+            // If no copies specified, get user's default copy preference
+            if (!finalCopies) {
+                const copyPreferenceResponse = await getDefaultCopies('sales');
+                finalCopies = copyPreferenceResponse.defaultCopies || 2;
+            }
+            
+            // Generate PDF with specified or default copies
             setState(prev => ({ ...prev, pdfLoading: invoice.id }));
-            const response = await generateSalesInvoicePDF(invoice.id);
+            const response = await generateSalesInvoicePDF(invoice.id, finalCopies);
 
             if (response.success) {
-                toast.success("Sales invoice PDF generated successfully!");
+                toast.success(`Sales invoice PDF generated with ${finalCopies} ${finalCopies === 1 ? 'copy' : 'copies'}!`);
                 downloadSalesPDF(response.pdfUrl, response.fileName);
             } else {
                 throw new Error(response.message || "Failed to generate PDF");
@@ -342,6 +467,14 @@ const SalesInvoicePage = () => {
             modals: { ...prev.modals, payment: true }
         }));
     };
+
+    // Make handleCreatePayment available globally for the modal
+    useEffect(() => {
+        window.handleCreatePayment = handleCreatePayment;
+        return () => {
+            delete window.handleCreatePayment;
+        };
+    }, []);
 
     const handleShare = (invoice) => {
         setState(prev => ({
@@ -505,6 +638,13 @@ const SalesInvoicePage = () => {
                 <Row className="mb-3">
                     <Col sm={12}>
                         <div className="d-flex flex-column flex-sm-row justify-content-end gap-2 sales-invoice-actions">
+                            <PrintPreferencesManager 
+                                moduleType="sales" 
+                                size="small"
+                                onPreferencesChange={() => {
+                                    console.log('Print preferences updated for sales module');
+                                }}
+                            />
                             <Button 
                                 color="primary" 
                                 onClick={() => toggleModal('export', true)}
@@ -538,6 +678,7 @@ const SalesInvoicePage = () => {
                         onDelete={handleDeleteClick}
                         onGeneratePDF={handleGeneratePDF}
                         onCreatePayment={handleCreatePayment}
+                        onPrint={handlePrint}
                         onShare={handleShare}
                         pdfLoading={pdfLoading}
                     />
@@ -597,6 +738,8 @@ const SalesInvoicePage = () => {
                     onShare={handleShareInvoice}
                     isLoading={apiLoading}
                 />
+
+
             </Container>
         </div>
     );

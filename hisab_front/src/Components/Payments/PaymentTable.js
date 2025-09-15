@@ -1,9 +1,19 @@
 import React, { useMemo, useState } from 'react';
-import { Card, CardBody, Badge, Alert } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine } from 'react-icons/ri';
+import { Card, CardBody, Badge, Alert, Button } from 'reactstrap';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiPrinterLine, RiDownload2Line } from 'react-icons/ri';
 import TableContainer from '../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
-import PaymentPDFButton from '../Common/PaymentPDFButton';
+
+// Add CSS for spinner animation
+const spinnerStyle = `
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+`;
 
 const PaymentTable = ({ 
   payments, 
@@ -12,7 +22,10 @@ const PaymentTable = ({
   onPageChange, 
   onView, 
   onEdit, 
-  onDelete 
+  onDelete,
+  onGeneratePDF,
+  onPrint,
+  pdfLoading = null
 }) => {
     const [pdfAlert, setPdfAlert] = useState(null);
 
@@ -153,17 +166,39 @@ const PaymentTable = ({
         {
             header: "Action",
             accessorKey: "action",
-            cell: (cell) => (
-                <div className="d-flex gap-2 align-items-center">
-                    {/* PDF Button */}
-                    <PaymentPDFButton
-                        paymentId={cell.row.original.id}
-                        paymentNumber={cell.row.original.paymentNumber}
-                        size="sm"
-                        variant="outline-info"
-                        onSuccess={handlePDFSuccess}
-                        onError={handlePDFError}
-                    />
+            cell: (cell) => {
+                const payment = cell.row.original;
+                
+                return (
+                                    <div className="d-flex align-items-center gap-1">
+                        {/* 1. Print Receipt */}
+                        <Button
+                            color="outline-secondary"
+                            size="sm"
+                            onClick={() => onPrint && onPrint(payment)}
+                            title="Print Receipt"
+                            className="btn-icon"
+                            style={{ width: '32px', height: '32px' }}
+                        >
+                            <RiPrinterLine size={14} />
+                        </Button>
+                        
+                        {/* 2. Download PDF */}
+                        <Button
+                            color="outline-success"
+                            size="sm"
+                            onClick={() => onGeneratePDF && onGeneratePDF(payment)}
+                            title="Download PDF"
+                            disabled={pdfLoading === payment.id}
+                            className="btn-icon"
+                            style={{ width: '32px', height: '32px' }}
+                        >
+                            {pdfLoading === payment.id ? (
+                                <i className="ri-loader-4-line spin" style={{ fontSize: '14px' }}></i>
+                            ) : (
+                                <RiDownload2Line size={14} />
+                            )}
+                        </Button>
                     
                     {/* Actions Dropdown */}
                     <UncontrolledDropdown direction="start">
@@ -172,24 +207,27 @@ const PaymentTable = ({
                         </DropdownToggle>
                         <DropdownMenu className="dropdown-menu-end">
                             <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                                <RiEyeLine className="me-2 align-middle text-muted" /> View
+                                <RiEyeLine className="me-2 align-middle text-muted" /> View Details
                             </DropdownItem>
                             <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
-                                <RiPencilLine className="me-2 align-middle text-muted" /> Edit
+                                <RiPencilLine className="me-2 align-middle text-muted" /> Edit Payment
                             </DropdownItem>
                             <DropdownItem divider />
                             <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2 text-danger">
-                                <RiDeleteBinLine className="me-2 align-middle" /> Delete
+                                <RiDeleteBinLine className="me-2 align-middle" /> Delete Payment
                             </DropdownItem>
                         </DropdownMenu>
                     </UncontrolledDropdown>
                 </div>
-            ),
+                );
+            },
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete]);
+    ], [onView, onEdit, onDelete, onGeneratePDF, pdfLoading]);
 
     return (
+        <>
+            <style>{spinnerStyle}</style>
         <Card className="shadow-sm">
             <CardBody className="p-3">
                 {pdfAlert && (
@@ -221,6 +259,7 @@ const PaymentTable = ({
                 />
             </CardBody>
         </Card>
+        </>
     );
 };
 

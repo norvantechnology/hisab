@@ -1,9 +1,8 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
-import { generateFastSalesInvoicePDF, generateFastSalesInvoicePDFFileName, createFastSalesInvoiceHTML } from "../utils/fastSalesInvoicePDFGenerator.js";
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
-import { generateSalesInvoicePDFFromHTML, generateSalesInvoicePDFFileName, createSalesInvoiceHTML } from "../utils/salesInvoicePDFGenerator.js";
+import { generatePDFFromTemplate, generateInvoicePDFFileName, createSalesInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
 
 export async function createSale(req, res) {
   const client = await pool.connect();
@@ -702,15 +701,43 @@ export async function getSale(req, res) {
 
 // Generate Sales Invoice PDF - Optimized for speed
 export async function generateSalesInvoicePDF(req, res) {
-  const { id } = req.query;
+  const { id, copies } = req.query;
+  const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
 
   if (!id) {
     return errorResponse(res, "Sale ID is required", 400);
   }
   
-  if (!companyId) {
-    return errorResponse(res, "Company ID is required. Please ensure you are authenticated.", 401);
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
+  }
+
+  // Get user's default copy preference if copies not specified
+  let numCopies = 2; // fallback default
+  if (copies) {
+    numCopies = parseInt(copies);
+  } else {
+    // Fetch user's default copy preference
+    try {
+      const copyQuery = `
+        SELECT "defaultCopies"
+        FROM hisab."userCopyPreferences" 
+        WHERE "userId" = $1 AND "companyId" = $2 AND "moduleType" = 'sales'
+      `;
+      const copyResult = await pool.query(copyQuery, [userId, companyId]);
+      if (copyResult.rows.length > 0) {
+        numCopies = copyResult.rows[0].defaultCopies;
+      }
+    } catch (error) {
+      console.error('Error fetching copy preference:', error);
+      // Continue with default of 2
+    }
+  }
+
+  // Validate copies parameter
+  if (![1, 2, 4].includes(numCopies)) {
+    return errorResponse(res, "Copies must be 1, 2, or 4", 400);
   }
 
   const client = await pool.connect();
@@ -748,21 +775,18 @@ export async function generateSalesInvoicePDF(req, res) {
       WHERE s."id" = $1 AND s."companyId" = $2 AND s."deletedAt" IS NULL
     `;
 
-    // Optimized: Fetch sale details and items in parallel for faster response
+    // Fetch sale details and items
     const [saleResult, itemsResult] = await Promise.all([
       client.query(saleQuery, [id, companyId]),
       client.query(`
         SELECT 
           si.*,
           p."name" as "productName",
-          p."itemCode" as "productCode",
-          p."currentStock",
-          p."isInventoryTracked",
-          p."isSerialized"
+          p."itemCode" as "productCode"
         FROM hisab."sale_items" si
         LEFT JOIN hisab."products" p ON si."productId" = p.id
         WHERE si."saleId" = $1
-        ORDER BY si.id
+        ORDER BY si."id"
       `, [id])
     ]);
 
@@ -773,8 +797,8 @@ export async function generateSalesInvoicePDF(req, res) {
     const sale = saleResult.rows[0];
     const items = itemsResult.rows;
 
-    // Prepare data for PDF generation
-    const pdfData = {
+    // Prepare data for template
+    const invoiceData = {
       sale: {
         id: sale.id,
         invoiceNumber: sale.invoiceNumber,
@@ -818,40 +842,53 @@ export async function generateSalesInvoicePDF(req, res) {
         accountName: sale.bankAccountName,
         accountType: sale.bankAccountType
       },
-      items: items
+      items: items.map(item => ({
+        ...item,
+        name: item.productName,
+        code: item.productCode,
+        serialNumbers: item.serialNumbers || []
+      }))
     };
 
-    // Generate HTML content
-    const htmlContent = createFastSalesInvoiceHTML(pdfData);
+    // Create template data
+    const templateData = createSalesInvoiceTemplateData(invoiceData);
 
-    // Generate unique filename
-    const pdfFileName = generateFastSalesInvoicePDFFileName(sale.invoiceNumber, sale.companyName);
+    // Generate PDF using user's default template
+    const { pdfBuffer, template } = await generatePDFFromTemplate(templateData, {
+      userId,
+      companyId,
+      moduleType: 'sales',
+      templateId: null, // Use user's default template
+      copies: numCopies
+    });
 
-    // Generate PDF buffer
-    const pdfBuffer = await generateFastSalesInvoicePDF(htmlContent);
+    // Generate filename
+    const pdfFileName = generateInvoicePDFFileName(templateData, 'sales');
 
     // Upload to S3
     const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
 
     return successResponse(res, {
-      message: "Sales invoice PDF generated successfully",
+      message: `Sales invoice PDF generated successfully with ${numCopies} ${numCopies === 1 ? 'copy' : 'copies'}`,
       pdfUrl: pdfUrl,
       fileName: pdfFileName,
+      template: {
+        id: template.id,
+        name: template.name
+      },
+      copies: numCopies,
       actionType: 'generated'
     });
 
   } catch (error) {
     console.error("Error generating sales invoice PDF:", error);
     
-    // Handle specific error types
-    if (error.message?.includes('not found')) {
+    if (error.message?.includes('No template found')) {
+      return errorResponse(res, "No suitable template found for sales invoices", 404);
+    } else if (error.message?.includes('not found')) {
       return errorResponse(res, "Sale or related data not found", 404);
-    } else if (error.message?.includes('PDF generation failed')) {
-      return errorResponse(res, "Failed to generate PDF document", 500);
-    } else if (error.message?.includes('upload failed')) {
-      return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
     } else {
-    return errorResponse(res, "Failed to generate sales invoice PDF", 500);
+      return errorResponse(res, "Failed to generate sales invoice PDF", 500);
     }
   } finally {
     client.release();
@@ -1256,10 +1293,15 @@ export async function shareSalesInvoice(req, res) {
       items: items
     };
 
-    // Generate HTML content and PDF
-    const htmlContent = createFastSalesInvoiceHTML(pdfData);
-    const pdfFileName = generateFastSalesInvoicePDFFileName(sale.invoiceNumber, sale.companyName);
-    const pdfBuffer = await generateFastSalesInvoicePDF(htmlContent);
+    // Create template data and generate PDF using user's default template
+    const templateData = createSalesInvoiceTemplateData(pdfData);
+    const { pdfBuffer, template } = await generatePDFFromTemplate(templateData, {
+      userId: req.currentUser?.id,
+      companyId: req.currentUser?.companyId,
+      moduleType: 'sales',
+      templateId: null
+    });
+    const pdfFileName = generateInvoicePDFFileName(templateData, 'sales');
 
     // Generate default description if not provided
     const defaultDescription = description || `Sales Invoice #${sale.invoiceNumber} from ${sale.companyName}. 
@@ -1374,6 +1416,146 @@ This link is valid for download.`;
   } catch (error) {
     console.error("Error sharing sales invoice:", error);
     return errorResponse(res, "Failed to share sales invoice", 500);
+  } finally {
+    client.release();
+  }
+} 
+
+// Get complete sales invoice data for printing/preview
+export async function getSalesInvoiceForPrint(req, res) {
+  const { id } = req.params;
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!id) {
+    return errorResponse(res, "Sale ID is required", 400);
+  }
+  
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Fetch sale details with all related data (same as PDF generation)
+    const saleQuery = `
+      SELECT 
+        s.*,
+        c."name" as "contactName",
+        c."email" as "contactEmail",
+        c."mobile" as "contactMobile",
+        c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
+        ba."accountName" as "bankAccountName",
+        ba."accountType" as "bankAccountType",
+        comp."name" as "companyName",
+        comp."logoUrl",
+        comp."address1",
+        comp."address2", 
+        comp."city",
+        comp."state",
+        comp."pincode",
+        comp."country",
+        comp."gstin" as "companyGstin"
+      FROM hisab."sales" s
+      LEFT JOIN hisab."contacts" c ON s."contactId" = c.id
+      LEFT JOIN hisab."bankAccounts" ba ON s."bankAccountId" = ba.id
+      LEFT JOIN hisab."companies" comp ON s."companyId" = comp.id
+      WHERE s."id" = $1 AND s."companyId" = $2 AND s."deletedAt" IS NULL
+    `;
+
+    // Fetch sale details and items
+    const [saleResult, itemsResult] = await Promise.all([
+      client.query(saleQuery, [id, companyId]),
+      client.query(`
+        SELECT 
+          si.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode"
+        FROM hisab."sale_items" si
+        LEFT JOIN hisab."products" p ON si."productId" = p.id
+        WHERE si."saleId" = $1
+        ORDER BY si."id"
+      `, [id])
+    ]);
+
+    if (saleResult.rows.length === 0) {
+      return errorResponse(res, "Sale not found", 404);
+    }
+
+    const sale = saleResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare complete data for frontend printing
+    const invoiceData = {
+      sale: {
+        id: sale.id,
+        invoiceNumber: sale.invoiceNumber,
+        invoiceDate: sale.invoiceDate,
+        status: sale.status,
+        taxType: sale.taxType,
+        discountType: sale.discountType,
+        discountValue: sale.discountValue,
+        basicAmount: sale.basicAmount,
+        totalDiscount: sale.totalDiscount,
+        taxAmount: sale.taxAmount,
+        transportationCharge: sale.transportationCharge,
+        roundOff: sale.roundOff,
+        netReceivable: sale.netReceivable,
+        internalNotes: sale.internalNotes
+      },
+      company: {
+        name: sale.companyName,
+        logoUrl: sale.logoUrl,
+        address1: sale.address1,
+        address2: sale.address2,
+        city: sale.city,
+        state: sale.state,
+        pincode: sale.pincode,
+        country: sale.country,
+        gstin: sale.companyGstin
+      },
+      contact: {
+        name: sale.contactName,
+        email: sale.contactEmail,
+        mobile: sale.contactMobile,
+        gstin: sale.contactGstin,
+        billingAddress1: sale.contactBillingAddress1,
+        billingAddress2: sale.contactBillingAddress2,
+        billingCity: sale.contactBillingCity,
+        billingState: sale.contactBillingState,
+        billingPincode: sale.contactBillingPincode,
+        billingCountry: sale.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: sale.bankAccountName,
+        accountType: sale.bankAccountType
+      },
+      items: items.map(item => ({
+        ...item,
+        name: item.productName,
+        code: item.productCode,
+        serialNumbers: item.serialNumbers || []
+      }))
+    };
+
+    // Create template data using the same function as PDF generation
+    const templateData = createSalesInvoiceTemplateData(invoiceData);
+
+    return successResponse(res, {
+      invoiceData: templateData,
+      message: "Sales invoice data retrieved successfully"
+    });
+
+  } catch (error) {
+    console.error('Error fetching sales invoice for print:', error);
+    return errorResponse(res, "Failed to fetch sales invoice data", 500);
   } finally {
     client.release();
   }

@@ -172,6 +172,8 @@ const FastSalesInvoiceForm = ({
         }
     });
 
+
+
     // Update new item calculations in real-time
     const updateNewItemCalculations = useCallback((updatedItem) => {
         const quantity = updatedItem.isSerialized ? (updatedItem.serialNumbers || []).length : parseFloat(updatedItem.quantity) || 0;
@@ -200,7 +202,9 @@ const FastSalesInvoiceForm = ({
                     ...updatedItem,
                     calculatedTotal: result.total || 0,
                     calculatedTaxAmount: shouldCalculateTax ? (result.taxAmount || 0) : 0,
-                    calculatedDiscount: result.discount || 0
+                    calculatedDiscount: result.discount || 0,
+                    rateWithoutTax: result.rateWithoutTax || 0,
+                    rateWithTax: result.rateWithTax || 0
                 };
             } catch (error) {
                 console.error('Calculation error:', error);
@@ -211,7 +215,9 @@ const FastSalesInvoiceForm = ({
             ...updatedItem,
             calculatedTotal: 0,
             calculatedTaxAmount: 0,
-            calculatedDiscount: 0
+            calculatedDiscount: 0,
+            rateWithoutTax: 0,
+            rateWithTax: 0
         };
     }, [validation.values.rateType, validation.values.taxType]);
 
@@ -503,11 +509,21 @@ const FastSalesInvoiceForm = ({
 
     // Calculate totals for display
     const totals = useMemo(() => {
-        // Calculate subtotal as Rate × Qty (before tax and discount)
+        // Calculate subtotal as Rate (Without tax) × Qty (before tax and discount)
         const subtotal = items.reduce((sum, item) => {
             const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity) || 0;
             const rate = parseFloat(item.rate) || 0;
-            return sum + (quantity * rate);
+            const taxRate = parseFloat(item.taxRate) || 0;
+            // Use rate without tax for subtotal calculation based on rate type
+            let rateWithoutTax;
+            if (validation?.values?.rateType === 'with_tax' && taxRate > 0) {
+                // Rate includes tax, so extract the base rate
+                rateWithoutTax = rate / (1 + (taxRate / 100));
+            } else {
+                // Rate is already without tax or no tax applicable
+                rateWithoutTax = rate;
+            }
+            return sum + (quantity * rateWithoutTax);
         }, 0);
         
         // Calculate total item-level discounts
@@ -623,6 +639,8 @@ const FastSalesInvoiceForm = ({
             discountType: newItem.discountType,
             discountValue: discountRate,
             total: parseFloat((result.total || 0).toFixed(2)),
+            rateWithoutTax: parseFloat((result.rateWithoutTax || 0).toFixed(2)),
+            rateWithTax: parseFloat((result.rateWithTax || 0).toFixed(2)),
             isSerialized: newItem.isSerialized,
             serialNumbers: newItem.serialNumbers || [],
             currentStock: newItem.currentStock || 0
@@ -819,7 +837,9 @@ const FastSalesInvoiceForm = ({
                     rateType: newRateType, // Update item's rate type to match invoice
                     taxAmount: result.taxAmount,
                     discount: result.discount,
-                    total: result.total
+                    total: result.total,
+                    rateWithoutTax: result.rateWithoutTax,
+                    rateWithTax: result.rateWithTax
                 };
             });
             
@@ -1466,9 +1486,13 @@ const FastSalesInvoiceForm = ({
                                 <thead className="table-light">
                                     <tr>
                                         <th style={{ width: '4%' }}>#</th>
-                                        <th style={{ width: shouldShowTaxRate && shouldShowItemDiscountField ? '22%' : '28%' }}>Product</th>
+                                        <th style={{ width: shouldShowTaxRate && shouldShowItemDiscountField ? '20%' : '26%' }}>Product</th>
                                         <th style={{ width: '8%' }}>Qty</th>
-                                        <th style={{ width: '12%' }}>Rate</th>
+                                        {validation?.values?.rateType === 'with_tax' && shouldShowTaxRate ? (
+                                            <th style={{ width: '10%' }}>Rate (Without tax)</th>
+                                        ) : (
+                                            <th style={{ width: '10%' }}>Rate</th>
+                                        )}
                                         {shouldShowTaxRate && (
                                             <>
                                         <th style={{ width: '8%' }}>Tax%</th>
@@ -1500,7 +1524,13 @@ const FastSalesInvoiceForm = ({
                                                 )}
                                             </td>
                                             <td className="text-center small">{item.quantity}</td>
-                                            <td className="text-end small">₹{parseFloat(item.rate).toFixed(2)}</td>
+                                            {validation?.values?.rateType === 'with_tax' && shouldShowTaxRate ? (
+                                                <td className="text-end small">
+                                                    ₹{parseFloat(item.rateWithoutTax || item.rate / (1 + (parseFloat(item.taxRate) / 100))).toFixed(2)}
+                                                </td>
+                                            ) : (
+                                                <td className="text-end small">₹{parseFloat(item.rate).toFixed(2)}</td>
+                                            )}
                                             {shouldShowTaxRate && (
                                                 <>
                                                     <td className="text-center small">{item.taxRate}%</td>

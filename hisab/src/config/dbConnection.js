@@ -17,7 +17,7 @@ const pool = new Pool({
 });
 
 pool.on("connect", () => {
-  console.log("✅ Connected to PostgreSQL Database");
+      // Database connection established
 });
 
 pool.on("error", (err) => {
@@ -30,7 +30,7 @@ pool.on("error", (err) => {
   try {
     const client = await pool.connect();
     const res = await client.query('SELECT VERSION()');
-    console.log("PostgreSQL version:", res.rows[0].version);
+    // PostgreSQL connected successfully
     client.release();
   } catch (err) {
     console.error("❌ Failed to verify database connection", err);

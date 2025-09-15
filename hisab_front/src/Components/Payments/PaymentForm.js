@@ -131,12 +131,7 @@ const PaymentForm = ({
             ids.push(transactionIdStr);
             allocations[transactionIdStr] = parseAmount(allocation.paidAmount || allocation.amount);
             
-            console.log('🔍 Extracting transaction data:', {
-                allocationType: allocation.allocationType,
-                originalId: allocation.transactionId || allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId,
-                compositeId: transactionIdStr,
-                amount: parseAmount(allocation.paidAmount || allocation.amount)
-            });
+            // Extracting transaction data from payment
         });
         return { ids, allocations };
     }, [parseAmount]);
@@ -871,6 +866,38 @@ const PaymentForm = ({
         }
     }, [isOpen, selectedInvoice, isEditMode, pendingTransactions, invoiceType, hasAutoSelected]);
 
+    // Select All functionality
+    const handleSelectAll = () => {
+        const allTransactionIds = pendingTransactions.map(t => t.id.toString());
+        const newAllocations = {};
+        
+        // Set default allocation amounts for all transactions
+        pendingTransactions.forEach(transaction => {
+            const transactionIdStr = transaction.id.toString();
+            newAllocations[transactionIdStr] = parseAmount(transaction.pendingAmount);
+        });
+        
+        validation.setFieldValue('transactionIds', allTransactionIds);
+        setTransactionAllocations(newAllocations);
+        
+        console.log('✅ All transactions selected:', {
+            selectedIds: allTransactionIds,
+            allocations: newAllocations
+        });
+    };
+
+    const handleDeselectAll = () => {
+        validation.setFieldValue('transactionIds', []);
+        setTransactionAllocations({});
+        
+        console.log('➖ All transactions deselected');
+    };
+
+    const isAllSelected = pendingTransactions.length > 0 && 
+        validation.values.transactionIds.length === pendingTransactions.length;
+    const isPartiallySelected = validation.values.transactionIds.length > 0 && 
+        validation.values.transactionIds.length < pendingTransactions.length;
+
     const toggleTransactionSelection = (transactionId) => {
         const transactionIdStr = transactionId.toString();
         const currentIds = [...validation.values.transactionIds];
@@ -1220,7 +1247,23 @@ const PaymentForm = ({
                                 <Table bordered responsive>
                                     <thead>
                                         <tr>
-                                            <th width="50px"></th>
+                                            <th width="50px">
+                                                <div className="d-flex align-items-center">
+                                                    <Input
+                                                        type="checkbox"
+                                                        checked={isAllSelected}
+                                                        onChange={isAllSelected ? handleDeselectAll : handleSelectAll}
+                                                        disabled={isLoading || pendingTransactions.length === 0}
+                                                        ref={(input) => {
+                                                            if (input) {
+                                                                input.indeterminate = isPartiallySelected;
+                                                            }
+                                                        }}
+                                                        title={isAllSelected ? "Deselect All" : "Select All"}
+                                                    />
+                                                    <small className="ms-1 text-muted d-none d-md-inline">All</small>
+                                                </div>
+                                            </th>
                                             <th>Description</th>
                                             <th>Transaction Type</th>
                                             <th>Date</th>
@@ -1294,7 +1337,7 @@ const PaymentForm = ({
                                                 maxAmount = transaction.pendingAmount;
                                             }
                                             
-                                            // Debug logging for max amount calculation
+                                            // Calculate maximum amount for allocation
                                             if (isSelected) {
                                                 console.log('🔍 Max Amount Debug for transaction:', {
                                                     transactionId: transaction.id,
@@ -1312,7 +1355,7 @@ const PaymentForm = ({
                                             const typeDisplay = getTransactionTypeDisplay(transaction);
                                             const description = getTransactionDescription(transaction);
 
-                                            // Debug each transaction rendering
+                                            // Render each transaction
                                             if (index < 5) { // Only log first 5 to avoid spam
                                                 console.log(`🔄 Rendering Transaction ${index}:`, {
                                                     id: transaction.id,

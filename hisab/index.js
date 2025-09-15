@@ -22,8 +22,11 @@ import {
   taxCategoryRoutes,
   unitOfMeasurementsRoutes,
   portalRoutes,
-  dashboardRoutes
+  dashboardRoutes,
+  templateRoutes,
+  copyPreferencesRoutes
 } from "./src/routes/index.js";
+import { createCopyPreferencesTable } from "./src/utils/createCopyPreferencesTable.js";
 
 
 dotenv.config();
@@ -59,6 +62,8 @@ app.use("/api/taxCategory", taxCategoryRoutes);
 app.use("/api/unitOfMeasurements", unitOfMeasurementsRoutes);
 app.use("/api/portal", portalRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/templates", templateRoutes);
+app.use("/api/copyPreferences", copyPreferencesRoutes);
 
 
 // Global error handler to return JSON errors instead of HTML
@@ -67,6 +72,9 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: err.message || "Internal Server Error" });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server is running on http://localhost:${PORT}`);
+  
+  // Create copy preferences table if it doesn't exist
+  await createCopyPreferencesTable();
 });

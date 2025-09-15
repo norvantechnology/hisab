@@ -15,6 +15,7 @@ router.get('/getSale', salesController.getSale);
 router.get('/listSales', salesController.listSales);
 router.get('/getNextInvoiceNumber', salesController.getNextInvoiceNumber);
 router.get('/generateInvoicePDF', salesController.generateSalesInvoicePDF);
+router.get('/getInvoiceForPrint/:id', salesController.getSalesInvoiceForPrint);
 router.post('/share/:id', salesController.shareSalesInvoice);
 
 export default router; 

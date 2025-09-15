@@ -30,10 +30,10 @@ export async function createBankTransfer(req, res) {
       await client.query("ROLLBACK");
       return errorResponse(res, "One or both bank accounts not found", 404);
     }
-    console.log("banksQuery", banksQuery.rows)
+    // Bank accounts fetched
     const fromBank = banksQuery.rows.find(b => b.id === fromBankId);
     const toBank = banksQuery.rows.find(b => b.id === toBankId);
-    console.log("fromBank", fromBank)
+    // Bank transfer validation complete
 
     const fromBankBalance = parseFloat(fromBank.currentBalance);
     const transferAmount = parseFloat(amount);

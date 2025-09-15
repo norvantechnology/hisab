@@ -543,18 +543,26 @@ const SalesInvoiceForm = ({
 
   // Handle add contact action
   const handleAddContact = () => {
-    // TODO: Open contact creation modal or navigate to contact creation page
     console.log('Add contact clicked');
-    // You can implement this to open a contact creation modal
-    // or navigate to a contact creation page
+    // Future enhancement: Open contact creation modal
   };
 
   const calculateInvoiceTotals = useCallback((values, itemsData) => {
-    // Basic Amount = Sum of all items' (Rate × Quantity) - before any discounts
+    // Basic Amount = Sum of all items' (Rate Without Tax × Quantity) - before any discounts
     const basicAmount = itemsData.reduce((sum, item) => {
       const quantity = item.isSerialized ? item.serialNumbers.length : parseFloat(item.quantity || 0);
       const rate = parseFloat(item.rate || 0);
-      return sum + (quantity * rate);
+      const taxRate = parseFloat(item.taxRate || 0);
+      // Use rate without tax for subtotal calculation based on rate type
+      let rateWithoutTax;
+      if (values.rateType === 'with_tax' && taxRate > 0) {
+        // Rate includes tax, so extract the base rate
+        rateWithoutTax = rate / (1 + (taxRate / 100));
+      } else {
+        // Rate is already without tax or no tax applicable
+        rateWithoutTax = rate;
+      }
+      return sum + (quantity * rateWithoutTax);
     }, 0);
     
     // Calculate total tax from all items
@@ -1338,7 +1346,11 @@ const SalesInvoiceForm = ({
                     <th>Item</th>
                     <th>Code</th>
                     <th className="text-end">Qty</th>
-                    <th className="text-end">Rate</th>
+                    {validation?.values?.rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation?.values?.taxType)?.rate > 0 ? (
+                      <th className="text-end">Rate (Without tax)</th>
+                    ) : (
+                      <th className="text-end">Rate</th>
+                    )}
                     {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                       <>
                         <th className="text-end">Tax (%)</th>
@@ -1364,7 +1376,11 @@ const SalesInvoiceForm = ({
                       </td>
                       <td>{item.code || '-'}</td>
                       <td className="text-end">{item.quantity}</td>
-                      <td className="text-end">₹{parseFloat(item.rate || 0).toFixed(2)}</td>
+                      {validation?.values?.rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation?.values?.taxType)?.rate > 0 ? (
+                        <td className="text-end">₹{parseFloat(item.rateWithoutTax || (item.rate || 0) / (1 + (parseFloat(item.taxRate || 0) / 100))).toFixed(2)}</td>
+                      ) : (
+                        <td className="text-end">₹{parseFloat(item.rate || 0).toFixed(2)}</td>
+                      )}
                       {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                         <>
                           <td className="text-end">{item.taxRate}%</td>

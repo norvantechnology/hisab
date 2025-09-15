@@ -8,9 +8,17 @@ const pendingRequests = new Map();
 
 const apiClient = axios.create({
   baseURL: process.env.REACT_APP_API_BASE_URL || '',
-  timeout: 10000,
+  timeout: 120000, // Increased to 2 minutes (120 seconds) to handle longer operations
   // Don't set default Content-Type - handle it dynamically in apiCall
 });
+
+// Helper function for long-running operations (PDF generation, file uploads, exports)
+export const longRunningApiCall = async (config) => {
+  return apiCall({
+    ...config,
+    timeout: 300000 // 5 minutes for long operations
+  });
+};
 
 export const apiCall = async ({
   method = 'get',
@@ -18,16 +26,15 @@ export const apiCall = async ({
   data = null,
   headers = {},
   params = {},
-  responseType = 'json'
+  responseType = 'json',
+  timeout = null // Allow custom timeout override
 }) => {
   try {
     const companyId = getSelectedCompanyId();
     
-    // Debug logging
+    // Check if companyId is available
     if (!companyId) {
       console.warn('No companyId found for API call:', endpoint);
-    } else {
-      console.log('API call with companyId:', companyId, 'for endpoint:', endpoint);
     }
 
     // Build headers, handling FormData specially
@@ -50,6 +57,11 @@ export const apiCall = async ({
       responseType
     };
 
+    // Apply custom timeout if provided
+    if (timeout !== null) {
+      config.timeout = timeout;
+    }
+
     if (method.toLowerCase() !== 'get' && data) {
       config.data = data;
     }
@@ -59,14 +71,14 @@ export const apiCall = async ({
     
     // Check if request is already pending
     if (pendingRequests.has(key)) {
-      console.log('Request already pending, waiting for response...');
+
       return await pendingRequests.get(key);
     }
 
     // Create promise for this request
     const requestPromise = (async () => {
       try {
-        console.log("API Request:", { method, endpoint, params });
+    
         
         const response = await apiClient.request(config);
         
@@ -115,25 +127,16 @@ apiClient.interceptors.request.use(
     // Check for regular user token in both storages (localStorage for remember me, sessionStorage for regular login)
     let token = sessionStorage.getItem('authToken') || localStorage.getItem('authToken');
     
-    // Debug logging
-    console.log('API Request Interceptor:', {
-      hasSessionToken: !!sessionStorage.getItem('authToken'),
-      hasLocalToken: !!localStorage.getItem('authToken'),
-      finalToken: !!token,
-      url: config.url
-    });
+
     
     // If no regular token, check for portal token
     if (!token) {
       token = localStorage.getItem('portalToken');
-      console.log('Using portal token:', !!token);
+
     }
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('Authorization header set for request to:', config.url);
-    } else {
-      console.log('No token available for request to:', config.url);
     }
     
     return config;

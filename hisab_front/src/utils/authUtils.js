@@ -9,28 +9,28 @@ export const getAuthToken = () => {
     let token = localStorage.getItem('authToken');
     let isRemembered = localStorage.getItem('rememberMe') === 'true';
     
-    console.log('getAuthToken - localStorage check:', { hasToken: !!token, isRemembered });
+
     
     // If remember me was used, check if token is still valid
     if (isRemembered && token) {
         const tokenExpiry = localStorage.getItem('tokenExpiry');
         if (tokenExpiry && new Date() > new Date(tokenExpiry)) {
-            console.log('Remember me token expired, clearing data');
+
             // Token expired, clear localStorage
             clearRememberMeData();
             token = null;
         } else {
-            console.log('Remember me token is valid');
+
         }
     }
     
     // If no valid token in localStorage, check sessionStorage
     if (!token) {
         token = sessionStorage.getItem('authToken');
-        console.log('getAuthToken - sessionStorage check:', { hasToken: !!token });
+
     }
     
-    console.log('getAuthToken result:', { hasToken: !!token, source: isRemembered && token ? 'localStorage' : 'sessionStorage' });
+
     return token;
 };
 
@@ -56,28 +56,25 @@ export const getUserData = () => {
  * Set authentication data based on remember me preference
  */
 export const setAuthData = (token, user, rememberMe = false) => {
-    console.log('setAuthData called with:', { hasToken: !!token, hasUser: !!user, rememberMe });
+
     
     const storage = rememberMe ? localStorage : sessionStorage;
     
     storage.setItem('authToken', token);
     storage.setItem('userData', JSON.stringify(user));
     
-    console.log(`Auth data stored in ${rememberMe ? 'localStorage' : 'sessionStorage'}`);
+
     
     if (rememberMe) {
         const expiryDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         localStorage.setItem('rememberMe', 'true');
         localStorage.setItem('tokenExpiry', expiryDate.toISOString());
-        console.log('Remember me data set. Expires:', expiryDate.toLocaleString());
+
     } else {
         clearRememberMeData();
     }
     
-    // Verify data was stored correctly
-    const storedToken = storage.getItem('authToken');
-    const storedUserData = storage.getItem('userData');
-    console.log('Verification - stored data:', { hasStoredToken: !!storedToken, hasStoredUserData: !!storedUserData });
+
 };
 
 /**

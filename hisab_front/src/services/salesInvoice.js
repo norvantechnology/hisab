@@ -47,11 +47,21 @@ export const getNextInvoiceNumber = async () => {
     });
 }; 
 
-export const generateSalesInvoicePDF = async (saleId) => {
+export const generateSalesInvoicePDF = async (saleId, copies = 2) => {
     return apiCall({
         method: 'get',
         endpoint: '/sales/generateInvoicePDF',
-        params: { id: saleId }
+        params: { 
+            id: saleId,
+            copies: copies
+        }
+    });
+};
+
+export const getSalesInvoiceForPrint = async (saleId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/sales/getInvoiceForPrint/${saleId}`
     });
 };
 

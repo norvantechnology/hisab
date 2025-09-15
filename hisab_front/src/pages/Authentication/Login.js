@@ -10,7 +10,7 @@ import { login } from "../../services/auth";
 import { getAllCompanies } from "../../services/company";
 import { setSelectedCompany } from "../../utils/companyEvents";
 import { setAuthData } from "../../utils/authUtils";
-import { debugAuthState } from "../../utils/authDebug";
+
 import logoLight from "../../assets/images/logo-light.png";
 
 const Login = () => {
@@ -19,11 +19,7 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [rememberMe, setRememberMe] = useState(false);
 
-    // Make debug function available globally for troubleshooting
-    React.useEffect(() => {
-        window.debugAuthState = debugAuthState;
-        console.log('Debug function available: window.debugAuthState()');
-    }, []);
+
 
     const validation = useFormik({
         initialValues: {

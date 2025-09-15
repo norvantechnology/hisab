@@ -48,11 +48,11 @@ export const getPendingTransactions = async (contactId) => {
     });
 };
 
-export const generatePaymentInvoicePDF = async (paymentId) => {
+export const generatePaymentInvoicePDF = async (paymentId, copies = 2) => {
     return apiCall({
         method: 'get',
         endpoint: '/payment/generateInvoicePDF',
-        params: { id: paymentId }
+        params: { id: paymentId, copies: copies }
     });
 };
 
@@ -69,4 +69,11 @@ export const downloadPaymentPDF = (pdfUrl, fileName) => {
 
 export const openPaymentPDFInNewTab = (pdfUrl) => {
     window.open(pdfUrl, '_blank');
+};
+
+export const getPaymentForPrint = async (paymentId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/payment/getPaymentForPrint/${paymentId}`
+    });
 };

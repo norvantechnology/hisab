@@ -1,9 +1,9 @@
 import { constrainedMemory } from "process";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
-import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "../utils/fastPurchaseInvoicePDFGenerator.js";
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
+import { generatePDFFromTemplate, generateInvoicePDFFileName, createPurchaseInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -957,17 +957,45 @@ export async function getPurchase(req, res) {
   }
 }
 
-// Generate Purchase Invoice PDF - Optimized for speed
+// Generate Purchase Invoice PDF - Uses user's default template
 export async function generatePurchaseInvoicePDF(req, res) {
-  const { id } = req.query;
+  const { id, copies } = req.query;
+  const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
 
   if (!id) {
     return errorResponse(res, "Purchase ID is required", 400);
   }
   
-  if (!companyId) {
-    return errorResponse(res, "Company ID is required. Please ensure you are authenticated.", 401);
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
+  }
+
+  // Get user's default copy preference if copies not specified
+  let numCopies = 2; // fallback default
+  if (copies) {
+    numCopies = parseInt(copies);
+  } else {
+    // Fetch user's default copy preference
+    try {
+      const copyQuery = `
+        SELECT "defaultCopies"
+        FROM hisab."userCopyPreferences" 
+        WHERE "userId" = $1 AND "companyId" = $2 AND "moduleType" = 'purchase'
+      `;
+      const copyResult = await pool.query(copyQuery, [userId, companyId]);
+      if (copyResult.rows.length > 0) {
+        numCopies = copyResult.rows[0].defaultCopies;
+      }
+    } catch (error) {
+      console.error('Error fetching copy preference:', error);
+      // Continue with default of 2
+    }
+  }
+
+  // Validate copies parameter
+  if (![1, 2, 4].includes(numCopies)) {
+    return errorResponse(res, "Copies must be 1, 2, or 4", 400);
   }
 
   const client = await pool.connect();
@@ -1076,14 +1104,20 @@ export async function generatePurchaseInvoicePDF(req, res) {
       items: items
     };
 
-    // Generate HTML content
-    const htmlContent = createFastPurchaseInvoiceHTML(pdfData);
+    // Create template data
+    const templateData = createPurchaseInvoiceTemplateData(pdfData);
 
-    // Generate unique filename
-    const pdfFileName = generateFastPurchaseInvoicePDFFileName(purchase.invoiceNumber, purchase.companyName);
+    // Generate PDF using user's default template
+    const { pdfBuffer, template } = await generatePDFFromTemplate(templateData, {
+      userId,
+      companyId,
+      moduleType: 'purchase',
+      templateId: null, // Use user's default template
+      copies: numCopies
+    });
 
-    // Generate PDF buffer
-    const pdfBuffer = await generateFastPurchaseInvoicePDF(htmlContent);
+    // Generate filename
+    const pdfFileName = generateInvoicePDFFileName(templateData, 'purchase');
 
     // Upload to S3
     const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
@@ -1092,6 +1126,10 @@ export async function generatePurchaseInvoicePDF(req, res) {
       message: "Purchase invoice PDF generated successfully",
       pdfUrl: pdfUrl,
       fileName: pdfFileName,
+      template: {
+        id: template.id,
+        name: template.name
+      },
       actionType: 'generated'
     });
 
@@ -1604,10 +1642,15 @@ export async function sharePurchaseInvoice(req, res) {
       items: items
     };
 
-    // Generate HTML content and PDF
-    const htmlContent = createFastPurchaseInvoiceHTML(pdfData);
-    const pdfFileName = generateFastPurchaseInvoicePDFFileName(purchase.invoiceNumber, purchase.companyName);
-    const pdfBuffer = await generateFastPurchaseInvoicePDF(htmlContent);
+    // Create template data and generate PDF using user's default template
+    const templateData = createPurchaseInvoiceTemplateData(pdfData);
+    const { pdfBuffer, template } = await generatePDFFromTemplate(templateData, {
+      userId: req.currentUser?.id,
+      companyId: req.currentUser?.companyId,
+      moduleType: 'purchase',
+      templateId: null
+    });
+    const pdfFileName = generateInvoicePDFFileName(templateData, 'purchase');
 
     // Generate default description if not provided
     const defaultDescription = description || `Purchase Invoice #${purchase.invoiceNumber} from ${purchase.companyName}. 
@@ -1722,6 +1765,144 @@ This link is valid for download.`;
   } catch (error) {
     console.error("Error sharing purchase invoice:", error);
     return errorResponse(res, "Failed to share purchase invoice", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get complete purchase invoice data for printing/preview
+export async function getPurchaseInvoiceForPrint(req, res) {
+  const { id } = req.params;
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!id) {
+    return errorResponse(res, "Purchase ID is required", 400);
+  }
+  
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Fetch purchase details with all related data
+    const [purchaseResult, itemsResult] = await Promise.all([
+      client.query(`
+        SELECT 
+          p.*,
+          c."name" as "contactName",
+          c."email" as "contactEmail",
+          c."mobile" as "contactMobile",
+          c."gstin" as "contactGstin",
+          c."billingAddress1" as "contactBillingAddress1",
+          c."billingAddress2" as "contactBillingAddress2",
+          c."billingCity" as "contactBillingCity",
+          c."billingState" as "contactBillingState",
+          c."billingPincode" as "contactBillingPincode",
+          c."billingCountry" as "contactBillingCountry",
+          ba."accountName" as "bankAccountName",
+          ba."accountType" as "bankAccountType",
+          comp."name" as "companyName",
+          comp."logoUrl",
+          comp."address1",
+          comp."address2", 
+          comp."city",
+          comp."state",
+          comp."pincode",
+          comp."country",
+          comp."gstin" as "companyGstin"
+        FROM hisab."purchases" p
+        LEFT JOIN hisab."contacts" c ON p."contactId" = c.id
+        LEFT JOIN hisab."bankAccounts" ba ON p."bankAccountId" = ba.id
+        LEFT JOIN hisab."companies" comp ON p."companyId" = comp.id
+        WHERE p."id" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL
+      `, [id, companyId]),
+      
+      client.query(`
+        SELECT 
+          pi.*,
+          p."name" as "productName",
+          p."itemCode" as "productCode"
+        FROM hisab."purchase_items" pi
+        LEFT JOIN hisab."products" p ON pi."productId" = p.id
+        WHERE pi."purchaseId" = $1 AND pi."companyId" = $2
+        ORDER BY pi.id
+      `, [id, companyId])
+    ]);
+
+    if (purchaseResult.rows.length === 0) {
+      return errorResponse(res, "Purchase not found", 404);
+    }
+
+    const purchase = purchaseResult.rows[0];
+    const items = itemsResult.rows;
+
+    // Prepare complete data for frontend printing
+    const invoiceData = {
+      purchase: {
+        id: purchase.id,
+        invoiceNumber: purchase.invoiceNumber,
+        invoiceDate: purchase.invoiceDate,
+        status: purchase.status,
+        taxType: purchase.taxType,
+        discountType: purchase.discountType,
+        discountValue: purchase.discountValue,
+        basicAmount: purchase.basicAmount,
+        totalDiscount: purchase.totalDiscount,
+        taxAmount: purchase.taxAmount,
+        transportationCharge: purchase.transportationCharge,
+        roundOff: purchase.roundOff,
+        netPayable: purchase.netPayable,
+        internalNotes: purchase.internalNotes
+      },
+      company: {
+        name: purchase.companyName,
+        logoUrl: purchase.logoUrl,
+        address1: purchase.address1,
+        address2: purchase.address2,
+        city: purchase.city,
+        state: purchase.state,
+        pincode: purchase.pincode,
+        country: purchase.country,
+        gstin: purchase.companyGstin
+      },
+      contact: {
+        name: purchase.contactName,
+        email: purchase.contactEmail,
+        mobile: purchase.contactMobile,
+        gstin: purchase.contactGstin,
+        billingAddress1: purchase.contactBillingAddress1,
+        billingAddress2: purchase.contactBillingAddress2,
+        billingCity: purchase.contactBillingCity,
+        billingState: purchase.contactBillingState,
+        billingPincode: purchase.contactBillingPincode,
+        billingCountry: purchase.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: purchase.bankAccountName,
+        accountType: purchase.bankAccountType
+      },
+      items: items.map(item => ({
+        ...item,
+        name: item.productName,
+        code: item.productCode,
+        serialNumbers: item.serialNumbers || []
+      }))
+    };
+
+    // Create template data using the same function as PDF generation
+    const templateData = createPurchaseInvoiceTemplateData(invoiceData);
+
+    return successResponse(res, {
+      invoiceData: templateData,
+      message: "Purchase invoice data retrieved successfully"
+    });
+
+  } catch (error) {
+    console.error('Error fetching purchase invoice for print:', error);
+    return errorResponse(res, "Failed to fetch purchase invoice data", 500);
   } finally {
     client.release();
   }

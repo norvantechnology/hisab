@@ -11,6 +11,7 @@ router.get('/getPaymentDetails', authenticateUser, paymentController.getPaymentD
 router.put('/updatePayment', authenticateUser, paymentController.updatePayment);
 router.get('/listPayments', authenticateUser, paymentController.listPayments);
 router.get('/generateInvoicePDF', authenticateUser, paymentController.generatePaymentInvoicePDF);
+router.get('/getPaymentForPrint/:id', authenticateUser, paymentController.getPaymentForPrint);
 
 
 export default router;

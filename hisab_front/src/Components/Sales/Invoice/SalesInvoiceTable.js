@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiWalletLine, RiShareLine } from 'react-icons/ri';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiFilePdfLine, RiWalletLine, RiShareLine, RiPrinterLine, RiDownload2Line } from 'react-icons/ri';
 import TableContainer from '../../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Button } from 'reactstrap';
 
@@ -12,6 +12,46 @@ const spinnerStyle = `
   @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
+  }
+  .btn-soft-primary {
+    background-color: rgba(64, 81, 137, 0.1);
+    border-color: rgba(64, 81, 137, 0.1);
+    color: #405189;
+  }
+  .btn-soft-primary:hover {
+    background-color: rgba(64, 81, 137, 0.2);
+    border-color: rgba(64, 81, 137, 0.2);
+    color: #405189;
+  }
+  .btn-soft-success {
+    background-color: rgba(10, 179, 156, 0.1);
+    border-color: rgba(10, 179, 156, 0.1);
+    color: #0ab39c;
+  }
+  .btn-soft-success:hover {
+    background-color: rgba(10, 179, 156, 0.2);
+    border-color: rgba(10, 179, 156, 0.2);
+    color: #0ab39c;
+  }
+  .btn-soft-info {
+    background-color: rgba(13, 202, 240, 0.1);
+    border-color: rgba(13, 202, 240, 0.1);
+    color: #0dcaf0;
+  }
+  .btn-soft-info:hover {
+    background-color: rgba(13, 202, 240, 0.2);
+    border-color: rgba(13, 202, 240, 0.2);
+    color: #0dcaf0;
+  }
+  .btn-soft-secondary {
+    background-color: rgba(116, 120, 141, 0.1);
+    border-color: rgba(116, 120, 141, 0.1);
+    color: #74788d;
+  }
+  .btn-soft-secondary:hover {
+    background-color: rgba(116, 120, 141, 0.2);
+    border-color: rgba(116, 120, 141, 0.2);
+    color: #74788d;
   }
 `;
 
@@ -25,6 +65,7 @@ const SalesInvoiceTable = ({
     onDelete,
     onGeneratePDF,
     onCreatePayment,
+    onPrint,
     pdfLoading = null,
     onShare
 }) => {
@@ -192,44 +233,49 @@ const SalesInvoiceTable = ({
                 const hasRemainingAmount = parseFloat(invoice.remainingAmount || 0) > 0;
                 
                 return (
-                    <div className="d-flex align-items-center gap-2">
-                        {/* Show payment button for pending invoices with remaining amount */}
-                        {isPending && hasRemainingAmount && onCreatePayment && (
-                            <Button
-                                color="primary"
-                                size="sm"
-                                onClick={() => onCreatePayment(invoice)}
-                                title="Create Payment"
-                            >
-                                <RiWalletLine />
-                            </Button>
-                        )}
+                    <div className="d-flex align-items-center gap-1">
+                        {/* 1. Print Invoice */}
                         <Button
-                            color="success"
+                            color="outline-secondary"
+                            size="sm"
+                            onClick={() => onPrint && onPrint(invoice)}
+                            title="Print Invoice"
+                            className="btn-icon btn-soft-secondary"
+                            style={{ width: '34px', height: '34px', borderRadius: '6px' }}
+                        >
+                            <RiPrinterLine size={15} />
+                        </Button>
+                        
+                        {/* 2. Download PDF */}
+                        <Button
+                            color="outline-primary"
                             size="sm"
                             onClick={() => onGeneratePDF && onGeneratePDF(invoice)}
-                            title="Generate Invoice PDF"
+                            title="Download PDF"
                             disabled={pdfLoading === invoice.id}
+                            className="btn-icon btn-soft-primary"
+                            style={{ width: '34px', height: '34px', borderRadius: '6px' }}
                         >
                             {pdfLoading === invoice.id ? (
-                                <i className="ri-loader-4-line spin"></i>
+                                <i className="ri-loader-4-line spin" style={{ fontSize: '15px' }}></i>
                             ) : (
-                                <RiFilePdfLine />
+                                <RiDownload2Line size={15} />
                             )}
                         </Button>
-                        <Button
-                            color="info"
-                            size="sm"
-                            onClick={() => onShare && onShare(invoice)}
-                            title="Share Invoice"
-                            disabled={pdfLoading === invoice.id}
-                        >
-                            {pdfLoading === invoice.id ? (
-                                <i className="ri-loader-4-line spin"></i>
-                            ) : (
-                                <RiShareLine />
-                            )}
-                        </Button>
+                        
+                        {/* 3. Payment Button - Only for pending invoices */}
+                        {isPending && hasRemainingAmount && onCreatePayment && (
+                            <Button
+                                color="outline-success"
+                                size="sm"
+                                onClick={() => onCreatePayment(invoice)}
+                                title={`Collect Payment (${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(invoice.remainingAmount)})`}
+                                className="btn-icon btn-soft-success"
+                                style={{ width: '34px', height: '34px', borderRadius: '6px' }}
+                            >
+                                <RiWalletLine size={15} />
+                            </Button>
+                        )}
                         <UncontrolledDropdown direction="start">
                             <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
                                 <RiMoreFill />
@@ -241,11 +287,10 @@ const SalesInvoiceTable = ({
                                 <DropdownItem onClick={() => onEdit(invoice)} className="py-2">
                                     <RiPencilLine className="me-2 align-middle text-muted" /> Edit
                                 </DropdownItem>
-                                {isPending && hasRemainingAmount && onCreatePayment && (
-                                    <DropdownItem onClick={() => onCreatePayment(invoice)} className="py-2">
-                                        <RiWalletLine className="me-2 align-middle text-muted" /> Create Payment
-                                    </DropdownItem>
-                                )}
+                                <DropdownItem onClick={() => onShare && onShare(invoice)} className="py-2">
+                                    <RiShareLine className="me-2 align-middle text-muted" /> Share
+                                </DropdownItem>
+                                <DropdownItem divider />
                                 <DropdownItem onClick={() => onDelete(invoice)} className="py-2">
                                     <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
                                 </DropdownItem>
@@ -256,7 +301,7 @@ const SalesInvoiceTable = ({
             },
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete, onGeneratePDF, onCreatePayment, pdfLoading, onShare]);
+    ], [onView, onEdit, onDelete, onGeneratePDF, onCreatePayment, onPrint, pdfLoading, onShare]);
 
     return (
         <>

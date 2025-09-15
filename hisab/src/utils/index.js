@@ -4,9 +4,7 @@ import { errorResponse, successResponse } from "./responseUtil.js";
 import { uploadFileToS3 } from "./uploadS3.js";
 import { generateOTP, isOtpExpired } from "./otpUtils.js";
 import { upload, conditionalUpload } from "./multerConfig.js";
-import { generatePaymentPDFFromHTML, generatePaymentPDFFileName, createPaymentInvoiceHTML } from "./paymentPDFGenerator.js";
-import { generateFastPurchaseInvoicePDF, generateFastPurchaseInvoicePDFFileName, createFastPurchaseInvoiceHTML } from "./fastPurchaseInvoicePDFGenerator.js";
-import { generateFastSalesInvoicePDF, generateFastSalesInvoicePDFFileName, createFastSalesInvoiceHTML } from "./fastSalesInvoicePDFGenerator.js";
+import { generatePaymentPDFFileName } from "./templatePDFGenerator.js";
 import { generateContactStatementPDF, generateContactStatementExcel } from "./contactStatementGenerator.js";
 
 export {
@@ -21,15 +19,7 @@ export {
   isOtpExpired,
   upload,
   conditionalUpload,
-  generatePaymentPDFFromHTML,
   generatePaymentPDFFileName,
-  createPaymentInvoiceHTML,
-  generateFastPurchaseInvoicePDF,
-  generateFastPurchaseInvoicePDFFileName,
-  createFastPurchaseInvoiceHTML,
-  generateFastSalesInvoicePDF,
-  generateFastSalesInvoicePDFFileName,
-  createFastSalesInvoiceHTML,
   generateContactStatementPDF,
   generateContactStatementExcel
 };

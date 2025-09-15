@@ -577,9 +577,22 @@ const PurchaseInvoiceForm = ({
   }, [validation.values.status, validation.values.billFrom]);
 
   const calculatedTotals = useMemo(() => {
-    // Basic Amount is the sum of all items' Total column (which includes item-level discounts and tax)
-    // Use the already calculated totals from the items instead of recalculating
-    const basicAmount = items.reduce((sum, item) => sum + (parseFloat(item.total) || 0), 0);
+    // Basic Amount is the sum of all items' Rate (Without tax) × Quantity
+    const basicAmount = items.reduce((sum, item) => {
+      const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity || 0);
+      const rate = parseFloat(item.rate || 0);
+      const taxRate = parseFloat(item.taxRate || 0);
+      // Use rate without tax for subtotal calculation based on rate type
+      let rateWithoutTax;
+      if (validation?.values?.rateType === 'with_tax' && taxRate > 0) {
+        // Rate includes tax, so extract the base rate
+        rateWithoutTax = rate / (1 + (taxRate / 100));
+      } else {
+        // Rate is already without tax or no tax applicable
+        rateWithoutTax = rate;
+      }
+      return sum + (quantity * rateWithoutTax);
+    }, 0);
     
     // Calculate total tax from all items
     const totalTax = items.reduce((sum, item) => {
@@ -1496,7 +1509,11 @@ const PurchaseInvoiceForm = ({
                     <th>Item</th>
                     <th>Code</th>
                     <th className="text-end">Qty</th>
-                    <th className="text-end">Rate</th>
+                    {validation?.values?.rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation?.values?.taxType)?.rate > 0 ? (
+                      <th className="text-end">Rate (Without tax)</th>
+                    ) : (
+                      <th className="text-end">Rate</th>
+                    )}
                     {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                       <>
                         <th className="text-end">Tax (%)</th>
@@ -1532,8 +1549,12 @@ const PurchaseInvoiceForm = ({
                           {item.code && <div className="text-muted small">{item.code}</div>}
                         </td>
                         <td>{item.code || '-'}</td>
-                        <td className="text-end">{quantity}</td>
-                        <td className="text-end">₹{rate.toFixed(2)}</td>
+                                                <td className="text-end">{quantity}</td>
+                        {validation?.values?.rateType === 'with_tax' && TAX_TYPES.find(tax => tax.value === validation?.values?.taxType)?.rate > 0 ? (
+                          <td className="text-end">₹{parseFloat(item.rateWithoutTax || rate / (1 + (taxRate / 100))).toFixed(2)}</td>
+                        ) : (
+                          <td className="text-end">₹{rate.toFixed(2)}</td>
+                        )}
                         {TAX_TYPES.find(tax => tax.value === validation.values.taxType)?.rate > 0 && (
                           <>
                             <td className="text-end">{taxRate.toFixed(2)}%</td>

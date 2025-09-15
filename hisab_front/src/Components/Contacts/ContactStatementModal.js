@@ -67,7 +67,7 @@ const ContactStatementModal = ({ isOpen, toggle, contact }) => {
         setLoading(true);
         try {
             const response = await getContactStatement(contact.id, filters);
-            console.log('Statement API Response:', response); // Debug log
+            // Statement data received successfully
             if (response.success) {
                 // The API returns data directly in response, not nested under response.data
                 const statementData = {
@@ -76,7 +76,7 @@ const ContactStatementModal = ({ isOpen, toggle, contact }) => {
                     summary: response.summary,
                     filters: response.filters
                 };
-                console.log('Setting statement data:', statementData); // Debug log
+                // Setting statement data for display
                 setStatement(statementData);
             } else {
                 toast.error(response.message || 'Failed to fetch statement');

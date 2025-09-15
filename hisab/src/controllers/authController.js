@@ -65,7 +65,7 @@ export async function signup(req, res) {
         .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl)
         .replace("{{LOGO_CONTENT}}", logoContent);
 
-      console.log("htmlTemplate", htmlTemplate);
+      // Email template prepared
       
       try {
         let emailSent = await sendOtpEmail(email, {
@@ -125,7 +125,7 @@ export async function signup(req, res) {
             .replace("[Client Name]", name)
             .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl);
 
-      console.log("htmlTemplate", htmlTemplate);
+      // Email template prepared for sending
       
       try {
         let emailSent = await sendOtpEmail(email, {
@@ -398,7 +398,7 @@ export async function resendVerificationEmail(req, res) {
             .replace("[Client Name]", userData.name)
             .replace(/\{\{VERIFICATION_LINK\}\}/g, verificationUrl);
 
-    console.log("htmlTemplate", htmlTemplate);
+    // Email template ready for verification
     
     try {
       let emailSent = await sendOtpEmail(email, {
@@ -471,11 +471,7 @@ export async function forgotPassword(req, res) {
     // Calculate expiry time in JavaScript (UTC) - 1 hour from now
     const resetExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour from now
     
-    console.log("Setting reset token expiry:", {
-      now: new Date().toISOString(),
-      expiry: resetExpiry.toISOString(),
-      diffMinutes: (resetExpiry - new Date()) / (1000 * 60)
-    });
+
     
     // Update user with reset token
     const updateUserQuery = `
@@ -568,12 +564,7 @@ export async function resetPassword(req, res) {
     const now = new Date();
     const expiry = new Date(user.passwordResetExpiry);
     
-    console.log("Token expiry check:", {
-      now: now.toISOString(),
-      expiry: expiry.toISOString(),
-      diffMinutes: (now - expiry) / (1000 * 60),
-      isExpired: now > expiry
-    });
+
 
     if (now > expiry) {
       return errorResponse(res, "Reset token has expired", 400);

@@ -1,6 +1,7 @@
 import { compareSync } from "bcrypt";
 import pool from "../config/dbConnection.js";
-import { errorResponse, successResponse, uploadFileToS3, generatePaymentPDFFromHTML, generatePaymentPDFFileName, createPaymentInvoiceHTML } from "../utils/index.js";
+import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { createPaymentReceiptTemplateData, generatePDFFromTemplate, generatePaymentPDFFileName } from "../utils/templatePDFGenerator.js";
 
 // Helper function to check if new columns exist in payment_allocations table
 async function checkNewColumnsExist(client) {
@@ -517,6 +518,8 @@ export async function createPayment(req, res) {
 }
 
 export async function updatePayment(req, res) {
+  const startTime = Date.now();
+  
   const {
     id,
     contactId,
@@ -846,17 +849,25 @@ export async function updatePayment(req, res) {
       );
     }
 
-    // Process new transaction allocations using the centralized function
+    // STEP 1: Revert old allocations from transactions
+    await revertOldTransactionAllocations(client, existingAllocations, companyId);
+
+    // STEP 2: Delete old allocation records
+    await client.query(
+      `DELETE FROM hisab."payment_allocations" WHERE "paymentId" = $1`,
+      [id]
+    );
+
+    // STEP 3: Process new transaction allocations using the centralized function
     const { allocationQueries, transactionUpdateQueries } = await processNewTransactionAllocations(client, transactionAllocations, id, companyId, bankAccountId);
 
-    // Execute all transaction update queries
-    for (const query of transactionUpdateQueries) {
-      await client.query(query.query, query.params);
-    }
-
-    // Execute all allocation queries
-    for (const query of allocationQueries) {
-      await client.query(query.query, query.params);
+    // Execute all queries in batches for better performance
+    const allQueries = [...transactionUpdateQueries, ...allocationQueries];
+    const batchSize = 10;
+    
+    for (let i = 0; i < allQueries.length; i += batchSize) {
+      const batch = allQueries.slice(i, i + batchSize);
+      await Promise.all(batch.map(query => client.query(query.query, query.params)));
     }
 
     // Update payment record
@@ -871,7 +882,7 @@ export async function updatePayment(req, res) {
         date,
         newOriginalAmount,
         newPaymentType,
-        description,
+        description || null,
         adjustmentType || null,
         adjustmentValue || null,
         id
@@ -880,35 +891,37 @@ export async function updatePayment(req, res) {
 
     await client.query("COMMIT");
 
-    // Wait for PDF regeneration to complete before returning response
-    let pdfRegenerationResult = null;
-    
-    try {
-      const pdfUrl = await generatePaymentPDFInternal(id, companyId);
-      
-      // Update payment record with PDF URL using a new connection
-      const pdfClient = await pool.connect();
+    // Generate PDF asynchronously (don't block the response)
+    setImmediate(async () => {
       try {
-        await pdfClient.query(
-          `UPDATE hisab."payments" 
-           SET "pdfUrl" = $1, "pdfGeneratedAt" = CURRENT_TIMESTAMP 
-           WHERE "id" = $2 AND "companyId" = $3`,
-          [pdfUrl, id, companyId]
-        );
-        pdfRegenerationResult = { success: true, pdfUrl };
-      } finally {
-        pdfClient.release();
+        const pdfUrl = await generatePaymentPDFInternal(id, companyId);
+        
+        // Update payment record with PDF URL using a new connection
+        const pdfClient = await pool.connect();
+        try {
+          await pdfClient.query(
+            `UPDATE hisab."payments" 
+             SET "pdfUrl" = $1, "pdfGeneratedAt" = CURRENT_TIMESTAMP 
+             WHERE "id" = $2 AND "companyId" = $3`,
+            [pdfUrl, id, companyId]
+          );
+          console.log(`✅ PDF regenerated successfully for payment ${id}`);
+        } finally {
+          pdfClient.release();
+        }
+      } catch (pdfError) {
+        console.error(`❌ PDF regeneration failed for payment ${id}:`, pdfError);
       }
-    } catch (pdfError) {
-      console.error(`❌ PDF regeneration failed for payment ${id}:`, pdfError);
-      // Don't fail the payment update, but include error in response
-      pdfRegenerationResult = { success: false, error: pdfError.message };
-    }
+    });
+
+    const endTime = Date.now();
+    const executionTime = endTime - startTime;
+    console.log(`⚡ Payment update completed in ${executionTime}ms`);
 
     return successResponse(res, {
-      message: "Payment updated successfully with PDF",
+      message: "Payment updated successfully",
       payment: updatedPaymentResult.rows[0],
-      pdfRegeneration: pdfRegenerationResult,
+      executionTime: `${executionTime}ms`,
       calculatedValues: {
         old: {
           receivableAmount: oldReceivableAmount,
@@ -1629,7 +1642,7 @@ export async function getPendingTransactions(req, res) {
     const netBalanceType = netPendingAmount >= 0 ? 'payable' : 'receivable';
 
     transactions.forEach((t, i) => {
-      console.log(`Transaction ${i + 1}:`, t.description, 'Amount:', t.pendingAmount, 'Type:', t.balanceType);
+              // Processing transaction allocation
     });
 
     // 8. Calculate summary by transaction type
@@ -1670,6 +1683,9 @@ export async function getPendingTransactions(req, res) {
 }
 
 export async function listPayments(req, res) {
+  const listStartTime = Date.now();
+  console.log(`🚀 ListPayments started`);
+  
   const {
     page = 1,
     limit = 10,
@@ -1691,6 +1707,8 @@ export async function listPayments(req, res) {
   try {
     // Calculate offset for pagination
     const offset = (page - 1) * limit;
+    const queryBuildTime = Date.now();
+    console.log(`⏱️ Query build setup: ${queryBuildTime - listStartTime}ms`);
 
     // Build the base query - using to_char to format the date as YYYY-MM-DD
     let query = `
@@ -1836,38 +1854,36 @@ export async function listPayments(req, res) {
 
     const client = await pool.connect();
     try {
+      const mainQueriesTime = Date.now();
+      console.log(`⏱️ Starting main queries: ${mainQueriesTime - listStartTime}ms`);
+      
       // Execute both queries in parallel
       const [paymentsResult, countResult] = await Promise.all([
         client.query(query, queryParams),
         client.query(countQuery, countParams)
       ]);
+      
+      const afterMainQueriesTime = Date.now();
+      console.log(`📊 Main queries completed: ${afterMainQueriesTime - mainQueriesTime}ms`);
 
       const payments = paymentsResult.rows;
       const total = parseInt(countResult.rows[0].count);
       const totalPages = Math.ceil(total / limit);
 
-      // Check if new columns exist before trying to use them
-      let hasNewColumns = false;
-      try {
-        const columnCheck = await client.query(`
-          SELECT column_name 
-          FROM information_schema.columns 
-          WHERE table_schema = 'hisab' 
-            AND table_name = 'payment_allocations' 
-            AND column_name IN ('expenseId', 'incomeId')
-        `);
-        hasNewColumns = columnCheck.rows.length === 2;
-      } catch (error) {
-        hasNewColumns = false;
-      }
+      // Skip column check for better performance
+      const hasNewColumns = true;
 
       // Get allocations for payments that have them
       if (payments.length > 0) {
+        const allocationsStartTime = Date.now();
+        console.log(`🔍 Starting allocations processing for ${payments.length} payments`);
+        
         const paymentIdsWithAllocations = payments
           .filter(p => p.allocationCount > 0)
           .map(p => p.id);
 
         if (paymentIdsWithAllocations.length > 0) {
+          console.log(`📋 Processing allocations for ${paymentIdsWithAllocations.length} payments with allocations`);
           let allocationsQuery;
           
           if (hasNewColumns) {
@@ -1952,8 +1968,32 @@ export async function listPayments(req, res) {
             `;
           }
 
-          const allocationsResult = await client.query(allocationsQuery, [paymentIdsWithAllocations]);
+          const allocationsStartTime = Date.now();
+          console.log(`🔍 Starting allocations query for ${paymentIdsWithAllocations.length} payments`);
+          
+          // Use simplified allocations query for better performance
+          const simplifiedAllocationsQuery = `
+            SELECT 
+              pa.id,
+              pa."paymentId",
+              pa."purchaseId",
+              pa."saleId",
+              pa."expenseId",
+              pa."incomeId",
+              pa."allocationType",
+              pa."balanceType",
+              pa.amount,
+              pa."paidAmount"
+            FROM hisab."payment_allocations" pa
+            WHERE pa."paymentId" = ANY($1)
+            ORDER BY pa."paymentId", pa."createdAt" ASC
+          `;
+          
+          const allocationsResult = await client.query(simplifiedAllocationsQuery, [paymentIdsWithAllocations]);
           const allocations = allocationsResult.rows;
+          
+          const allocationsQueryTime = Date.now();
+          console.log(`📋 Allocations query completed: ${allocationsQueryTime - allocationsStartTime}ms`);
 
           const paymentIdsWithCurrentBalance = allocations
             .filter(a => a.allocationType === 'current-balance')
@@ -1986,83 +2026,28 @@ export async function listPayments(req, res) {
               allocationsByPayment[allocation.paymentId] = [];
             }
 
-            // Transform allocation data based on transaction type
+            // Transform allocation data based on transaction type (simplified for performance)
             let transformedAllocation = { 
               ...allocation,
-              originalAmount: allocation.amount, // Add originalAmount for PaymentViewModal
-              type: allocation.allocationType, // Add type alias for allocationType
-              date: null // Will be set based on transaction type
+              originalAmount: allocation.amount,
+              type: allocation.allocationType,
+              transactionId: allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || 'current-balance',
+              description: `${allocation.allocationType.charAt(0).toUpperCase() + allocation.allocationType.slice(1)} Transaction`,
+              reference: `${allocation.allocationType.toUpperCase()}-${allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || 'BAL'}`,
+              date: new Date().toISOString() // Use current date for simplicity
             };
             
-            switch (allocation.allocationType) {
-              case 'current-balance':
-                transformedAllocation.description = 'Current Balance Settlement';
-                transformedAllocation.reference = 'Current Balance';
-                transformedAllocation.transactionId = 'current-balance';
-                transformedAllocation.date = new Date().toISOString(); // Current date for balance
-                transformedAllocation.originalAmount = allocation.amount;
-                if (contactBalances[allocation.paymentId]) {
-                  transformedAllocation.pendingAmount = contactBalances[allocation.paymentId].pendingAmount;
-                  transformedAllocation.balanceType = contactBalances[allocation.paymentId].balanceType;
-                  transformedAllocation.originalAmount = contactBalances[allocation.paymentId].pendingAmount || allocation.amount;
-                }
-                break;
-                
-              case 'purchase':
-                transformedAllocation.description = allocation.purchaseSupplierName ? 
-                  `Purchase from ${allocation.purchaseSupplierName}` : 
-                  'Purchase Payment';
-                transformedAllocation.reference = allocation.purchaseInvoiceNumber ? 
-                  `Invoice #${allocation.purchaseInvoiceNumber}` : 
-                  `Purchase #${allocation.purchaseId}`;
-                transformedAllocation.pendingAmount = allocation.purchasePendingAmount;
-                transformedAllocation.originalAmount = allocation.purchaseOriginalAmount || allocation.amount;
-                transformedAllocation.status = allocation.purchaseStatus;
-                transformedAllocation.transactionId = allocation.purchaseId;
-                transformedAllocation.date = allocation.purchaseDate;
-                break;
-                
-              case 'sale':
-                transformedAllocation.description = allocation.saleCustomerName ? 
-                  `Sale to ${allocation.saleCustomerName}` : 
-                  'Sale Payment';
-                transformedAllocation.reference = allocation.saleInvoiceNumber ? 
-                  `Invoice #${allocation.saleInvoiceNumber}` : 
-                  `Sale #${allocation.saleId}`;
-                transformedAllocation.pendingAmount = allocation.salePendingAmount;
-                transformedAllocation.originalAmount = allocation.saleOriginalAmount || allocation.amount;
-                transformedAllocation.status = allocation.saleStatus;
-                transformedAllocation.transactionId = allocation.saleId;
-                transformedAllocation.date = allocation.saleDate;
-                break;
-                
-              case 'expense':
-                transformedAllocation.description = 'Expense Payment';
-                transformedAllocation.reference = `Expense #${allocation.expenseId}`;
-                transformedAllocation.pendingAmount = allocation.expenseAmount;
-                transformedAllocation.originalAmount = allocation.expenseAmount || allocation.amount;
-                transformedAllocation.status = allocation.expenseStatus;
-                transformedAllocation.transactionId = allocation.expenseId;
-                transformedAllocation.date = allocation.expenseDate;
-                break;
-                
-              case 'income':
-                transformedAllocation.description = 'Income Receipt';
-                transformedAllocation.reference = `Income #${allocation.incomeId}`;
-                transformedAllocation.pendingAmount = allocation.incomeAmount;
-                transformedAllocation.originalAmount = allocation.incomeAmount || allocation.amount;
-                transformedAllocation.status = allocation.incomeStatus;
-                transformedAllocation.transactionId = allocation.incomeId;
-                transformedAllocation.date = allocation.incomeDate;
-                break;
-                
-              default:
-                transformedAllocation.description = 'Payment allocation';
-                transformedAllocation.reference = 'Unknown';
-                transformedAllocation.originalAmount = allocation.amount;
-                transformedAllocation.transactionId = null;
-                transformedAllocation.date = new Date().toISOString();
+            if (allocation.allocationType === 'current-balance') {
+              transformedAllocation.description = 'Current Balance Settlement';
+              transformedAllocation.reference = 'Current Balance';
+              transformedAllocation.transactionId = 'current-balance';
+              if (contactBalances[allocation.paymentId]) {
+                transformedAllocation.pendingAmount = contactBalances[allocation.paymentId].pendingAmount;
+                transformedAllocation.balanceType = contactBalances[allocation.paymentId].balanceType;
+                transformedAllocation.originalAmount = contactBalances[allocation.paymentId].pendingAmount || allocation.amount;
+              }
             }
+            // Simplified transformation for better performance (no complex transaction details needed for list view)
 
             allocationsByPayment[allocation.paymentId].push(transformedAllocation);
           });
@@ -2077,6 +2062,10 @@ export async function listPayments(req, res) {
         }
       }
 
+      const finalTime = Date.now();
+      const totalExecutionTime = finalTime - listStartTime;
+      console.log(`🏁 ListPayments completed in ${totalExecutionTime}ms`);
+
       return successResponse(res, {
         payments,
         pagination: {
@@ -2085,7 +2074,8 @@ export async function listPayments(req, res) {
           total,
           totalPages,
           currentPage: parseInt(page)
-        }
+        },
+        executionTime: `${totalExecutionTime}ms`
       });
     } finally {
       client.release();
@@ -2098,7 +2088,7 @@ export async function listPayments(req, res) {
 
 
 // Internal function to generate PDF (without HTTP response handling)
-async function generatePaymentPDFInternal(paymentId, companyId) {
+async function generatePaymentPDFInternal(paymentId, companyId, userId, copies = 2) {
   const client = await pool.connect();
 
   try {
@@ -2196,7 +2186,9 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
       ORDER BY pa."createdAt" ASC
     `;
 
-    const allocationsResult = await client.query(allocationsQuery, [paymentId]);
+        const allocationsResult = await client.query(allocationsQuery, [paymentId]);
+
+    // Fetch allocations for payment
 
     // Transform allocations data for PDF generation
     const transformedAllocations = allocationsResult.rows.map(allocation => {
@@ -2258,13 +2250,17 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
           reference = allocation.purchaseId || allocation.expenseId || allocation.incomeId || 'N/A';
       }
       
-      return {
+      const transformed = {
         ...allocation,
         description,
         reference,
         transactionId: allocation.allocationType === 'current-balance' ? 'current-balance' : 
                       allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId
       };
+      
+      // Allocation transformed successfully
+      
+      return transformed;
     });
 
     // Prepare data for PDF generation
@@ -2300,19 +2296,19 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
       allocations: transformedAllocations
     };
 
-    // Generate HTML content
-    const htmlContent = createPaymentInvoiceHTML(pdfData);
+    // Create template data
+    const templateData = createPaymentReceiptTemplateData(pdfData);
 
-    // Generate PDF
-    const pdfBuffer = await generatePaymentPDFFromHTML(htmlContent);
+    // Generate PDF using user's default template
+    const { pdfBuffer, template } = await generatePDFFromTemplate(templateData, {
+      userId,
+      companyId,
+      moduleType: 'payment',
+      templateId: null, // Use user's default template
+      copies: copies // Use the provided copies parameter
+    });
 
-    // Generate unique filename
-    const pdfFileName = generatePaymentPDFFileName(payment.paymentNumber, payment.companyName);
-
-    // Upload to S3
-    const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
-
-    return pdfUrl;
+    return { pdfBuffer, template };
 
   } finally {
     client.release();
@@ -2320,74 +2316,82 @@ async function generatePaymentPDFInternal(paymentId, companyId) {
 }
 
 export async function generatePaymentInvoicePDF(req, res) {
-  const { id: paymentId, forceRegenerate = false } = req.query;
+  const { id: paymentId, copies } = req.query;
   const companyId = req.currentUser?.companyId;
   const userId = req.currentUser?.id;
 
-  if (!paymentId || !companyId || !userId) {
-    return errorResponse(res, "Invalid request parameters", 400);
+  if (!paymentId) {
+    return errorResponse(res, "Payment ID is required", 400);
+  }
+  
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
   }
 
-  if (isNaN(parseInt(paymentId))) {
-    return errorResponse(res, "Invalid payment ID", 400);
+  // Get user's default copy preference if copies not specified
+  let numCopies = 2; // fallback default
+  if (copies) {
+    numCopies = parseInt(copies);
+  } else {
+    // Fetch user's default copy preference
+    const client = await pool.connect();
+    try {
+      const copyQuery = `
+        SELECT "defaultCopies"
+        FROM hisab."userCopyPreferences" 
+        WHERE "userId" = $1 AND "companyId" = $2 AND "moduleType" = 'payment'
+      `;
+      const copyResult = await client.query(copyQuery, [userId, companyId]);
+      if (copyResult.rows.length > 0) {
+        numCopies = copyResult.rows[0].defaultCopies;
+      }
+    } catch (error) {
+      console.error('Error fetching copy preference:', error);
+      // Continue with default of 2
+    } finally {
+      client.release();
+    }
   }
 
-  const client = await pool.connect();
+  // Validate copies parameter
+  if (![1, 2, 4].includes(numCopies)) {
+    return errorResponse(res, "Copies must be 1, 2, or 4", 400);
+  }
 
   try {
-    // Get PDF URL from payment record
-    const pdfQuery = `
-      SELECT "pdfUrl", "pdfGeneratedAt", "paymentNumber" 
-      FROM hisab."payments" 
-      WHERE "id" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL
-    `;
+    // Always generate fresh PDF (same as sales/purchase)
+    const { pdfBuffer, template } = await generatePaymentPDFInternal(paymentId, companyId, userId, numCopies);
+    
+    // Generate filename
+    const pdfFileName = generatePaymentPDFFileName(paymentId, `Payment_${paymentId}`);
 
-    const pdfResult = await client.query(pdfQuery, [paymentId, companyId]);
+    // Upload to S3
+    const pdfUrl = await uploadFileToS3(pdfBuffer, pdfFileName);
 
-    if (pdfResult.rows.length === 0) {
-      return errorResponse(res, "Payment not found", 404);
-    }
-
-    const { pdfUrl, pdfGeneratedAt, paymentNumber } = pdfResult.rows[0];
-
-    // If PDF doesn't exist or force regenerate is requested, generate new PDF
-    if (!pdfUrl || forceRegenerate) {
-      
-      const newPdfUrl = await generatePaymentPDFInternal(paymentId, companyId);
-      
-      // Update payment record with new PDF URL
-      await client.query(
-        `UPDATE hisab."payments" 
-         SET "pdfUrl" = $1, "pdfGeneratedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $2 AND "companyId" = $3`,
-        [newPdfUrl, paymentId, companyId]
-      );
-
-      return successResponse(res, {
-        message: "Payment invoice PDF generated successfully",
-        pdfUrl: newPdfUrl,
-        fileName: newPdfUrl.split('/').pop(),
-        paymentId: paymentId,
-        cached: false,
-        generatedAt: new Date().toISOString()
-      });
-    }
-
-    // Return existing PDF
     return successResponse(res, {
-      message: "Payment invoice PDF retrieved successfully",
+      message: "Payment receipt PDF generated successfully",
       pdfUrl: pdfUrl,
-      fileName: pdfUrl.split('/').pop(),
-      paymentId: paymentId,
-      cached: true,
-      generatedAt: pdfGeneratedAt
+      fileName: pdfFileName,
+      template: template ? {
+        id: template.id,
+        name: template.name
+      } : null,
+      actionType: 'generated'
     });
 
   } catch (error) {
-    console.error('Payment PDF generation error:', error);
-    return errorResponse(res, `Failed to get payment PDF: ${error.message}`, 500);
-  } finally {
-    client.release();
+    console.error("Error generating payment invoice PDF:", error);
+    
+    // Handle specific error types
+    if (error.message?.includes('not found')) {
+      return errorResponse(res, "Payment or related data not found", 404);
+    } else if (error.message?.includes('PDF generation failed')) {
+      return errorResponse(res, "Failed to generate PDF document", 500);
+    } else if (error.message?.includes('upload failed')) {
+      return errorResponse(res, "Failed to upload PDF to cloud storage", 500);
+    } else {
+      return errorResponse(res, "Failed to generate payment receipt PDF", 500);
+    }
   }
 }
 
@@ -2579,13 +2583,20 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
         const newPaidAmount = currentPaidAmount + paidAmount;
         const purchaseAmount = parseFloat(purchase.netPayable || 0);
         const newRemainingAmount = Math.max(0, purchaseAmount - newPaidAmount);
-        const isFullyPaid = newRemainingAmount <= 0;
+        
+        // Determine proper status
+        let newStatus = 'pending';
+        if (newPaidAmount >= purchaseAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
 
         transactionUpdateQueries.push({
           query: `UPDATE hisab."purchases" 
            SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
            WHERE id = $5`,
-          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
+          params: [newStatus, newRemainingAmount, newPaidAmount, newStatus === 'paid' ? bankAccountId : null, allocation.transactionId]
         });
 
         allocationQueries.push({
@@ -2614,13 +2625,20 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
         const newPaidAmount = currentPaidAmount + paidAmount;
         const saleAmount = parseFloat(sale.netReceivable || 0);
         const newRemainingAmount = Math.max(0, saleAmount - newPaidAmount);
-        const isFullyPaid = newRemainingAmount <= 0;
+        
+        // Determine proper status
+        let newStatus = 'pending';
+        if (newPaidAmount >= saleAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
 
         transactionUpdateQueries.push({
           query: `UPDATE hisab."sales" 
            SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = $4, "updatedAt" = CURRENT_TIMESTAMP
            WHERE id = $5`,
-          params: [isFullyPaid ? 'paid' : 'pending', newRemainingAmount, newPaidAmount, isFullyPaid ? bankAccountId : null, allocation.transactionId]
+          params: [newStatus, newRemainingAmount, newPaidAmount, newStatus === 'paid' ? bankAccountId : null, allocation.transactionId]
         });
 
         allocationQueries.push({
@@ -2664,6 +2682,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
           params: [
             paymentId,
+            null,
             null,
             allocation.transactionId,
             null,
@@ -2713,4 +2732,420 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
   }
 
   return { allocationQueries, transactionUpdateQueries };
+}
+
+// Helper function to revert old transaction allocations when updating payment
+async function revertOldTransactionAllocations(client, existingAllocations, companyId) {
+  // Group allocations by transaction type and ID
+  const transactionIds = existingAllocations
+    .filter(allocation => allocation.allocationType !== 'current-balance')
+    .map(allocation => {
+      if (allocation.purchaseId) return allocation.purchaseId;
+      if (allocation.saleId) return allocation.saleId;
+      if (allocation.expenseId) return allocation.expenseId;
+      if (allocation.incomeId) return allocation.incomeId;
+      return null;
+    })
+    .filter(id => id !== null);
+
+  let transactionsData = {};
+  if (transactionIds.length > 0) {
+    // Fetch current transaction data
+    const [purchasesQuery, salesQuery, expensesQuery, incomesQuery] = await Promise.all([
+      client.query(
+        `SELECT id, "netPayable", "remaining_amount", "paid_amount", "status" FROM hisab."purchases" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
+        [transactionIds, companyId]
+      ),
+      client.query(
+        `SELECT id, "netReceivable", "remaining_amount", "paid_amount", "status" FROM hisab."sales" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
+        [transactionIds, companyId]
+      ),
+      client.query(
+        `SELECT id, "amount", "remaining_amount", "paid_amount", "status" FROM hisab."expenses" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
+        [transactionIds, companyId]
+      ),
+      client.query(
+        `SELECT id, "amount", "remaining_amount", "paid_amount", "status" FROM hisab."incomes" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
+        [transactionIds, companyId]
+      )
+    ]);
+
+    purchasesQuery.rows.forEach(row => transactionsData[`purchase_${row.id}`] = row);
+    salesQuery.rows.forEach(row => transactionsData[`sale_${row.id}`] = row);
+    expensesQuery.rows.forEach(row => transactionsData[`expense_${row.id}`] = row);
+    incomesQuery.rows.forEach(row => transactionsData[`income_${row.id}`] = row);
+  }
+
+  // Batch process all old allocations to revert their effects
+  const revertQueries = [];
+  
+  for (const allocation of existingAllocations) {
+    const paidAmount = parseFloat(allocation.paidAmount || 0);
+    
+    if (allocation.allocationType === 'current-balance') {
+      // Skip current balance reversals - handled separately
+      continue;
+    } else if (allocation.purchaseId) {
+      // Revert purchase payment
+      const purchase = transactionsData[`purchase_${allocation.purchaseId}`];
+      if (purchase) {
+        const currentPaidAmount = parseFloat(purchase.paid_amount || 0);
+        const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
+        const purchaseAmount = parseFloat(purchase.netPayable || 0);
+        const newRemainingAmount = purchaseAmount - newPaidAmount;
+        
+        // Determine new status
+        let newStatus = 'pending';
+        if (newPaidAmount >= purchaseAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
+
+        revertQueries.push({
+          query: `UPDATE hisab."purchases" 
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = CASE WHEN $1 = 'paid' THEN "bankAccountId" ELSE NULL END, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          params: [newStatus, newRemainingAmount, newPaidAmount, allocation.purchaseId]
+        });
+        
+        // Update local data for next iteration
+        transactionsData[`purchase_${allocation.purchaseId}`].paid_amount = newPaidAmount;
+        transactionsData[`purchase_${allocation.purchaseId}`].remaining_amount = newRemainingAmount;
+      }
+    } else if (allocation.saleId) {
+      // Revert sale payment
+      const sale = transactionsData[`sale_${allocation.saleId}`];
+      if (sale) {
+        const currentPaidAmount = parseFloat(sale.paid_amount || 0);
+        const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
+        const saleAmount = parseFloat(sale.netReceivable || 0);
+        const newRemainingAmount = saleAmount - newPaidAmount;
+        
+        // Determine new status
+        let newStatus = 'pending';
+        if (newPaidAmount >= saleAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
+
+        revertQueries.push({
+          query: `UPDATE hisab."sales" 
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = CASE WHEN $1 = 'paid' THEN "bankAccountId" ELSE NULL END, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          params: [newStatus, newRemainingAmount, newPaidAmount, allocation.saleId]
+        });
+        
+        // Update local data for next iteration
+        transactionsData[`sale_${allocation.saleId}`].paid_amount = newPaidAmount;
+        transactionsData[`sale_${allocation.saleId}`].remaining_amount = newRemainingAmount;
+      }
+    } else if (allocation.expenseId) {
+      // Revert expense payment
+      const expense = transactionsData[`expense_${allocation.expenseId}`];
+      if (expense) {
+        const currentPaidAmount = parseFloat(expense.paid_amount || 0);
+        const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
+        const expenseAmount = parseFloat(expense.amount || 0);
+        const newRemainingAmount = expenseAmount - newPaidAmount;
+        
+        // Determine new status
+        let newStatus = 'pending';
+        if (newPaidAmount >= expenseAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
+
+        revertQueries.push({
+          query: `UPDATE hisab."expenses" 
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = CASE WHEN $1 = 'paid' THEN "bankAccountId" ELSE NULL END, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          params: [newStatus, newRemainingAmount, newPaidAmount, allocation.expenseId]
+        });
+        
+        // Update local data for next iteration
+        transactionsData[`expense_${allocation.expenseId}`].paid_amount = newPaidAmount;
+        transactionsData[`expense_${allocation.expenseId}`].remaining_amount = newRemainingAmount;
+      }
+    } else if (allocation.incomeId) {
+      // Revert income payment
+      const income = transactionsData[`income_${allocation.incomeId}`];
+      if (income) {
+        const currentPaidAmount = parseFloat(income.paid_amount || 0);
+        const newPaidAmount = Math.max(0, currentPaidAmount - paidAmount);
+        const incomeAmount = parseFloat(income.amount || 0);
+        const newRemainingAmount = incomeAmount - newPaidAmount;
+        
+        // Determine new status
+        let newStatus = 'pending';
+        if (newPaidAmount >= incomeAmount) {
+          newStatus = 'paid';
+        } else if (newPaidAmount > 0) {
+          newStatus = 'partial';
+        }
+
+        revertQueries.push({
+          query: `UPDATE hisab."incomes" 
+           SET "status" = $1, "remaining_amount" = $2, "paid_amount" = $3, "bankAccountId" = CASE WHEN $1 = 'paid' THEN "bankAccountId" ELSE NULL END, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $4`,
+          params: [newStatus, newRemainingAmount, newPaidAmount, allocation.incomeId]
+        });
+        
+        // Update local data for next iteration
+        transactionsData[`income_${allocation.incomeId}`].paid_amount = newPaidAmount;
+        transactionsData[`income_${allocation.incomeId}`].remaining_amount = newRemainingAmount;
+      }
+    }
+  }
+  
+  // Execute all revert queries in batches
+  if (revertQueries.length > 0) {
+    const batchSize = 10;
+    for (let i = 0; i < revertQueries.length; i += batchSize) {
+      const batch = revertQueries.slice(i, i + batchSize);
+      await Promise.all(batch.map(query => client.query(query.query, query.params)));
+    }
+  }
+}
+
+// Get complete payment data for printing/preview (same structure as sales/purchase)
+export async function getPaymentForPrint(req, res) {
+  const { id } = req.params;
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!id) {
+    return errorResponse(res, "Payment ID is required", 400);
+  }
+  
+  if (!userId || !companyId) {
+    return errorResponse(res, "Authentication required", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Fetch payment details with all related data (EXACT SAME as PDF generation)
+    const paymentQuery = `
+      SELECT 
+        p.*,
+        c."name" as "contactName",
+        c."email" as "contactEmail", 
+        c."mobile" as "contactMobile",
+        c."gstin" as "contactGstin",
+        c."billingAddress1" as "contactBillingAddress1",
+        c."billingAddress2" as "contactBillingAddress2",
+        c."billingCity" as "contactBillingCity",
+        c."billingState" as "contactBillingState",
+        c."billingPincode" as "contactBillingPincode",
+        c."billingCountry" as "contactBillingCountry",
+        ba."accountName", 
+        ba."accountType",
+        u."name" as "createdByName",
+        comp."name" as "companyName",
+        comp."logoUrl",
+        comp."address1",
+        comp."address2", 
+        comp."city",
+        comp."state",
+        comp."pincode",
+        comp."country",
+        comp."gstin" as "companyGstin"
+      FROM hisab."payments" p
+      LEFT JOIN hisab."contacts" c ON p."contactId" = c.id
+      LEFT JOIN hisab."bankAccounts" ba ON p."bankId" = ba.id
+      LEFT JOIN hisab."users" u ON p."createdBy" = u.id
+      LEFT JOIN hisab."companies" comp ON p."companyId" = comp.id
+      WHERE p."id" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL
+    `;
+
+    const paymentResult = await client.query(paymentQuery, [id, companyId]);
+
+    if (paymentResult.rows.length === 0) {
+      return errorResponse(res, "Payment not found", 404);
+    }
+
+    const payment = paymentResult.rows[0];
+
+    // Fetch payment allocations (EXACT SAME query as PDF generation)
+    const allocationsQuery = `
+      SELECT 
+        pa.id,
+        pa."paymentId",
+        pa."purchaseId",
+        pa."saleId",
+        pa."expenseId",
+        pa."incomeId",
+        pa."allocationType",
+        pa."balanceType",
+        pa.amount,
+        pa."paidAmount",
+        -- Purchase data
+        pur."invoiceNumber" as "purchaseInvoiceNumber",
+        pur."remaining_amount" as "purchasePendingAmount",
+        pur."status" as "purchaseStatus",
+        pur_contact."name" as "purchaseSupplierName",
+        -- Sale data
+        s."invoiceNumber" as "saleInvoiceNumber",
+        s."remaining_amount" as "salePendingAmount",
+        s."status" as "saleStatus",
+        s_contact."name" as "saleCustomerName",
+        -- Expense data
+        exp."amount" as "expenseAmount",
+        exp."notes" as "expenseNotes",
+        exp."date" as "expenseDate",
+        exp."status" as "expenseStatus",
+        exp_cat."name" as "expenseCategoryName",
+        exp_contact."name" as "expenseContactName",
+        -- Income data
+        inc."amount" as "incomeAmount", 
+        inc."notes" as "incomeNotes",
+        inc."date" as "incomeDate",
+        inc."status" as "incomeStatus",
+        inc_cat."name" as "incomeCategoryName",
+        inc_contact."name" as "incomeContactName"
+      FROM hisab."payment_allocations" pa
+      LEFT JOIN hisab."purchases" pur ON pa."purchaseId" = pur."id" AND pa."allocationType" = 'purchase'
+      LEFT JOIN hisab."contacts" pur_contact ON pur."contactId" = pur_contact."id"
+      LEFT JOIN hisab."sales" s ON pa."saleId" = s."id" AND pa."allocationType" = 'sale'
+      LEFT JOIN hisab."contacts" s_contact ON s."contactId" = s_contact."id"
+      LEFT JOIN hisab."expenses" exp ON pa."expenseId" = exp."id" AND pa."allocationType" = 'expense'
+      LEFT JOIN hisab."expenseCategories" exp_cat ON exp."categoryId" = exp_cat."id"
+      LEFT JOIN hisab."contacts" exp_contact ON exp."contactId" = exp_contact."id"
+      LEFT JOIN hisab."incomes" inc ON pa."incomeId" = inc."id" AND pa."allocationType" = 'income'
+      LEFT JOIN hisab."incomeCategories" inc_cat ON inc."categoryId" = inc_cat."id"
+      LEFT JOIN hisab."contacts" inc_contact ON inc."contactId" = inc_contact."id"
+      WHERE pa."paymentId" = $1
+      ORDER BY pa."createdAt" ASC
+    `;
+
+    const allocationsResult = await client.query(allocationsQuery, [id]);
+
+    // Transform allocations data (EXACT SAME logic as PDF generation)
+    const transformedAllocations = allocationsResult.rows.map(allocation => {
+      let description = 'Payment allocation';
+      let reference = 'N/A';
+      
+      switch (allocation.allocationType) {
+        case 'current-balance':
+          description = 'Current Balance Settlement';
+          reference = 'Current Balance';
+          break;
+          
+        case 'purchase':
+          description = allocation.purchaseSupplierName ? 
+            `Purchase from ${allocation.purchaseSupplierName}` : 
+            'Purchase Payment';
+          reference = allocation.purchaseInvoiceNumber ? 
+            `Invoice #${allocation.purchaseInvoiceNumber}` : 
+            `Purchase #${allocation.purchaseId}`;
+          break;
+          
+        case 'sale':
+          description = allocation.saleCustomerName ? 
+            `Sale to ${allocation.saleCustomerName}` : 
+            'Sale Payment';
+          reference = allocation.saleInvoiceNumber ? 
+            `Invoice #${allocation.saleInvoiceNumber}` : 
+            `Sale #${allocation.saleId}`;
+          break;
+          
+        case 'expense':
+          description = allocation.expenseCategoryName ? 
+            `Expense: ${allocation.expenseCategoryName}` : 
+            'Expense Payment';
+          if (allocation.expenseContactName) {
+            description += ` (${allocation.expenseContactName})`;
+          }
+          reference = `Expense #${allocation.expenseId}`;
+          if (allocation.expenseDate) {
+            reference += ` - ${new Date(allocation.expenseDate).toLocaleDateString()}`;
+          }
+          break;
+          
+        case 'income':
+          description = allocation.incomeCategoryName ? 
+            `Income: ${allocation.incomeCategoryName}` : 
+            'Income Receipt';
+          if (allocation.incomeContactName) {
+            description += ` (${allocation.incomeContactName})`;
+          }
+          reference = `Income #${allocation.incomeId}`;
+          if (allocation.incomeDate) {
+            reference += ` - ${new Date(allocation.incomeDate).toLocaleDateString()}`;
+          }
+          break;
+          
+        default:
+          description = 'Payment allocation';
+          reference = allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || 'N/A';
+      }
+      
+      return {
+        ...allocation,
+        description,
+        reference,
+        transactionId: allocation.allocationType === 'current-balance' ? 'current-balance' : 
+                      allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId
+      };
+    });
+
+    // Prepare data for template generation (EXACT SAME as PDF generation)
+    const pdfData = {
+      payment: payment,
+      company: {
+        name: payment.companyName,
+        logoUrl: payment.logoUrl,
+        address1: payment.address1,
+        address2: payment.address2,
+        city: payment.city,
+        state: payment.state,
+        pincode: payment.pincode,
+        country: payment.country,
+        gstin: payment.companyGstin
+      },
+      contact: {
+        name: payment.contactName,
+        email: payment.contactEmail,
+        mobile: payment.contactMobile,
+        gstin: payment.contactGstin,
+        billingAddress1: payment.contactBillingAddress1,
+        billingAddress2: payment.contactBillingAddress2,
+        billingCity: payment.contactBillingCity,
+        billingState: payment.contactBillingState,
+        billingPincode: payment.contactBillingPincode,
+        billingCountry: payment.contactBillingCountry
+      },
+      bankAccount: {
+        accountName: payment.accountName,
+        accountType: payment.accountType
+      },
+      allocations: transformedAllocations
+    };
+
+    // Create template data using same function as PDF generation
+    const paymentData = createPaymentReceiptTemplateData(pdfData);
+
+    console.log('🔍 getPaymentForPrint API - Final data:', {
+      paymentId: id,
+      hasAllocations: paymentData.hasAllocations,
+      allocationsCount: paymentData.allocations?.length || 0,
+      firstAllocation: paymentData.allocations?.[0],
+      companyName: paymentData.companyName,
+      customerName: paymentData.customerName
+    });
+
+    return successResponse(res, {
+      message: "Payment data retrieved successfully for printing",
+      paymentData: paymentData
+    });
+
+  } catch (error) {
+    console.error("Error getting payment for print:", error);
+    return errorResponse(res, "Failed to get payment data for printing", 500);
+  } finally {
+    client.release();
+  }
 }

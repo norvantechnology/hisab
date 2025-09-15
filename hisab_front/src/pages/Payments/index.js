@@ -10,10 +10,14 @@ import PaymentViewModal from '../../Components/Payments/PaymentViewModal';
 import DeleteModal from "../../Components/Common/DeleteModal";
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import Loader from '../../Components/Common/Loader';
+import PrintPreferencesManager from '../../Components/Common/PrintPreferencesManager';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
-import { createPayment, deletePayment, listPayments, updatePayment } from '../../services/payment';
+import { createPayment, deletePayment, listPayments, updatePayment, generatePaymentInvoicePDF, downloadPaymentPDF, getPaymentForPrint } from '../../services/payment';
+import { getDefaultCopies } from '../../services/copyPreferences';
+import { getTemplates } from '../../services/templates';
+import { generatePreviewHTML, adjustTemplateForCopies, generateMultipleCopies } from '../../utils/templatePreviewUtils';
 import useCompanySelectionState from '../../hooks/useCompanySelection';
 
 const PaymentsPage = () => {
@@ -46,13 +50,14 @@ const PaymentsPage = () => {
         },
         selectedPayment: null,
         isEditMode: false,
-        apiLoading: false
+        apiLoading: false,
+        pdfLoading: null
     });
 
     const {
         payments, bankAccounts, contacts, loading, searchTerm,
         pagination, filters, modals, selectedPayment, isEditMode,
-        apiLoading
+        apiLoading, pdfLoading
     } = state;
 
     // Use the modern company selection hook
@@ -130,8 +135,8 @@ const PaymentsPage = () => {
     };
 
     const handleEditClick = (payment) => {
-        console.log('🔍 Edit payment clicked:', payment);
-        console.log('🆔 Payment ID:', payment?.id);
+        // Edit payment clicked
+
         setState(prev => ({
             ...prev,
             selectedPayment: payment,
@@ -184,9 +189,7 @@ const PaymentsPage = () => {
         try {
             setState(prev => ({ ...prev, apiLoading: true }));
             
-            console.log('🚀 Received payload from PaymentForm:', payloadFromForm);
-            console.log('🔍 Edit mode debug:', { isEditMode, selectedPaymentId: selectedPayment?.id });
-            console.log('📦 Final payload for API:', payloadFromForm);
+            // Processing payment form submission
 
             const response = isEditMode
                 ? await updatePayment(payloadFromForm)
@@ -204,6 +207,136 @@ const PaymentsPage = () => {
         } catch (error) {
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.message || `Failed to ${isEditMode ? 'update' : 'create'} payment`);
+        }
+    };
+
+    const handlePrint = async (payment) => {
+        try {
+            // Direct print with user's default copies (no popup)
+            const copyPreferenceResponse = await getDefaultCopies('payment');
+            const defaultCopies = copyPreferenceResponse.defaultCopies || 2;
+            
+            // Use the same logic as view modal
+            const paymentResponse = await getPaymentForPrint(payment.id);
+            if (!paymentResponse.success) {
+                toast.error('Failed to fetch payment data for printing');
+                return;
+            }
+
+            // Get default template
+            const templatesResponse = await getTemplates('payment');
+            const templates = templatesResponse.templates || [];
+            const defaultTemplate = templates.find(t => t.default === true);
+            
+            if (!defaultTemplate) {
+                toast.error('No default template found. Please set a default template first.');
+                return;
+            }
+
+            // Process template and print directly
+            const paymentData = paymentResponse.paymentData;
+            let processedHtml = generatePreviewHTML(defaultTemplate, paymentData);
+            processedHtml = adjustTemplateForCopies(processedHtml, defaultCopies);
+            
+            if (defaultCopies > 1) {
+                processedHtml = generateMultipleCopies(processedHtml, defaultCopies);
+            }
+
+            // Add print CSS
+            const pageSetupCSS = `
+                <style>
+                    @page { size: A4 portrait; margin: 3mm; }
+                    body { width: 794px; height: 1123px; margin: 0; padding: 0; background: white; font-family: 'Noto Sans Gujarati', Arial, sans-serif; }
+                    @media print {
+                        body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                        .receipt-container { page-break-inside: avoid; }
+                        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                    }
+                </style>
+            </head>`;
+            processedHtml = processedHtml.replace('</head>', pageSetupCSS);
+
+            // Open print window
+            const printWindow = window.open('', '_blank');
+            printWindow.document.write(processedHtml);
+            printWindow.document.close();
+            
+            // Wait for content and images to load then print
+            printWindow.onload = () => {
+                // Wait for all images to load
+                const images = printWindow.document.images;
+                let loadedImages = 0;
+                const totalImages = images.length;
+                
+                if (totalImages === 0) {
+                    // No images, print immediately
+                    setTimeout(() => {
+                        printWindow.focus();
+                        printWindow.print();
+                        printWindow.close();
+                        toast.success(`Payment receipt printed with ${defaultCopies} ${defaultCopies === 1 ? 'copy' : 'copies'}!`);
+                    }, 300);
+                    return;
+                }
+                
+                const checkAllImagesLoaded = () => {
+                    loadedImages++;
+                    if (loadedImages >= totalImages) {
+                        // All images loaded, now print
+                        setTimeout(() => {
+                            printWindow.focus();
+                            printWindow.print();
+                            printWindow.close();
+                            toast.success(`Payment receipt printed with ${defaultCopies} ${defaultCopies === 1 ? 'copy' : 'copies'}!`);
+                        }, 500);
+                    }
+                };
+                
+                // Add load event listeners to all images
+                Array.from(images).forEach((img, index) => {
+                    if (img.complete) {
+                        checkAllImagesLoaded();
+                    } else {
+                        img.addEventListener('load', checkAllImagesLoaded);
+                        img.addEventListener('error', checkAllImagesLoaded); // Also proceed on error
+                        
+                        // Fallback timeout for stuck images
+                        setTimeout(() => {
+                            if (loadedImages < totalImages) {
+                                console.log(`Image ${index} taking too long, proceeding with print`);
+                                checkAllImagesLoaded();
+                            }
+                        }, 3000);
+                    }
+                });
+            };
+
+        } catch (error) {
+            console.error('Print error:', error);
+            toast.error('Failed to print payment receipt');
+        }
+    };
+
+    const handleGeneratePDF = async (payment) => {
+        try {
+            // Get user's default copy preference
+            const copyPreferenceResponse = await getDefaultCopies('payment');
+            const defaultCopies = copyPreferenceResponse.defaultCopies || 2;
+            
+            setState(prev => ({ ...prev, pdfLoading: payment.id }));
+            const response = await generatePaymentInvoicePDF(payment.id, defaultCopies);
+
+            if (response.success) {
+                toast.success(`Payment receipt PDF generated with ${defaultCopies} ${defaultCopies === 1 ? 'copy' : 'copies'}!`);
+                downloadPaymentPDF(response.pdfUrl, response.fileName);
+            } else {
+                throw new Error(response.message || "Failed to generate PDF");
+            }
+        } catch (error) {
+            console.error("PDF generation error:", error);
+            toast.error(error.message || "Failed to generate payment receipt PDF");
+        } finally {
+            setState(prev => ({ ...prev, pdfLoading: null }));
         }
     };
 
@@ -273,11 +406,20 @@ const PaymentsPage = () => {
                 <Row className="mb-3">
                     <Col sm={12} className="text-end">
                         <div className="d-flex justify-content-end gap-2">
+                            <PrintPreferencesManager 
+                                moduleType="payment" 
+                                size="small"
+                                onPreferencesChange={() => {
+                                    console.log('Print preferences updated for payment module');
+                                }}
+                            />
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
-                                <RiDownload2Line className="align-middle me-1" /> Export
+                                <RiDownload2Line className="align-bottom" /> 
+                                <span className="d-none d-sm-inline">Export</span>
                             </Button>
                             <Button color="success" onClick={handleAddClick}>
-                                <RiAddLine className="align-middle me-1" /> Add Payment
+                                <RiAddLine className="align-bottom" /> 
+                                <span className="d-none d-sm-inline">Add Payment</span>
                             </Button>
                         </div>
                     </Col>
@@ -294,6 +436,9 @@ const PaymentsPage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onGeneratePDF={handleGeneratePDF}
+                        onPrint={handlePrint}
+                        pdfLoading={pdfLoading}
                     />
                 )}
 
@@ -312,6 +457,8 @@ const PaymentsPage = () => {
                     isOpen={modals.view}
                     toggle={() => toggleModal('view')}
                     payment={selectedPayment}
+                    onGeneratePDF={handleGeneratePDF}
+                    pdfLoading={pdfLoading}
                 />
 
                 <DeleteModal

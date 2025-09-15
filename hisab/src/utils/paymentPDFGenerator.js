@@ -58,46 +58,7 @@ const convertNumberToWords = (amount) => {
   return result.trim();
 };
 
-// Generate PDF from HTML content
-export const generatePaymentPDFFromHTML = async (htmlContent, options = {}) => {
-  let browser;
-  
-  try {
-    // Launch browser
-    browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
-    });
-    
-    const page = await browser.newPage();
-    
-    // Set content
-    await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
-    
-    // Generate PDF with F4 format and minimal margins for cost-saving
-    const pdfBuffer = await page.pdf({
-      format: 'A4', // F4 is similar to A4, we'll use A4 with minimal margins
-      printBackground: true,
-      margin: {
-        top: '5mm',    // Minimal top margin
-        right: '5mm',  // Minimal right margin
-        bottom: '5mm', // Minimal bottom margin
-        left: '5mm'    // Minimal left margin
-      },
-      ...options
-    });
-    
-    return pdfBuffer;
-    
-  } catch (error) {
-    console.error('Payment PDF generation error:', error);
-    throw new Error(`Failed to generate payment PDF: ${error.message}`);
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
-  }
-};
+// Removed unused generatePaymentPDFFromHTML function - now using template system
 
 // Generate unique filename for payment PDF
 export const generatePaymentPDFFileName = (paymentNumber, companyName) => {
@@ -107,6 +68,7 @@ export const generatePaymentPDFFileName = (paymentNumber, companyName) => {
   return `payment_${cleanCompanyName}_${cleanPaymentNumber}_${timestamp}.pdf`;
 };
 
+// UNUSED FUNCTION - Can be removed (now using template system)
 // Create payment invoice HTML template
 export const createPaymentInvoiceHTML = (paymentData) => {
   const { payment, company, contact, bankAccount, allocations = [] } = paymentData;

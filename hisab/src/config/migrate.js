@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const envPath = path.resolve(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 
-// Debug: Verify env file is loading
+// Environment configuration loading
 console.log(`Loading environment from: ${envPath}`);
 console.log("DB_HOST:", process.env.DB_HOST ? "✅ Found" : "❌ Missing");
 

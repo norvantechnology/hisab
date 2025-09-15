@@ -177,6 +177,8 @@ const FastPurchaseInvoiceForm = ({
         }
     });
 
+
+
     // Update new item calculations in real-time
     const updateNewItemCalculations = useCallback((updatedItem) => {
         const quantity = updatedItem.isSerialized ? (updatedItem.serialNumbers || []).length : parseFloat(updatedItem.quantity) || 0;
@@ -209,7 +211,9 @@ const FastPurchaseInvoiceForm = ({
                     ...updatedItem,
                     calculatedTotal: result.total || 0,
                     calculatedTaxAmount: shouldCalculateTax ? (result.taxAmount || 0) : 0, // Force tax amount to 0 if "No Tax"
-                    calculatedDiscount: result.discount || 0
+                    calculatedDiscount: result.discount || 0,
+                    rateWithoutTax: result.rateWithoutTax || 0,
+                    rateWithTax: result.rateWithTax || 0
                 };
             } catch (error) {
                 console.error('❌ Calculation error:', error);
@@ -418,11 +422,21 @@ const FastPurchaseInvoiceForm = ({
 
     // Calculate invoice totals
     const calculateInvoiceTotals = useCallback((values, itemsData) => {
-        // Calculate subtotal as Rate × Qty (before any discounts/tax)
+        // Calculate subtotal as Rate (Without tax) × Qty (before any discounts/tax)
         const basicAmount = itemsData.reduce((sum, item) => {
             const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity);
             const rate = parseFloat(item.rate) || 0;
-            return sum + (quantity * rate);
+            const taxRate = parseFloat(item.taxRate) || 0;
+            // Use rate without tax for subtotal calculation based on rate type
+            let rateWithoutTax;
+            if (values.rateType === 'with_tax' && taxRate > 0) {
+                // Rate includes tax, so extract the base rate
+                rateWithoutTax = rate / (1 + (taxRate / 100));
+            } else {
+                // Rate is already without tax or no tax applicable
+                rateWithoutTax = rate;
+            }
+            return sum + (quantity * rateWithoutTax);
         }, 0);
         
         // Calculate total item-level discounts
@@ -528,11 +542,21 @@ const FastPurchaseInvoiceForm = ({
 
     // Calculate totals for display
     const totals = useMemo(() => {
-        // Calculate subtotal as Rate × Qty (before tax and discount)
+        // Calculate subtotal as Rate (Without tax) × Qty (before tax and discount)
         const subtotal = items.reduce((sum, item) => {
             const quantity = item.isSerialized ? (item.serialNumbers || []).length : parseFloat(item.quantity) || 0;
             const rate = parseFloat(item.rate) || 0;
-            return sum + (quantity * rate);
+            const taxRate = parseFloat(item.taxRate) || 0;
+            // Use rate without tax for subtotal calculation based on rate type
+            let rateWithoutTax;
+            if (validation?.values?.rateType === 'with_tax' && taxRate > 0) {
+                // Rate includes tax, so extract the base rate
+                rateWithoutTax = rate / (1 + (taxRate / 100));
+            } else {
+                // Rate is already without tax or no tax applicable
+                rateWithoutTax = rate;
+            }
+            return sum + (quantity * rateWithoutTax);
         }, 0);
         
         // Calculate total item-level discounts
@@ -643,6 +667,8 @@ const FastPurchaseInvoiceForm = ({
             discountValue: discountRate,
             discountAmount: parseFloat((result.discount || 0).toFixed(2)), // Round discount amount
             total: parseFloat((result.total || 0).toFixed(2)), // Round total
+            rateWithoutTax: parseFloat((result.rateWithoutTax || 0).toFixed(2)),
+            rateWithTax: parseFloat((result.rateWithTax || 0).toFixed(2)),
             isSerialized: newItem.isSerialized,
             serialNumbers: newItem.serialNumbers || [],
             currentStock: newItem.currentStock || 0
@@ -869,7 +895,9 @@ const FastPurchaseInvoiceForm = ({
                     rateType: newRateType, // Update item's rate type to match invoice
                     taxAmount: result.taxAmount,
                     discount: result.discount,
-                    total: result.total
+                    total: result.total,
+                    rateWithoutTax: result.rateWithoutTax,
+                    rateWithTax: result.rateWithTax
                 };
             });
             
@@ -1522,9 +1550,13 @@ const FastPurchaseInvoiceForm = ({
                                 <thead className="table-light">
                                     <tr>
                                         <th style={{ width: '4%' }}>#</th>
-                                        <th style={{ width: shouldShowTaxRate && shouldShowItemDiscountField ? '22%' : '28%' }}>Product</th>
+                                        <th style={{ width: shouldShowTaxRate && shouldShowItemDiscountField ? '20%' : '26%' }}>Product</th>
                                         <th style={{ width: '8%' }}>Qty</th>
-                                        <th style={{ width: '12%' }}>Rate</th>
+                                        {validation?.values?.rateType === 'with_tax' && shouldShowTaxRate ? (
+                                            <th style={{ width: '10%' }}>Rate (Without tax)</th>
+                                        ) : (
+                                            <th style={{ width: '10%' }}>Rate</th>
+                                        )}
                                         {shouldShowTaxRate && (
                                             <>
                                         <th style={{ width: '8%' }}>Tax%</th>
@@ -1556,7 +1588,13 @@ const FastPurchaseInvoiceForm = ({
                                                 )}
                                             </td>
                                             <td className="text-center small">{item.quantity}</td>
-                                            <td className="text-end small">₹{parseFloat(item.rate).toFixed(2)}</td>
+                                            {validation?.values?.rateType === 'with_tax' && shouldShowTaxRate ? (
+                                                <td className="text-end small">
+                                                    ₹{parseFloat(item.rateWithoutTax || item.rate / (1 + (parseFloat(item.taxRate) / 100))).toFixed(2)}
+                                                </td>
+                                            ) : (
+                                                <td className="text-end small">₹{parseFloat(item.rate).toFixed(2)}</td>
+                                            )}
                                             {shouldShowTaxRate && (
                                                 <>
                                             <td className="text-center small">{item.taxRate}%</td>

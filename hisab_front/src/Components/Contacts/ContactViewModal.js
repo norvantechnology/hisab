@@ -69,6 +69,30 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
         setPaymentSuccess('');
     };
 
+    // Select All functionality
+    const handleSelectAll = () => {
+        const allTransactionIds = pendingTransactions.map(t => t.id);
+        const newPaymentAmounts = {};
+        
+        // Set default payment amounts for all transactions
+        pendingTransactions.forEach(transaction => {
+            newPaymentAmounts[transaction.id] = transaction.pendingAmount;
+        });
+        
+        setSelectedTransactions(allTransactionIds);
+        setPaymentAmounts(newPaymentAmounts);
+    };
+
+    const handleDeselectAll = () => {
+        setSelectedTransactions([]);
+        setPaymentAmounts({});
+    };
+
+    const isAllSelected = pendingTransactions.length > 0 && 
+        selectedTransactions.length === pendingTransactions.length;
+    const isPartiallySelected = selectedTransactions.length > 0 && 
+        selectedTransactions.length < pendingTransactions.length;
+
     const toggleTransactionSelection = (transactionId) => {
         const updatedSelected = selectedTransactions.includes(transactionId)
             ? selectedTransactions.filter(id => id !== transactionId)
@@ -581,7 +605,25 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                 <Table responsive>
                                                     <thead>
                                                         <tr>
-                                                            {showPaymentForm && <th width="50px">Select</th>}
+                                                            {showPaymentForm && (
+                                                                <th width="50px">
+                                                                    <div className="d-flex align-items-center">
+                                                                        <Input
+                                                                            type="checkbox"
+                                                                            checked={isAllSelected}
+                                                                            onChange={isAllSelected ? handleDeselectAll : handleSelectAll}
+                                                                            disabled={pendingTransactions.length === 0}
+                                                                            ref={(input) => {
+                                                                                if (input) {
+                                                                                    input.indeterminate = isPartiallySelected;
+                                                                                }
+                                                                            }}
+                                                                            title={isAllSelected ? "Deselect All" : "Select All"}
+                                                                        />
+                                                                        <small className="ms-1 text-muted d-none d-md-inline">All</small>
+                                                                    </div>
+                                                                </th>
+                                                            )}
                                                             <th>Description</th>
                                                             <th>Date</th>
                                                             <th>Total Amount</th>

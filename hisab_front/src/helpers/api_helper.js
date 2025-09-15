@@ -3,6 +3,8 @@ import { api } from "../config";
 
 // default
 axios.defaults.baseURL = api.API_URL;
+// Set timeout to 2 minutes (120 seconds) to handle longer operations
+axios.defaults.timeout = 120000;
 // content type
 axios.defaults.headers.post["Content-Type"] = "application/json";
 

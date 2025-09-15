@@ -1,7 +1,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Card, CardBody, Col, Container, Row } from "reactstrap";
-import BreadCrumb from "../../../Components/Common/BreadCrumb";
+import BreadCrumb from "../../Components/Common/BreadCrumb";
 import FeatherIcon from 'feather-icons-react';
 
 const PrivacyPolicy = () => {
