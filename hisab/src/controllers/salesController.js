@@ -1,5 +1,6 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
+import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 import { generatePDFFromTemplate, generateInvoicePDFFileName, createSalesInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
@@ -525,6 +526,9 @@ export async function deleteSale(req, res) {
        WHERE "id" = $2`,
       [userId, id]
     );
+
+    // CRITICAL: Handle payment allocations before deleting
+    await handlePaymentAllocationsOnTransactionDelete(client, 'sale', id, companyId, userId);
 
     await client.query("COMMIT");
 
@@ -1559,4 +1563,5 @@ export async function getSalesInvoiceForPrint(req, res) {
   } finally {
     client.release();
   }
-} 
+}
+

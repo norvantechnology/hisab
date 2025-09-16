@@ -120,7 +120,21 @@ const ContactForm = ({
       })
     }),
     onSubmit: async (values) => {
-      await onSubmit(values);
+      try {
+        console.log('ContactForm onSubmit called with values:', values);
+        console.log('onSubmit prop type:', typeof onSubmit);
+        
+        if (typeof onSubmit === 'function') {
+          await onSubmit(values);
+          console.log('onSubmit completed successfully');
+        } else {
+          console.error('onSubmit is not a function:', onSubmit);
+          toast.error('Form submission handler not properly configured');
+        }
+      } catch (error) {
+        console.error('Error in ContactForm onSubmit:', error);
+        toast.error(error.message || 'Failed to submit contact form');
+      }
     }
   });
 
@@ -838,7 +852,7 @@ An email has been sent to ${selectedContact.email}.`,
         </Button>
         <Button
           color="primary"
-          type="submit"
+          onClick={handleFormSubmit}
           disabled={isProcessing}
           className="px-3"
         >

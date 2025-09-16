@@ -189,10 +189,9 @@ const SalesInvoiceTable = ({
             accessorKey: "status",
             cell: (cell) => {
                 const status = cell.row.original.status || 'draft';
-                const statusConfig = {
-                    paid: { label: 'Paid', color: 'success', bgColor: 'bg-success' },
-                    pending: { label: 'Pending', color: 'warning', bgColor: 'bg-warning' },
-                    partial: { label: 'Partial', color: 'info', bgColor: 'bg-info' },
+                    const statusConfig = {
+        paid: { label: 'Paid', color: 'success', bgColor: 'bg-success' },
+        pending: { label: 'Pending', color: 'warning', bgColor: 'bg-warning' },
                     draft: { label: 'Draft', color: 'secondary', bgColor: 'bg-secondary' },
                     cancelled: { label: 'Cancelled', color: 'danger', bgColor: 'bg-danger' }
                 };

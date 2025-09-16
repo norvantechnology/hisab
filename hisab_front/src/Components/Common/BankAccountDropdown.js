@@ -97,11 +97,11 @@ const BankAccountDropdown = ({
       classNamePrefix={classNamePrefix}
       placeholder={placeholder}
       onInputChange={handleSearch}
+      maxMenuHeight={200}
       styles={{
         menu: (provided) => ({
           ...provided,
-          zIndex: 9999,
-          maxHeight: '200px'
+          zIndex: 9999
         })
       }}
       formatOptionLabel={(option) => {

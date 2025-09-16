@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import ReactSelect from 'react-select';
 import { RiBankLine, RiUserLine } from 'react-icons/ri';
+import { toast } from 'react-toastify';
 import { ACCOUNT_TYPES } from '../BankAccounts';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
@@ -211,25 +212,35 @@ const BankAccountContactDropdown = ({
     try {
       // Import the createContact service
       const { createContact } = await import('../../services/contacts');
-      const newContact = await createContact(contactData);
+      const response = await createContact(contactData);
       
-      // Add the new contact to the list
-      setContacts(prev => [newContact, ...prev]);
-      
-      // Close the modal
-      setIsContactModalOpen(false);
-      
-      // Optionally select the newly created contact
-      if (onChange) {
-        onChange({
-          value: `contact_${newContact.id}`,
-          label: newContact.name,
-          type: 'contact',
-          contact: newContact
-        });
+      if (response.success) {
+        const newContact = response.contact;
+        
+        // Add the new contact to the list
+        setContacts(prev => [newContact, ...prev]);
+        
+        // Close the modal
+        setIsContactModalOpen(false);
+        
+        // Show success message
+        toast.success('Contact created successfully');
+        
+        // Optionally select the newly created contact
+        if (onChange) {
+          onChange({
+            value: `contact_${newContact.id}`,
+            label: newContact.name,
+            type: 'contact',
+            contact: newContact
+          });
+        }
+      } else {
+        throw new Error(response.message || 'Failed to create contact');
       }
     } catch (error) {
       console.error('Error creating contact:', error);
+      toast.error(error.message || 'Failed to create contact');
     } finally {
       setIsCreatingContact(false);
     }
@@ -322,7 +333,12 @@ const BankAccountContactDropdown = ({
                 {children}
                 <div 
                   className="add-contact-option"
-                  onClick={() => setIsContactModalOpen(true)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🔍 Add New Contact clicked');
+                    setIsContactModalOpen(true);
+                  }}
                 >
                   <div className="d-flex align-items-center">
                     <div className="option-icon me-2">
@@ -357,7 +373,7 @@ const BankAccountContactDropdown = ({
           }
           return "No options";
         }}
-
+        maxMenuHeight={200}
         styles={{
           control: (provided, state) => ({
             ...provided,
@@ -374,9 +390,7 @@ const BankAccountContactDropdown = ({
             border: '1px solid var(--vz-border-color)',
             borderRadius: '6px',
             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
-            overflow: 'hidden',
-            zIndex: 9999,
-            maxHeight: '200px'
+            zIndex: 9999
           }),
           option: (provided, state) => ({
             ...provided,

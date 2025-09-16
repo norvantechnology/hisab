@@ -192,7 +192,7 @@ const PurchaseInvoiceTable = ({
                 const statusConfig = {
                     paid: { label: 'Paid', color: 'success', bgColor: 'bg-success' },
                     pending: { label: 'Pending', color: 'warning', bgColor: 'bg-warning' },
-                    partial: { label: 'Partial', color: 'info', bgColor: 'bg-info' },
+            
                     draft: { label: 'Draft', color: 'secondary', bgColor: 'bg-secondary' },
                     cancelled: { label: 'Cancelled', color: 'danger', bgColor: 'bg-danger' }
                 };

@@ -1045,11 +1045,20 @@ const PaymentForm = ({
                                     classNamePrefix="react-select"
                                     placeholder="Select Contact"
                                     isDisabled={isLoading || isEditMode}
+
+                                    maxMenuHeight={200}
                                         styles={{
                                             control: (provided) => ({
                                                 ...provided,
                                                 minHeight: '32px',
                                                 fontSize: '0.875rem'
+                                            }),
+                                            menu: (provided) => ({
+                                                ...provided,
+                                                zIndex: 9999,
+                                                border: '1px solid var(--vz-border-color)',
+                                                borderRadius: '0.375rem',
+                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
                                             })
                                         }}
                                 />
@@ -1136,6 +1145,11 @@ const PaymentForm = ({
                                                 ...provided,
                                                 minHeight: '32px',
                                                 fontSize: '0.875rem'
+                                            }),
+                                            menu: (provided) => ({
+                                                ...provided,
+                                                zIndex: 9999,
+                                                maxHeight: '180px'
                                             })
                                         }}
                                 />

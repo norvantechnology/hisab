@@ -1,5 +1,6 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
+import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
 
 export async function createExpenseCategory(req, res) {
   const { name } = req.body;
@@ -422,6 +423,9 @@ export async function deleteExpense(req, res) {
       return errorResponse(res, "Failed to delete expense", 500);
     }
 
+    // CRITICAL: Handle payment allocations before deleting
+    await handlePaymentAllocationsOnTransactionDelete(client, 'expense', id, companyId, userId);
+
     return successResponse(res, {
       message: "Expense deleted successfully",
       expense: deletedExpense.rows[0],
@@ -740,3 +744,4 @@ export async function getExpenses(req, res) {
     client.release();
   }
 }
+

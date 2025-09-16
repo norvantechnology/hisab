@@ -2584,12 +2584,10 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
         const purchaseAmount = parseFloat(purchase.netPayable || 0);
         const newRemainingAmount = Math.max(0, purchaseAmount - newPaidAmount);
         
-        // Determine proper status
+        // Determine proper status - only paid or pending
         let newStatus = 'pending';
         if (newPaidAmount >= purchaseAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         transactionUpdateQueries.push({
@@ -2626,12 +2624,10 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
         const saleAmount = parseFloat(sale.netReceivable || 0);
         const newRemainingAmount = Math.max(0, saleAmount - newPaidAmount);
         
-        // Determine proper status
+        // Determine proper status - only paid or pending
         let newStatus = 'pending';
         if (newPaidAmount >= saleAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         transactionUpdateQueries.push({
@@ -2798,8 +2794,6 @@ async function revertOldTransactionAllocations(client, existingAllocations, comp
         let newStatus = 'pending';
         if (newPaidAmount >= purchaseAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         revertQueries.push({
@@ -2826,8 +2820,6 @@ async function revertOldTransactionAllocations(client, existingAllocations, comp
         let newStatus = 'pending';
         if (newPaidAmount >= saleAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         revertQueries.push({
@@ -2850,12 +2842,10 @@ async function revertOldTransactionAllocations(client, existingAllocations, comp
         const expenseAmount = parseFloat(expense.amount || 0);
         const newRemainingAmount = expenseAmount - newPaidAmount;
         
-        // Determine new status
+        // Determine new status - only paid or pending
         let newStatus = 'pending';
         if (newPaidAmount >= expenseAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         revertQueries.push({
@@ -2878,12 +2868,10 @@ async function revertOldTransactionAllocations(client, existingAllocations, comp
         const incomeAmount = parseFloat(income.amount || 0);
         const newRemainingAmount = incomeAmount - newPaidAmount;
         
-        // Determine new status
+        // Determine new status - only paid or pending
         let newStatus = 'pending';
         if (newPaidAmount >= incomeAmount) {
           newStatus = 'paid';
-        } else if (newPaidAmount > 0) {
-          newStatus = 'partial';
         }
 
         revertQueries.push({

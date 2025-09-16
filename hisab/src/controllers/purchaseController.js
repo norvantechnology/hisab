@@ -4,6 +4,7 @@ import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.j
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 import { generatePDFFromTemplate, generateInvoicePDFFileName, createPurchaseInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
+import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -805,7 +806,127 @@ export async function deletePurchase(req, res) {
       );
     }
 
-    // Soft delete purchase items first
+    // CRITICAL: Handle payment allocations before deleting
+    const paymentAllocationsQuery = await client.query(
+      `SELECT pa.*, p.id as payment_id, p."paymentNumber", p.amount as payment_amount
+       FROM hisab."payment_allocations" pa
+       JOIN hisab."payments" p ON pa."paymentId" = p.id
+       WHERE pa."purchaseId" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL`,
+      [id, companyId]
+    );
+
+    const allocations = paymentAllocationsQuery.rows;
+
+    if (allocations.length > 0) {
+      console.log(`🔍 Found ${allocations.length} payment allocation(s) for purchase ${id}`);
+      
+      // Handle each payment allocation
+      for (const allocation of allocations) {
+        const paymentId = allocation.payment_id;
+        const allocatedAmount = parseFloat(allocation.paidAmount || 0);
+
+        // Get all allocations for this payment
+        const allPaymentAllocations = await client.query(
+          `SELECT * FROM hisab."payment_allocations" WHERE "paymentId" = $1`,
+          [paymentId]
+        );
+
+        // If this payment only has this one allocation, delete the entire payment
+        if (allPaymentAllocations.rows.length === 1) {
+          console.log(`🗑️ Deleting payment ${allocation.paymentNumber} as it only allocated to this purchase`);
+          
+          // Get payment details for reversal
+          const paymentDetails = await client.query(
+            `SELECT * FROM hisab."payments" WHERE id = $1`,
+            [paymentId]
+          );
+          
+          if (paymentDetails.rows.length > 0) {
+            const payment = paymentDetails.rows[0];
+            
+            // Reverse bank balance impact
+            if (payment.bankId) {
+              const bankImpact = payment.paymentType === 'payment' ? -payment.amount : payment.amount;
+              await client.query(
+                `UPDATE hisab."bankAccounts" 
+                 SET "currentBalance" = "currentBalance" - $1 
+                 WHERE id = $2`,
+                [bankImpact, payment.bankId]
+              );
+            }
+
+            // Reverse contact balance impact
+            const contactBalanceImpact = payment.paymentType === 'payment' ? payment.amount : -payment.amount;
+            await client.query(
+              `UPDATE hisab."contacts" 
+               SET "currentBalance" = "currentBalance" - $1 
+               WHERE id = $2`,
+              [contactBalanceImpact, payment.contactId]
+            );
+
+            // Delete the payment
+            await client.query(
+              `UPDATE hisab."payments" 
+               SET "deletedAt" = CURRENT_TIMESTAMP, "deletedBy" = $1 
+               WHERE id = $2`,
+              [userId, paymentId]
+            );
+          }
+        } else {
+          // Payment has multiple allocations - remove only this allocation and adjust payment
+          console.log(`🔄 Adjusting payment ${allocation.paymentNumber} - removing allocation for this purchase`);
+          
+          // Calculate new payment amount
+          const currentPaymentAmount = parseFloat(allocation.payment_amount || 0);
+          const newPaymentAmount = currentPaymentAmount - allocatedAmount;
+
+          // Update payment amount
+          await client.query(
+            `UPDATE hisab."payments" 
+             SET amount = $1, "updatedAt" = CURRENT_TIMESTAMP
+             WHERE id = $2`,
+            [newPaymentAmount, paymentId]
+          );
+
+          // Adjust bank balance
+          const paymentDetails = await client.query(
+            `SELECT * FROM hisab."payments" WHERE id = $1`,
+            [paymentId]
+          );
+          
+          if (paymentDetails.rows.length > 0) {
+            const payment = paymentDetails.rows[0];
+            
+            if (payment.bankId) {
+              const bankAdjustment = payment.paymentType === 'payment' ? allocatedAmount : -allocatedAmount;
+              await client.query(
+                `UPDATE hisab."bankAccounts" 
+                 SET "currentBalance" = "currentBalance" + $1 
+                 WHERE id = $2`,
+                [bankAdjustment, payment.bankId]
+              );
+            }
+
+            // Adjust contact balance
+            const contactAdjustment = payment.paymentType === 'payment' ? -allocatedAmount : allocatedAmount;
+            await client.query(
+              `UPDATE hisab."contacts" 
+               SET "currentBalance" = "currentBalance" + $1 
+               WHERE id = $2`,
+              [contactAdjustment, payment.contactId]
+            );
+          }
+        }
+
+        // Remove the allocation record
+        await client.query(
+          `DELETE FROM hisab."payment_allocations" WHERE id = $1`,
+          [allocation.id]
+        );
+      }
+    }
+
+    // Soft delete purchase items
     await client.query(
       `UPDATE hisab."purchase_items"
        SET "deletedAt" = CURRENT_TIMESTAMP
@@ -822,6 +943,9 @@ export async function deletePurchase(req, res) {
        WHERE "id" = $2 AND "companyId" = $3`,
       [userId, id, companyId]
     );
+
+    // CRITICAL: Handle payment allocations before deleting
+    await handlePaymentAllocationsOnTransactionDelete(client, 'purchase', id, companyId, userId);
 
     await client.query("COMMIT");
 
@@ -1907,3 +2031,4 @@ export async function getPurchaseInvoiceForPrint(req, res) {
     client.release();
   }
 }
+

@@ -70,7 +70,7 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
     const statusConfig = {
       pending: { bgClass: 'bg-warning', textClass: 'text-dark', text: 'Pending', icon: 'ri-time-line' },
       paid: { bgClass: 'bg-success', textClass: 'text-white', text: 'Paid', icon: 'ri-check-line' },
-      partial: { bgClass: 'bg-info', textClass: 'text-white', text: 'Partial', icon: 'ri-pie-chart-line' },
+      
       draft: { bgClass: 'bg-secondary', textClass: 'text-white', text: 'Draft', icon: 'ri-draft-line' },
       cancelled: { bgClass: 'bg-danger', textClass: 'text-white', text: 'Cancelled', icon: 'ri-close-line' }
     };

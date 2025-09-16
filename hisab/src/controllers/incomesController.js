@@ -1,5 +1,6 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
+import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
 
 export async function createIncomeCategory(req, res) {
   const { name } = req.body;
@@ -390,6 +391,9 @@ export async function deleteIncome(req, res) {
     `;
     const deletedIncome = await client.query(deleteQuery, [id]);
 
+    // CRITICAL: Handle payment allocations before deleting
+    await handlePaymentAllocationsOnTransactionDelete(client, 'income', id, companyId, req.currentUser?.id);
+
     await client.query("COMMIT");
 
     if (deletedIncome.rows.length === 0) {
@@ -711,3 +715,4 @@ export async function getIncomes(req, res) {
     client.release();
   }
 }
+
