@@ -25,3 +25,60 @@ export const exportDashboardData = (format = 'csv', filters = {}) => {
         params: { format, ...filters }
     });
 };
+
+// Get comprehensive chart data
+export const getChartData = (period = '6months', filters = {}) => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/charts',
+        params: { period, ...filters }
+    });
+};
+
+// Get revenue chart data
+export const getRevenueChartData = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/charts/revenue'
+    });
+};
+
+// Get cash flow chart data
+export const getCashFlowChartData = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/charts/cashflow'
+    });
+};
+
+// Get payment status chart data
+export const getPaymentStatusChartData = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/charts/payment-status'
+    });
+};
+
+// Get monthly trends data
+export const getMonthlyTrendsData = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/charts/monthly-trends'
+    });
+};
+
+// Get dashboard insights and recommendations
+export const getDashboardInsights = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/insights'
+    });
+};
+
+// Get recent activities
+export const getRecentActivities = () => {
+    return apiCall({
+        method: 'get',
+        endpoint: '/dashboard/activities'
+    });
+};

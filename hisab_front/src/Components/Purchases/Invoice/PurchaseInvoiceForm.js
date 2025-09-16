@@ -1280,15 +1280,19 @@ const PurchaseInvoiceForm = ({
               <Col md={shouldShowStatusDropdown ? 6 : 8}>
                 <FormGroup className="mb-2">
                   <Label className="form-label">Bill From</Label>
-                  <BankAccountContactDropdown
-                    value={validation.values.billFrom}
-                    onChange={handleBillFromChange}
-                    onBlur={validation.handleBlur}
-                    disabled={isProcessing}
-                    placeholder="Select Vendor"
-                    error={validation.errors.billFrom}
-                    touched={validation.touched.billFrom}
-                  />
+                  <div className="contact-dropdown-container">
+                    <BankAccountContactDropdown
+                      value={validation.values.billFrom}
+                      onChange={handleBillFromChange}
+                      onBlur={validation.handleBlur}
+                      disabled={isProcessing}
+                      placeholder="Select Vendor"
+                      error={validation.errors.billFrom}
+                      touched={validation.touched.billFrom}
+                      showBankAccounts={false}
+                      showContacts={true}
+                    />
+                  </div>
                   <FormFeedback>{validation.errors.billFrom}</FormFeedback>
                 </FormGroup>
               </Col>

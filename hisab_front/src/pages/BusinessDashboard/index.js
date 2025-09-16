@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Container, Row, Col, Card, CardBody, CardHeader, Button, Badge, Modal, ModalHeader, ModalBody, ModalFooter, Input, FormGroup, Label, UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Progress } from 'reactstrap';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Container, Row, Col, Card, CardBody, CardHeader, Button, Badge, Modal, ModalHeader, ModalBody, Progress, UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem, Alert } from 'reactstrap';
 import { toast, ToastContainer } from 'react-toastify';
-import { RiRefreshLine, RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiAddLine, RiArrowRightLine, RiArrowUpLine, RiArrowDownLine, RiCalendarLine, RiUserLine, RiShoppingCartLine, RiCashLine, RiWallet3Line, RiFilterLine, RiDownload2Line, RiSortAsc, RiCheckLine, RiTimeLine, RiAlertLine, RiFileTextLine, RiSendPlaneLine } from 'react-icons/ri';
 import { useNavigate } from 'react-router-dom';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import Loader from '../../Components/Common/Loader';
@@ -9,83 +8,158 @@ import PaymentForm from '../../Components/Payments/PaymentForm';
 import { 
     getBusinessAnalytics, 
     getQuickStats, 
-    exportDashboardData 
+    exportDashboardData,
+    getChartData,
+    getDashboardInsights,
+    getRecentActivities
 } from '../../services/dashboard';
 import { getContacts } from '../../services/contacts';
-import { listProducts } from '../../services/products';
 import { getBankAccounts } from '../../services/bankAccount';
 import { createPayment } from '../../services/payment';
 import useCompanySelectionState from '../../hooks/useCompanySelection';
+import useDashboardPreferences from '../../hooks/useDashboardPreferences';
 import DashboardFilters from './DashboardFilters';
+import {
+    RevenueTrendChart,
+    CashFlowChart,
+    PaymentStatusChart,
+    TopProductsChart,
+    MonthlySalesChart,
+    BusinessGrowthChart
+} from './BusinessDashboardCharts';
 
 const BusinessDashboard = () => {
     const { selectedCompanyId } = useCompanySelectionState();
     const navigate = useNavigate();
+    
+    // Use dashboard preferences hook
+    const {
+        preferences,
+        isLoading: preferencesLoading,
+        updatePreference,
+        updateNestedPreference,
+        resetPreferences,
+        hasHiddenSections,
+        setPeriod,
+        setFilters
+    } = useDashboardPreferences();
+    
     const [state, setState] = useState({
         analytics: null,
         quickStats: null,
+        chartData: null,
+        insights: null,
+        activities: [],
         loading: true,
         refreshing: false,
-        filters: {},
+        error: null,
         modals: {
-            quickEdit: false,
-            productDetails: false,
-            customerDetails: false,
             filters: false,
-            paymentForm: false
+            paymentForm: false,
+            settings: false
         },
-        selectedItem: null,
-        selectedType: null,
-        sortConfig: { key: null, direction: 'asc' },
-        contacts: [],
-        products: [],
-        bankAccounts: [],
-        // Payment form related state
         selectedOutstandingPayment: null,
-        paymentFormLoading: false
+        paymentFormLoading: false,
+        contacts: [],
+        bankAccounts: []
     });
 
-    const { analytics, quickStats, loading, refreshing, filters, modals, selectedItem, selectedType, sortConfig, contacts, products, bankAccounts, selectedOutstandingPayment, paymentFormLoading } = state;
+    const { 
+        analytics, 
+        quickStats, 
+        chartData, 
+        insights, 
+        activities, 
+        loading, 
+        refreshing, 
+        error,
+        modals, 
+        selectedOutstandingPayment, 
+        paymentFormLoading, 
+        contacts, 
+        bankAccounts
+    } = state;
 
-    const fetchDashboardData = async (showRefreshing = false, customFilters = null) => {
-        if (!selectedCompanyId) {
+    // Memoized utility functions
+    const formatCurrency = useMemo(() => (amount) => {
+        return new Intl.NumberFormat('en-IN', {
+            style: 'currency',
+            currency: 'INR',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(amount || 0);
+    }, []);
+
+    const formatNumber = useMemo(() => (num) => {
+        return new Intl.NumberFormat('en-IN').format(num || 0);
+    }, []);
+
+    const calculatePercentage = useCallback((part, total) => {
+        if (!total || total === 0) return 0;
+        return Math.round((part / total) * 100);
+    }, []);
+
+    // Optimized data fetching without page reload
+    const fetchDashboardData = useCallback(async (showRefreshing = false, customFilters = null, chartPeriod = null) => {
+        if (!selectedCompanyId || preferencesLoading) {
             return;
         }
 
-        const filtersToUse = customFilters || filters;
+        const filtersToUse = customFilters || preferences.filters;
+        const periodToUse = chartPeriod || preferences.period;
 
         setState(prev => ({ 
             ...prev, 
             loading: !showRefreshing,
-            refreshing: showRefreshing 
+            refreshing: showRefreshing,
+            error: null
         }));
 
         try {
             const [
                 analyticsResponse,
-                quickStatsResponse
+                quickStatsResponse,
+                chartDataResponse,
+                insightsResponse,
+                activitiesResponse
             ] = await Promise.all([
-                getBusinessAnalytics(filtersToUse),
-                getQuickStats()
+                getBusinessAnalytics(filtersToUse).catch(err => ({ success: false, error: err.message })),
+                getQuickStats().catch(err => ({ success: false, error: err.message })),
+                getChartData(periodToUse, filtersToUse).catch(err => ({ success: false, error: err.message })),
+                getDashboardInsights().catch(err => ({ success: false, error: err.message })),
+                getRecentActivities().catch(err => ({ success: false, error: err.message }))
             ]);
+
+            // Check for critical failures
+            if (!analyticsResponse.success && !quickStatsResponse.success) {
+                throw new Error('Failed to load essential dashboard data');
+            }
 
             setState(prev => ({
                 ...prev,
                 analytics: analyticsResponse.success ? analyticsResponse.analytics : null,
                 quickStats: quickStatsResponse.success ? quickStatsResponse.stats : null,
+                chartData: chartDataResponse.success ? chartDataResponse.chartData : null,
+                insights: insightsResponse.success ? insightsResponse : null,
+                activities: activitiesResponse.success ? activitiesResponse.activities : [],
                 loading: false,
-                refreshing: false
+                refreshing: false,
+                error: null
             }));
 
         } catch (error) {
-            console.error('❌ Error fetching dashboard data:', error);
+            console.error('Error fetching dashboard data:', error);
+            setState(prev => ({ 
+                ...prev, 
+                loading: false, 
+                refreshing: false,
+                error: error.message || 'Failed to load dashboard data'
+            }));
             toast.error(`Failed to load dashboard data: ${error.message || 'Unknown error'}`);
-            setState(prev => ({ ...prev, loading: false, refreshing: false }));
         }
-    };
+    }, [selectedCompanyId, preferences.filters, preferences.period, preferencesLoading]);
 
-    // Fetch bank accounts and contacts for payment form
-    const fetchPaymentFormData = async () => {
+    const fetchPaymentFormData = useCallback(async () => {
         try {
             const [bankAccountsRes, contactsRes] = await Promise.all([
                 getBankAccounts().catch(() => ({ success: false, accounts: [] })),
@@ -98,67 +172,78 @@ const BusinessDashboard = () => {
                 contacts: contactsRes?.success ? contactsRes.contacts || [] : prev.contacts
             }));
         } catch (error) {
-            console.error('❌ Error fetching payment form data:', error);
+            console.error('Error fetching payment form data:', error);
         }
-    };
+    }, []);
 
-    const handleRefresh = () => {
+    // Event handlers
+    const handleRefresh = useCallback(() => {
         fetchDashboardData(true);
-    };
+    }, [fetchDashboardData]);
 
-    const handleFiltersChange = (newFilters) => {
-        setState(prev => ({ ...prev, filters: newFilters }));
+    const handleFiltersChange = useCallback((newFilters) => {
+        setFilters(newFilters);
         fetchDashboardData(false, newFilters);
-    };
+    }, [fetchDashboardData, setFilters]);
 
-    // Modal handlers
-    const toggleModal = (modalName, value) => {
+    const handlePeriodChange = useCallback((newPeriod) => {
+        setPeriod(newPeriod);
+        // Don't reload page - just update data smoothly
+        fetchDashboardData(false, preferences.filters, newPeriod);
+    }, [fetchDashboardData, preferences.filters, setPeriod]);
+
+    const toggleModal = useCallback((modalName, value) => {
         setState(prev => ({
             ...prev,
             modals: { ...prev.modals, [modalName]: value !== undefined ? value : !prev.modals[modalName] }
         }));
-    };
+    }, []);
 
-    const handleDetailsView = (item, type) => {
-        setState(prev => ({
-            ...prev,
-            selectedItem: item,
-            selectedType: type
-        }));
+    const toggleSection = useCallback((section) => {
+        updatePreference(section, !preferences[section]);
+    }, [preferences, updatePreference]);
+
+    const navigateToSection = useCallback((section) => {
+        const routes = {
+            sales: '/sales/invoices',
+            purchases: '/purchases/invoices',
+            products: '/products',
+            contacts: '/contacts',
+            expenses: '/expenses',
+            income: '/income',
+            payments: '/payments',
+            'bank-accounts': '/bank-accounts'
+        };
         
-        switch(type) {
-            case 'product':
-                toggleModal('productDetails', true);
-                break;
-            case 'customer':
-                toggleModal('customerDetails', true);
-                break;
-            case 'payment':
-                // Instead of opening the simple details modal, open the PaymentForm
-                handleOutstandingPaymentClick(item);
-                break;
-            default:
-                break;
+        if (routes[section]) {
+            navigate(routes[section]);
         }
-    };
+    }, [navigate]);
 
-    // New handler for outstanding payment clicks
-    const handleOutstandingPaymentClick = async (payment) => {
-        console.log('🔍 Outstanding payment clicked:', payment);
+    const handleQuickAdd = useCallback((type) => {
+        const addRoutes = {
+            sale: '/sales/invoices?add=true',
+            purchase: '/purchases/invoices?add=true',
+            product: '/products?add=true',
+            contact: '/contacts?add=true'
+        };
         
-        // Set the selected payment
+        if (addRoutes[type]) {
+            navigate(addRoutes[type]);
+        }
+    }, [navigate]);
+
+    const handleOutstandingPaymentClick = useCallback(async (payment) => {
         setState(prev => ({
             ...prev,
             selectedOutstandingPayment: payment,
             paymentFormLoading: true
         }));
 
-        // Fetch bank accounts and contacts if not already loaded
         if (bankAccounts.length === 0 || contacts.length === 0) {
             await fetchPaymentFormData();
         }
 
-        // Convert the outstanding payment to a format similar to selectedInvoice
         const mockInvoice = {
             id: payment.id,
             invoiceNumber: payment.reference,
@@ -177,14 +262,11 @@ const BusinessDashboard = () => {
             paymentFormLoading: false,
             modals: { ...prev.modals, paymentForm: true }
         }));
-    };
+    }, [bankAccounts.length, contacts.length, fetchPaymentFormData]);
 
-    // Handler for payment form submission
-    const handlePaymentSubmit = async (payloadFromForm) => {
+    const handlePaymentSubmit = useCallback(async (payloadFromForm) => {
         try {
             setState(prev => ({ ...prev, paymentFormLoading: true }));
-            
-            console.log('🚀 Creating payment from dashboard:', payloadFromForm);
 
             const response = await createPayment(payloadFromForm);
 
@@ -197,153 +279,20 @@ const BusinessDashboard = () => {
                     selectedOutstandingPayment: null
                 }));
                 
-                // Refresh dashboard data to update outstanding payments
                 fetchDashboardData(true);
             }
         } catch (error) {
             setState(prev => ({ ...prev, paymentFormLoading: false }));
             toast.error(error.message || 'Failed to create payment');
         }
-    };
+    }, [fetchDashboardData]);
 
-    // Navigation handlers
-    const navigateToSection = (section) => {
-        switch(section) {
-            case 'sales':
-                navigate('/sales/invoices');
-                break;
-            case 'purchases':
-                navigate('/purchases/invoices');
-                break;
-            case 'products':
-                navigate('/products');
-                break;
-            case 'contacts':
-                navigate('/contacts');
-                break;
-            case 'expenses':
-                navigate('/expenses');
-                break;
-            case 'income':
-                navigate('/income');
-                break;
-            case 'payments':
-                navigate('/payments');
-                break;
-            case 'bank-accounts':
-                navigate('/bank-accounts');
-                break;
-            default:
-                break;
-        }
-    };
-
-    const handleQuickAdd = async (type) => {
-        // For sales and purchases, navigate directly to the appropriate forms with add parameter
-        if (type === 'sale') {
-            navigate('/sales/invoices?add=true');
-            return;
-        }
-        
-        if (type === 'purchase') {
-            navigate('/purchases/invoices?add=true');
-            return;
-        }
-
-        if (type === 'product') {
-            navigate('/products?add=true');
-            return;
-        }
-
-        if (type === 'contact') {
-            navigate('/contacts?add=true');
-            return;
-        }
-
-        // No modal needed - all types now navigate to their respective pages
-    };
-
-    const handleSort = (key) => {
-        setState(prev => ({
-            ...prev,
-            sortConfig: {
-                key,
-                direction: prev.sortConfig.key === key && prev.sortConfig.direction === 'asc' ? 'desc' : 'asc'
-            }
-        }));
-    };
-
-    const getStatusBadge = (status, daysOverdue = 0) => {
-        if (status === 'paid' || daysOverdue <= 0) {
-            return <Badge color="success" className="badge-soft-success">Paid</Badge>;
-        } else if (daysOverdue <= 7) {
-            return <Badge color="warning" className="badge-soft-warning">Pending</Badge>;
-        } else {
-            return <Badge color="danger" className="badge-soft-danger">Overdue</Badge>;
-        }
-    };
-
-    const getBalanceTypeBadge = (paymentType) => {
-        // Determine balance type based on transaction type
-        let balanceType, color;
-        
-        switch (paymentType) {
-            case 'sales':
-            case 'sale':
-            case 'income':
-                balanceType = 'receivable';
-                color = 'success';
-                break;
-            case 'purchases':
-            case 'purchase':
-            case 'expense':
-                balanceType = 'payable';
-                color = 'warning';
-                break;
-            default:
-                balanceType = 'payable'; // Default to payable for unknown types
-                color = 'warning';
-                break;
-        }
-
-        return (
-            <Badge color={color} className={`badge-soft-${color}`}>
-                {balanceType === 'payable' ? 'Payable' : 'Receivable'}
-            </Badge>
-        );
-    };
-
-    useEffect(() => {
-        if (selectedCompanyId) {
-            fetchDashboardData();
-        }
-    }, [selectedCompanyId]);
-
-    const formatCurrency = (amount) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0
-        }).format(amount || 0);
-    };
-
-    const formatNumber = (num) => {
-        return new Intl.NumberFormat('en-IN').format(num || 0);
-    };
-
-    const calculatePercentage = (part, total) => {
-        if (!total || total === 0) return 0;
-        return Math.round((part / total) * 100);
-    };
-
-    const handleExport = async () => {
+    const handleExport = useCallback(async () => {
         try {
             setState(prev => ({ ...prev, refreshing: true }));
-            const response = await exportDashboardData('csv', filters);
+            const response = await exportDashboardData('csv', preferences.filters);
             
             if (response.success) {
-                // Create and download CSV file
                 const csvContent = convertToCSV(response.data);
                 const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
                 const link = document.createElement('a');
@@ -364,9 +313,9 @@ const BusinessDashboard = () => {
         } finally {
             setState(prev => ({ ...prev, refreshing: false }));
         }
-    };
+    }, [preferences.filters]);
 
-    const convertToCSV = (data) => {
+    const convertToCSV = useCallback((data) => {
         if (!data || data.length === 0) return '';
         
         const headers = Object.keys(data[0]);
@@ -374,7 +323,6 @@ const BusinessDashboard = () => {
         const csvRows = data.map(row => 
             headers.map(header => {
                 const value = row[header];
-                // Escape commas and quotes in CSV
                 if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
                     return `"${value.replace(/"/g, '""')}"`;
                 }
@@ -383,26 +331,38 @@ const BusinessDashboard = () => {
         );
         
         return [csvHeaders, ...csvRows].join('\n');
-    };
+    }, []);
 
+    // Load data when component mounts or company changes
+    useEffect(() => {
+        if (selectedCompanyId) {
+            fetchDashboardData();
+        }
+    }, [selectedCompanyId, fetchDashboardData]);
+
+    // Loading state
     if (loading) {
         return (
             <div className="page-content">
                 <Container fluid>
+                    <BreadCrumb title="Business Dashboard" pageTitle="Dashboard" />
                     <Loader />
                 </Container>
             </div>
         );
     }
 
+    // No company selected
     if (!selectedCompanyId) {
         return (
             <div className="page-content">
                 <Container fluid>
                     <BreadCrumb title="Business Dashboard" pageTitle="Dashboard" />
-                    <Card className="shadow-sm">
+                    <Card>
                         <CardBody className="text-center py-5">
+                            <i className="ri-building-line display-4 text-muted mb-3"></i>
                             <h5 className="text-muted">Please select a company to view analytics</h5>
+                            <p className="text-muted">Choose a company from the dropdown to access your business dashboard</p>
                         </CardBody>
                     </Card>
                 </Container>
@@ -410,18 +370,42 @@ const BusinessDashboard = () => {
         );
     }
 
+    // Error state
+    if (error) {
+        return (
+            <div className="page-content">
+                <Container fluid>
+                    <BreadCrumb title="Business Dashboard" pageTitle="Dashboard" />
+                    <Alert color="danger" className="mb-4">
+                        <h6 className="alert-heading">
+                            <i className="ri-error-warning-line me-2"></i>
+                            Dashboard Error
+                        </h6>
+                        <p className="mb-2">{error}</p>
+                        <Button color="danger" size="sm" onClick={handleRefresh}>
+                            <i className="ri-refresh-line me-1"></i>
+                            Retry
+                        </Button>
+                    </Alert>
+                </Container>
+            </div>
+        );
+    }
+
+    // No data state
     if (!analytics || !quickStats) {
         return (
             <div className="page-content">
                 <Container fluid>
                     <BreadCrumb title="Business Dashboard" pageTitle="Dashboard" />
-                    <Card className="shadow-sm">
+                    <Card>
                         <CardBody className="text-center py-5">
-                            <i className="ri-database-2-line text-muted mb-3" style={{ fontSize: '3rem' }}></i>
+                            <i className="ri-database-2-line display-4 text-muted mb-3"></i>
                             <h5 className="text-muted">No data available</h5>
                             <p className="text-muted mb-3">Start recording transactions to see business analytics</p>
                             <Button color="primary" onClick={handleRefresh}>
-                                <RiRefreshLine className="me-1" /> Load Data
+                                <i className="ri-refresh-line me-1"></i>
+                                Load Data
                             </Button>
                         </CardBody>
                     </Card>
@@ -436,76 +420,119 @@ const BusinessDashboard = () => {
             <Container fluid>
                 <BreadCrumb title="Business Dashboard" pageTitle="Dashboard" />
 
-                {/* Header Actions - Match Contacts Page Style */}
-                <Row className="mb-3">
-                    <Col sm={12} className="text-end">
-                        <div className="d-flex justify-content-end gap-2">
-                            <Button color="light" outline onClick={() => toggleModal('filters', true)}>
-                                <RiFilterLine className="align-middle me-1" /> Filters
-                            </Button>
-                            <Button color="primary" onClick={handleExport}>
-                                <RiDownload2Line className="align-middle me-1" /> Export
-                            </Button>
-                            <UncontrolledDropdown>
-                                <DropdownToggle color="success">
-                                    <RiAddLine className="align-middle me-1" /> Add New
-                                </DropdownToggle>
-                                <DropdownMenu className="dropdown-menu-end">
-                                    <DropdownItem onClick={() => handleQuickAdd('sale')}>
-                                        <RiArrowUpLine className="me-2 text-success" />
-                                        New Sale
-                                    </DropdownItem>
-                                    <DropdownItem onClick={() => handleQuickAdd('purchase')}>
-                                        <RiArrowDownLine className="me-2 text-primary" />
-                                        New Purchase
-                                    </DropdownItem>
-                                    <DropdownItem onClick={() => handleQuickAdd('product')}>
-                                        <RiShoppingCartLine className="me-2 text-info" />
-                                        Add Product
-                                    </DropdownItem>
-                                    <DropdownItem onClick={() => handleQuickAdd('contact')}>
-                                        <RiUserLine className="me-2 text-secondary" />
-                                        Add Contact
-                                    </DropdownItem>
-                                </DropdownMenu>
-                            </UncontrolledDropdown>
-                            <Button color="light" onClick={handleRefresh} disabled={refreshing}>
-                                <RiRefreshLine className={`align-middle me-1 ${refreshing ? 'spin' : ''}`} />
-                                {refreshing ? 'Loading...' : 'Refresh'}
-                            </Button>
-                        </div>
-                    </Col>
-                </Row>
+                {/* Compact Header */}
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h4 className="mb-1 fw-semibold">Business Overview</h4>
+                        <p className="text-muted mb-0">Monitor your business performance and key metrics</p>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                        <Button color="outline-secondary" size="sm" onClick={() => toggleModal('filters', true)}>
+                            <i className="ri-filter-line me-1"></i>
+                            Filters
+                        </Button>
+                        <UncontrolledDropdown>
+                            <DropdownToggle color="success" size="sm" caret>
+                                <i className="ri-add-line me-1"></i>
+                                Add New
+                            </DropdownToggle>
+                            <DropdownMenu>
+                                <DropdownItem onClick={() => handleQuickAdd('sale')}>
+                                    <i className="ri-arrow-up-line me-2 text-success"></i>
+                                    New Sale
+                                </DropdownItem>
+                                <DropdownItem onClick={() => handleQuickAdd('purchase')}>
+                                    <i className="ri-arrow-down-line me-2 text-primary"></i>
+                                    New Purchase
+                                </DropdownItem>
+                                <DropdownItem divider />
+                                <DropdownItem onClick={() => handleQuickAdd('product')}>
+                                    <i className="ri-shopping-cart-line me-2 text-info"></i>
+                                    Add Product
+                                </DropdownItem>
+                                <DropdownItem onClick={() => handleQuickAdd('contact')}>
+                                    <i className="ri-user-line me-2 text-secondary"></i>
+                                    Add Contact
+                                </DropdownItem>
+                            </DropdownMenu>
+                        </UncontrolledDropdown>
+                        <UncontrolledDropdown>
+                            <DropdownToggle color="outline-info" size="sm" caret>
+                                <i className="ri-layout-line me-1"></i>
+                                View
+                                {hasHiddenSections && (
+                                    <Badge color="warning" className="badge-soft ms-1">
+                                        {Object.values(preferences).filter(v => v === false).length}
+                                    </Badge>
+                                )}
+                            </DropdownToggle>
+                            <DropdownMenu>
+                                <DropdownItem onClick={() => updatePreference('showCharts', !preferences.showCharts)}>
+                                    <i className={`ri-${preferences.showCharts ? 'eye' : 'eye-off'}-line me-2 text-${preferences.showCharts ? 'success' : 'muted'}`}></i>
+                                    Charts
+                                </DropdownItem>
+                                <DropdownItem onClick={() => updatePreference('showInsights', !preferences.showInsights)}>
+                                    <i className={`ri-${preferences.showInsights ? 'eye' : 'eye-off'}-line me-2 text-${preferences.showInsights ? 'success' : 'muted'}`}></i>
+                                    Insights
+                                </DropdownItem>
+                                <DropdownItem onClick={() => updatePreference('showActivities', !preferences.showActivities)}>
+                                    <i className={`ri-${preferences.showActivities ? 'eye' : 'eye-off'}-line me-2 text-${preferences.showActivities ? 'success' : 'muted'}`}></i>
+                                    Activities
+                                </DropdownItem>
+                                <DropdownItem onClick={() => updatePreference('showBusinessOverview', !preferences.showBusinessOverview)}>
+                                    <i className={`ri-${preferences.showBusinessOverview ? 'eye' : 'eye-off'}-line me-2 text-${preferences.showBusinessOverview ? 'success' : 'muted'}`}></i>
+                                    Overview
+                                </DropdownItem>
+                                <DropdownItem divider />
+                                <DropdownItem onClick={() => {
+                                    updatePreference('showCharts', true);
+                                    updatePreference('showInsights', true);
+                                    updatePreference('showActivities', true);
+                                    updatePreference('showBusinessOverview', true);
+                                }}>
+                                    <i className="ri-eye-line me-2 text-success"></i>
+                                    Show All
+                                </DropdownItem>
+                            </DropdownMenu>
+                        </UncontrolledDropdown>
+                        <Button color="primary" size="sm" onClick={handleRefresh} disabled={refreshing}>
+                            <i className={`ri-refresh-line me-1 ${refreshing ? 'spin' : ''}`}></i>
+                            Refresh
+                        </Button>
+                    </div>
+                </div>
 
-                {/* Financial Summary Cards - Clean Flat Design */}
+
+
+                {/* Financial Summary - Optimized Layout */}
+                {preferences.showFinancialSummary && (
                 <Row className="mb-4">
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100 metric-card" onClick={() => navigateToSection('sales')}>
-                            <CardBody>
+                    <Col xl={3} lg={6} className="mb-3">
+                        <Card className="metric-card h-100" onClick={() => navigateToSection('sales')}>
+                            <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
                                     <div className="flex-shrink-0">
-                                        <div className="avatar-sm rounded-circle bg-success-subtle d-flex align-items-center justify-content-center">
-                                            <RiArrowUpLine className="text-success fs-22" />
+                                        <div className="metric-icon bg-success-subtle text-success">
+                                            <i className="ri-arrow-up-line"></i>
                                         </div>
                                     </div>
-                                    <div className="flex-grow-1 ms-3">
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Total Sales</p>
                                         <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_sales)}</h4>
-                                        <h6 className="text-muted mb-1 fs-13">Total Sales</h6>
-                                        <p className="text-muted mb-0 fs-11">{formatNumber(analytics.financialSummary.total_sales_count)} invoices</p>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">{formatNumber(analytics.financialSummary.total_sales_count)} invoices</small>
                                         {analytics.financialSummary.total_sales > 0 && (
-                                            <div className="mt-2">
-                                                <div className="d-flex justify-content-between mb-1">
-                                                    <small className="text-muted">Paid</small>
                                                     <small className="text-success fw-medium">
-                                                        {calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)}%
+                                                    {calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)}% collected
                                                     </small>
+                                            )}
                                                 </div>
+                                        {analytics.financialSummary.total_sales > 0 && (
                                                 <Progress 
                                                     value={calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)} 
                                                     color="success" 
-                                                    className="progress-sm"
+                                                className="progress-sm mt-2"
                                                 />
-                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -513,33 +540,32 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100 metric-card" onClick={() => navigateToSection('purchases')}>
-                            <CardBody>
+                    <Col xl={3} lg={6} className="mb-3">
+                        <Card className="metric-card h-100" onClick={() => navigateToSection('purchases')}>
+                            <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
                                     <div className="flex-shrink-0">
-                                        <div className="avatar-sm rounded-circle bg-primary-subtle d-flex align-items-center justify-content-center">
-                                            <RiWallet3Line className="text-primary fs-22" />
+                                        <div className="metric-icon bg-primary-subtle text-primary">
+                                            <i className="ri-arrow-down-line"></i>
                                         </div>
                                     </div>
-                                    <div className="flex-grow-1 ms-3">
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Total Purchases</p>
                                         <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_purchases)}</h4>
-                                        <h6 className="text-muted mb-1 fs-13">Total Purchases</h6>
-                                        <p className="text-muted mb-0 fs-11">{formatNumber(analytics.financialSummary.total_purchase_count)} invoices</p>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">{formatNumber(analytics.financialSummary.total_purchase_count)} invoices</small>
                                         {analytics.financialSummary.total_purchases > 0 && (
-                                            <div className="mt-2">
-                                                <div className="d-flex justify-content-between mb-1">
-                                                    <small className="text-muted">Paid</small>
                                                     <small className="text-primary fw-medium">
-                                                        {calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)}%
+                                                    {calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)}% paid
                                                     </small>
+                                            )}
                                                 </div>
+                                        {analytics.financialSummary.total_purchases > 0 && (
                                                 <Progress 
                                                     value={calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)} 
                                                     color="primary" 
-                                                    className="progress-sm"
+                                                className="progress-sm mt-2"
                                                 />
-                                            </div>
                                         )}
                                     </div>
                                 </div>
@@ -547,98 +573,22 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100 metric-card" onClick={() => navigateToSection('expenses')}>
-                            <CardBody>
+                    <Col xl={3} lg={6} className="mb-3">
+                        <Card className="metric-card h-100" onClick={() => navigateToSection('bank-accounts')}>
+                            <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
                                     <div className="flex-shrink-0">
-                                        <div className="avatar-sm rounded-circle bg-warning-subtle d-flex align-items-center justify-content-center">
-                                            <RiArrowDownLine className="text-warning fs-22" />
+                                        <div className="metric-icon bg-info-subtle text-info">
+                                            <i className="ri-bank-line"></i>
                                         </div>
                                     </div>
-                                    <div className="flex-grow-1 ms-3">
-                                        <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_expenses)}</h4>
-                                        <h6 className="text-muted mb-1 fs-13">Total Expenses</h6>
-                                        <p className="text-muted mb-0 fs-11">{formatNumber(analytics.financialSummary.total_expense_count)} entries</p>
-                                        {analytics.financialSummary.total_expenses > 0 && (
-                                            <div className="mt-2">
-                                                <div className="d-flex justify-content-between mb-1">
-                                                    <small className="text-muted">Paid</small>
-                                                    <small className="text-warning fw-medium">
-                                                        {calculatePercentage(analytics.financialSummary.expenses_paid, analytics.financialSummary.total_expenses)}%
-                                                    </small>
-                                                </div>
-                                                <Progress 
-                                                    value={calculatePercentage(analytics.financialSummary.expenses_paid, analytics.financialSummary.total_expenses)} 
-                                                    color="warning" 
-                                                    className="progress-sm"
-                                                />
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </CardBody>
-                        </Card>
-                    </Col>
-
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100 metric-card" onClick={() => navigateToSection('income')}>
-                            <CardBody>
-                                <div className="d-flex align-items-center">
-                                    <div className="flex-shrink-0">
-                                        <div className="avatar-sm rounded-circle bg-info-subtle d-flex align-items-center justify-content-center">
-                                            <RiArrowUpLine className="text-info fs-22" />
-                                        </div>
-                                    </div>
-                                    <div className="flex-grow-1 ms-3">
-                                        {analytics.financialSummary.total_incomes > 0 ? (
-                                            <>
-                                                <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_incomes)}</h4>
-                                                <h6 className="text-muted mb-1 fs-13">Total Income</h6>
-                                                <p className="text-muted mb-0 fs-11">{formatNumber(analytics.financialSummary.total_income_count)} entries</p>
-                                                <div className="mt-2">
-                                                    <div className="d-flex justify-content-between mb-1">
-                                                        <small className="text-muted">Received</small>
-                                                        <small className="text-info fw-medium">
-                                                            {calculatePercentage(analytics.financialSummary.incomes_received, analytics.financialSummary.total_incomes)}%
-                                                        </small>
-                                                    </div>
-                                                    <Progress 
-                                                        value={calculatePercentage(analytics.financialSummary.incomes_received, analytics.financialSummary.total_incomes)} 
-                                                        color="info" 
-                                                        className="progress-sm"
-                                                    />
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <h4 className="mb-1 fw-bold text-muted">₹0</h4>
-                                                <h6 className="text-muted mb-1 fs-13">Total Income</h6>
-                                                <p className="text-muted mb-0 fs-11">No income recorded</p>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            </CardBody>
-                        </Card>
-                    </Col>
-
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100 metric-card" onClick={() => navigateToSection('bank-accounts')}>
-                            <CardBody>
-                                <div className="d-flex align-items-center">
-                                    <div className="flex-shrink-0">
-                                        <div className="avatar-sm rounded-circle bg-secondary-subtle d-flex align-items-center justify-content-center">
-                                            <RiCashLine className="text-secondary fs-22" />
-                                        </div>
-                                    </div>
-                                    <div className="flex-grow-1 ms-3">
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Bank Balance</p>
                                         <h4 className="mb-1 fw-bold">{formatCurrency(quickStats.total_balance)}</h4>
-                                        <h6 className="text-muted mb-1 fs-13">Bank Balance</h6>
-                                        <p className="text-muted mb-0 fs-11">{formatNumber(quickStats.active_bank_accounts)} accounts</p>
-                                        <div className="mt-1">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">{formatNumber(quickStats.active_bank_accounts)} accounts</small>
                                             <small className={`fw-medium ${analytics.financialSummary.net_cash_flow >= 0 ? 'text-success' : 'text-danger'}`}>
-                                                Net Flow: {formatCurrency(analytics.financialSummary.net_cash_flow)}
+                                                {analytics.financialSummary.net_cash_flow >= 0 ? '+' : ''}{formatCurrency(Math.abs(analytics.financialSummary.net_cash_flow))}
                                             </small>
                                         </div>
                                     </div>
@@ -647,27 +597,27 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={2} lg={4} md={6} className="mb-3">
-                        <Card className="shadow-sm h-100">
-                            <CardBody>
+                    <Col xl={3} lg={6} className="mb-3">
+                        <Card className="metric-card h-100">
+                            <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
                                     <div className="flex-shrink-0">
-                                        <div className={`avatar-sm rounded-circle d-flex align-items-center justify-content-center ${analytics.financialSummary.gross_profit >= 0 ? 'bg-success-subtle' : 'bg-danger-subtle'}`}>
-                                            <RiArrowUpLine className={analytics.financialSummary.gross_profit >= 0 ? 'text-success' : 'text-danger'} size={22} />
+                                        <div className={`metric-icon ${analytics.financialSummary.gross_profit >= 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}`}>
+                                            <i className={`${analytics.financialSummary.gross_profit >= 0 ? 'ri-trending-up-line' : 'ri-trending-down-line'}`}></i>
                                         </div>
                                     </div>
-                                    <div className="flex-grow-1 ms-3">
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Gross Profit</p>
                                         <h4 className={`mb-1 fw-bold ${analytics.financialSummary.gross_profit >= 0 ? 'text-success' : 'text-danger'}`}>
                                             {formatCurrency(analytics.financialSummary.gross_profit)}
                                         </h4>
-                                        <h6 className="text-muted mb-1 fs-13">Gross Profit</h6>
-                                        <p className="text-muted mb-0 fs-11">Revenue - Costs</p>
-                                        <div className="mt-1">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">Revenue - Costs</small>
                                             <Badge 
                                                 color={analytics.financialSummary.gross_profit >= 0 ? 'success' : 'danger'} 
-                                                className="badge-soft"
+                                                className="badge-soft-sm"
                                             >
-                                                {analytics.financialSummary.gross_profit >= 0 ? 'Profitable' : 'Loss'}
+                                                {analytics.financialSummary.gross_profit >= 0 ? 'Profit' : 'Loss'}
                                             </Badge>
                                         </div>
                                     </div>
@@ -676,271 +626,307 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
                 </Row>
+                )}
 
-                {/* Business Overview - Clean 3-column Layout */}
-                <Row className="mb-4">
-                    <Col xl={4} md={4} className="mb-3">
-                        <Card className="shadow-sm h-100 clickable-card" onClick={() => navigateToSection('products')}>
-                            <CardBody className="text-center">
-                                <div className="avatar-md rounded-circle bg-primary-subtle mx-auto mb-3 d-flex align-items-center justify-content-center">
-                                    <RiShoppingCartLine className="text-primary fs-24" />
-                                </div>
-                                <h3 className="mb-1 fw-bold">{formatNumber(quickStats.total_products)}</h3>
-                                <h6 className="text-muted mb-0">Products</h6>
-                                <p className="text-muted mb-0 fs-12">Click to manage</p>
-                            </CardBody>
-                        </Card>
-                    </Col>
-                    
-                    <Col xl={4} md={4} className="mb-3">
-                        <Card className="shadow-sm h-100 clickable-card" onClick={() => navigateToSection('contacts')}>
-                            <CardBody className="text-center">
-                                <div className="avatar-md rounded-circle bg-info-subtle mx-auto mb-3 d-flex align-items-center justify-content-center">
-                                    <RiUserLine className="text-info fs-24" />
-                                </div>
-                                <h3 className="mb-1 fw-bold">{formatNumber(quickStats.total_contacts)}</h3>
-                                <h6 className="text-muted mb-0">Contacts</h6>
-                                <p className="text-muted mb-0 fs-12">Customers & vendors</p>
-                            </CardBody>
-                        </Card>
-                    </Col>
-
-                    <Col xl={4} md={4} className="mb-3">
-                        <Card className="shadow-sm h-100">
-                            <CardBody className="text-center">
-                                <div className="avatar-md rounded-circle bg-success-subtle mx-auto mb-3 d-flex align-items-center justify-content-center">
-                                    <RiCalendarLine className="text-success fs-24" />
-                                </div>
-                                {quickStats.today_sales > 0 ? (
-                                    <>
-                                        <h3 className="mb-1 fw-bold text-success">{formatCurrency(quickStats.today_sales)}</h3>
-                                        <h6 className="text-muted mb-0">Today's Sales</h6>
-                                        <p className="text-muted mb-0 fs-12">Great performance!</p>
-                                    </>
-                                ) : (
-                                    <>
-                                        <h3 className="mb-1 fw-bold text-muted">No sales today</h3>
-                                        <h6 className="text-muted mb-0">Today's Sales</h6>
-                                        <p className="text-muted mb-0 fs-12">Start your first sale</p>
-                                    </>
-                                )}
-                            </CardBody>
-                        </Card>
-                    </Col>
-                </Row>
-
-                {/* Top Products and Customers - Match Contacts Table Style */}
-                {(analytics.topProducts?.length > 0 || analytics.topCustomers?.length > 0) && (
-                    <Row className="mb-4">
-                        {analytics.topProducts?.length > 0 && (
-                            <Col xl={6} className="mb-4">
-                                <Card className="shadow-sm">
-                                    <CardHeader>
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <h5 className="card-title mb-0">Top Products</h5>
-                                            <Button color="link" size="sm" className="text-primary" onClick={() => navigateToSection('products')}>
-                                                View All <RiArrowRightLine className="ms-1" />
+                {/* Charts Analytics Section */}
+                {preferences.showCharts && chartData && (
+                    <Card className="mb-4">
+                        <CardHeader>
+                            <div className="d-flex justify-content-between align-items-center">
+                                <h5 className="card-title mb-0 fw-semibold">
+                                    <i className="ri-bar-chart-line me-2 text-primary"></i>
+                                    Business Analytics
+                                </h5>
+                                                                        <div className="d-flex gap-2">
+                                            <Button 
+                                                color={preferences.period === '6months' ? 'primary' : 'outline-primary'}
+                                                size="sm"
+                                                onClick={() => handlePeriodChange('6months')}
+                                            >
+                                                6M
+                                            </Button>
+                                            <Button 
+                                                color={preferences.period === '1year' ? 'primary' : 'outline-primary'}
+                                                size="sm"
+                                                onClick={() => handlePeriodChange('1year')}
+                                            >
+                                                1Y
                                             </Button>
                                         </div>
-                                    </CardHeader>
-                                    <CardBody className="p-3">
-                                        <div className="table-responsive">
-                                            <table className="table align-middle table-nowrap mb-0">
-                                                <thead className="table-light">
-                                                    <tr>
-                                                        <th>Product</th>
-                                                        <th className="sortable" onClick={() => handleSort('revenue')}>
-                                                            Revenue <RiSortAsc size={12} className="ms-1" />
-                                                        </th>
-                                                        <th>Qty Sold</th>
-                                                        <th>Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {analytics.topProducts.slice(0, 5).map((product, index) => (
-                                                        <tr key={product.id} className="table-row-hover" onClick={() => handleDetailsView(product, 'product')}>
-                                                            <td>
-                                                                <div className="d-flex align-items-center">
-                                                                    {index < 3 && (
+                            </div>
+                        </CardHeader>
+                        <CardBody>
+                            {/* Revenue Trend */}
+                            {preferences.chartTypes.revenueTrend && (
+                <Row className="mb-4">
+                                    <Col xl={12}>
+                                        <div className="chart-container">
+                                                                                        <h6 className="chart-title">Revenue Trend Analysis</h6>
+                                            <RevenueTrendChart 
+                                                dataColors='["--vz-primary", "--vz-secondary", "--vz-success"]'
+                                                chartData={chartData.revenueTrend}
+                                            />
+                                        </div>
+                    </Col>
+                                </Row>
+                            )}
+
+                            {/* Cash Flow and Payment Status */}
+                            <Row className="mb-4">
+                                {preferences.chartTypes.cashFlow && (
+                                    <Col xl={preferences.chartTypes.paymentStatus ? 8 : 12}>
+                                        <div className="chart-container h-100">
+                                            <h6 className="chart-title">Cash Flow Analysis</h6>
+                                            <CashFlowChart 
+                                                dataColors='["--vz-success", "--vz-danger"]'
+                                                chartData={{
+                                                    months: chartData.revenueTrend?.labels || [],
+                                                    incomeData: chartData.revenueTrend?.incomesData || [],
+                                                    expenseData: chartData.revenueTrend?.expensesData || []
+                                                }}
+                                            />
+                                        </div>
+                                    </Col>
+                                )}
+                                {preferences.chartTypes.paymentStatus && (
+                                    <Col xl={preferences.chartTypes.cashFlow ? 4 : 12}>
+                                        <div className="chart-container h-100">
+                                            <h6 className="chart-title">Payment Distribution</h6>
+                                            <PaymentStatusChart 
+                                                dataColors='["--vz-success", "--vz-warning", "--vz-danger"]'
+                                                chartData={chartData.paymentStatus}
+                                            />
+                                        </div>
+                                    </Col>
+                                )}
+                            </Row>
+
+                                                        {/* Top Products */}
+                            {preferences.chartTypes.topProducts && chartData.topProducts?.labels?.length > 0 && (
+                                <Row>
+                                    <Col xl={12}>
+                                        <div className="chart-container">
+                                            <h6 className="chart-title">Top Products Performance</h6>
+                                            <TopProductsChart 
+                                                dataColors='["--vz-primary", "--vz-info"]'
+                                                chartData={{
+                                                    productNames: chartData.topProducts.labels,
+                                                    revenue: chartData.topProducts.revenue,
+                                                    quantity: chartData.topProducts.quantity
+                                                }}
+                                            />
+                                        </div>
+                                    </Col>
+                                </Row>
+                            )}
+                            </CardBody>
+                        </Card>
+                )}
+
+                {/* Business Insights and Activities */}
+                    <Row className="mb-4">
+                    {/* Insights */}
+                    {preferences.showInsights && insights && insights.recommendations && (
+                        <Col xl={preferences.showActivities && activities?.length > 0 ? 6 : 12} className="mb-3">
+                            <Card className="h-100">
+                                <CardHeader>
+                                    <h5 className="card-title mb-0 fw-semibold">
+                                        <i className="ri-lightbulb-line me-2 text-warning"></i>
+                                        Business Insights
+                                    </h5>
+                                </CardHeader>
+                                <CardBody>
+                                    <div className="mb-3">
+                                        <h6 className="fw-semibold mb-2">Key Metrics</h6>
+                                        <div className="row g-2">
+                                            <div className="col-6">
+                                                <div className="text-center p-2 bg-light rounded">
+                                                    <div className={`fw-bold ${insights.insights.salesGrowth >= 0 ? 'text-success' : 'text-danger'}`}>
+                                                        {insights.insights.salesGrowth > 0 ? '+' : ''}{insights.insights.salesGrowth}%
+                                                    </div>
+                                                    <small className="text-muted">Growth</small>
+                                                </div>
+                                            </div>
+                                            <div className="col-6">
+                                                <div className="text-center p-2 bg-light rounded">
                                                                         <Badge 
-                                                                            color={index === 0 ? 'warning' : index === 1 ? 'secondary' : 'light'} 
-                                                                            className="badge-soft me-2"
+                                                        color={insights.insights.overdueRisk === 'high' ? 'danger' : insights.insights.overdueRisk === 'medium' ? 'warning' : 'success'}
+                                                        className="badge-soft"
                                                                         >
-                                                                            #{index + 1}
+                                                        {insights.insights.overdueRisk}
                                                                         </Badge>
-                                                                    )}
-                                                                    <div>
-                                                                        <h6 className="mb-0">{product.name}</h6>
-                                                                        <small className="text-muted">{product.itemcode}</small>
+                                                    <small className="text-muted d-block">Risk</small>
                                                                     </div>
                                                                 </div>
-                                                            </td>
-                                                            <td>
-                                                                <span className="fw-semibold">
-                                                                    {formatCurrency(product.total_sales_amount)}
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                <span className="text-muted">
-                                                                    {formatNumber(product.total_quantity_sold)}
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                <UncontrolledDropdown>
-                                                                    <DropdownToggle tag="a" className="btn btn-soft-secondary btn-sm" onClick={(e) => e.stopPropagation()}>
-                                                                        <RiMoreFill className="align-middle" />
-                                                                    </DropdownToggle>
-                                                                    <DropdownMenu className="dropdown-menu-end">
-                                                                        <DropdownItem onClick={(e) => { e.stopPropagation(); handleDetailsView(product, 'product'); }}>
-                                                                            <RiEyeLine className="me-2 align-middle text-muted" />View
-                                                                        </DropdownItem>
-                                                                        <DropdownItem onClick={(e) => { e.stopPropagation(); navigateToSection('products'); }}>
-                                                                            <RiPencilLine className="me-2 align-middle text-muted" />Edit
-                                                                        </DropdownItem>
-                                                                    </DropdownMenu>
-                                                                </UncontrolledDropdown>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                        </div>
+                                    </div>
+                                    <div className="recommendations">
+                                        <h6 className="fw-semibold mb-2">Recommendations</h6>
+                                        {insights.recommendations.slice(0, 2).map((rec, index) => (
+                                            <Alert key={index} color={rec.type} className="py-2 px-3 mb-2">
+                                                <div className="d-flex align-items-start">
+                                                    <i className={`ri-${rec.type === 'success' ? 'checkbox-circle' : rec.type === 'warning' ? 'alert' : rec.type === 'danger' ? 'error-warning' : 'information'}-line me-2 mt-1`}></i>
+                                                    <div className="flex-grow-1">
+                                                        <h6 className="alert-heading mb-1 fs-14">{rec.title}</h6>
+                                                        <p className="mb-0 fs-12">{rec.message}</p>
+                                                    </div>
+                                                </div>
+                                            </Alert>
+                                        ))}
                                         </div>
                                     </CardBody>
                                 </Card>
                             </Col>
                         )}
                         
-                        {analytics.topCustomers?.length > 0 && (
-                            <Col xl={6} className="mb-4">
-                                <Card className="shadow-sm">
+                    {/* Recent Activities */}
+                    {preferences.showActivities && activities && activities.length > 0 && (
+                        <Col xl={preferences.showInsights && insights?.recommendations ? 6 : 12} className="mb-3">
+                            <Card className="h-100">
                                     <CardHeader>
-                                        <div className="d-flex justify-content-between align-items-center">
-                                            <h5 className="card-title mb-0">Top Customers</h5>
-                                            <Button color="link" size="sm" className="text-primary" onClick={() => navigateToSection('contacts')}>
-                                                View All <RiArrowRightLine className="ms-1" />
-                                            </Button>
-                                        </div>
+                                        <h5 className="card-title mb-0 fw-semibold">
+                                            <i className="ri-time-line me-2 text-secondary"></i>
+                                            Recent Activities
+                                        </h5>
                                     </CardHeader>
-                                    <CardBody className="p-3">
-                                        <div className="table-responsive">
-                                            <table className="table align-middle table-nowrap mb-0">
-                                                <thead className="table-light">
-                                                    <tr>
-                                                        <th>Customer</th>
-                                                        <th className="sortable" onClick={() => handleSort('sales')}>
-                                                            Sales <RiSortAsc size={12} className="ms-1" />
-                                                        </th>
-                                                        <th>Status</th>
-                                                        <th>Action</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {analytics.topCustomers.slice(0, 5).map((customer, index) => (
-                                                        <tr key={customer.id} className="table-row-hover" onClick={() => handleDetailsView(customer, 'customer')}>
-                                                            <td>
-                                                                <div className="d-flex align-items-center">
-                                                                    {index < 3 && (
+                                <CardBody>
+                                    <div className="activity-list">
+                                        {activities.slice(0, 6).map((activity, index) => (
+                                            <div key={index} className="activity-item d-flex align-items-center py-2">
+                                                <div className={`activity-icon me-3 ${
+                                                    activity.activity_type === 'sale' ? 'bg-success-subtle text-success' :
+                                                    activity.activity_type === 'purchase' ? 'bg-primary-subtle text-primary' :
+                                                    'bg-info-subtle text-info'
+                                                }`}>
+                                                    <i className={`ri-${activity.activity_type === 'sale' ? 'arrow-up' : activity.activity_type === 'purchase' ? 'arrow-down' : 'exchange'}-line`}></i>
+                                                </div>
+                                                <div className="flex-grow-1 overflow-hidden">
+                                                    <h6 className="mb-1 fs-14 text-truncate">{activity.reference}</h6>
+                                                    <p className="text-muted mb-0 fs-12 text-truncate">
+                                                        {activity.contact_name || 'Direct'} • {activity.timeAgo}
+                                                    </p>
+                                                </div>
+                                                <div className="text-end">
+                                                    <div className="fw-bold fs-13">{formatCurrency(activity.amount)}</div>
                                                                         <Badge 
-                                                                            color={index === 0 ? 'warning' : index === 1 ? 'secondary' : 'light'} 
-                                                                            className="badge-soft me-2"
+                                                        color={activity.activity_type === 'sale' ? 'success' : 
+                                                              activity.activity_type === 'purchase' ? 'primary' : 'info'}
+                                                        className="badge-soft-sm"
                                                                         >
-                                                                            #{index + 1}
+                                                        {activity.activity_type}
                                                                         </Badge>
-                                                                    )}
-                                                                    <div>
-                                                                        <h6 className="mb-0">{customer.name}</h6>
-                                                                        {customer.gstin && (
-                                                                            <small className="text-muted">{customer.gstin}</small>
-                                                                        )}
                                                                     </div>
                                                                 </div>
-                                                            </td>
-                                                            <td>
-                                                                <span className="fw-semibold">
-                                                                    {formatCurrency(customer.total_sales)}
-                                                                </span>
-                                                            </td>
-                                                            <td>
-                                                                {parseFloat(customer.pending_amount) > 0 ? (
-                                                                    <Badge color="warning" className="badge-soft-warning">
-                                                                        Pending
-                                                                    </Badge>
-                                                                ) : (
-                                                                    <Badge color="success" className="badge-soft-success">
-                                                                        Paid
-                                                                    </Badge>
-                                                                )}
-                                                            </td>
-                                                            <td>
-                                                                <UncontrolledDropdown>
-                                                                    <DropdownToggle tag="a" className="btn btn-soft-secondary btn-sm" onClick={(e) => e.stopPropagation()}>
-                                                                        <RiMoreFill className="align-middle" />
-                                                                    </DropdownToggle>
-                                                                    <DropdownMenu className="dropdown-menu-end">
-                                                                        <DropdownItem onClick={(e) => { e.stopPropagation(); handleDetailsView(customer, 'customer'); }}>
-                                                                            <RiEyeLine className="me-2 align-middle text-muted" />View
-                                                                        </DropdownItem>
-                                                                        <DropdownItem onClick={(e) => { e.stopPropagation(); navigateToSection('contacts'); }}>
-                                                                            <RiPencilLine className="me-2 align-middle text-muted" />Edit
-                                                                        </DropdownItem>
-                                                                    </DropdownMenu>
-                                                                </UncontrolledDropdown>
-                                                            </td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
+                                        ))}
                                         </div>
                                     </CardBody>
                                 </Card>
                             </Col>
                         )}
                     </Row>
+
+                {/* Business Overview */}
+                {preferences.showBusinessOverview && (
+                <Row className="mb-4">
+                    <Col xl={4} lg={6} className="mb-3">
+                        <Card className="overview-card h-100" onClick={() => navigateToSection('products')}>
+                            <CardBody className="text-center p-4">
+                                <div className="overview-icon bg-primary-subtle text-primary mb-3">
+                                    <i className="ri-shopping-cart-line"></i>
+                                </div>
+                                <h3 className="mb-1 fw-bold">{formatNumber(quickStats.total_products)}</h3>
+                                <p className="text-muted mb-0">Products</p>
+                                <small className="text-muted">Inventory items</small>
+                            </CardBody>
+                        </Card>
+                    </Col>
+                    
+                    <Col xl={4} lg={6} className="mb-3">
+                        <Card className="overview-card h-100" onClick={() => navigateToSection('contacts')}>
+                            <CardBody className="text-center p-4">
+                                <div className="overview-icon bg-info-subtle text-info mb-3">
+                                    <i className="ri-contacts-line"></i>
+                                </div>
+                                <h3 className="mb-1 fw-bold">{formatNumber(quickStats.total_contacts)}</h3>
+                                <p className="text-muted mb-0">Contacts</p>
+                                <small className="text-muted">Customers & vendors</small>
+                            </CardBody>
+                        </Card>
+                    </Col>
+
+                    <Col xl={4} lg={12} className="mb-3">
+                        <Card className="h-100">
+                            <CardBody className="text-center p-4">
+                                <div className="overview-icon bg-success-subtle text-success mb-3">
+                                    <i className="ri-calendar-check-line"></i>
+                                </div>
+                                {quickStats.today_sales > 0 ? (
+                                    <>
+                                        <h3 className="mb-1 fw-bold text-success">{formatCurrency(quickStats.today_sales)}</h3>
+                                        <p className="text-muted mb-0">Today's Sales</p>
+                                        <small className="text-success">Excellent performance</small>
+                                    </>
+                                ) : (
+                                    <>
+                                        <h3 className="mb-1 fw-bold text-muted">₹0</h3>
+                                        <p className="text-muted mb-0">Today's Sales</p>
+                                        <small className="text-muted">No sales recorded today</small>
+                                    </>
+                                )}
+                            </CardBody>
+                        </Card>
+                    </Col>
+                </Row>
                 )}
 
-                {/* Outstanding Payments - Clean Table Design */}
-                {analytics.outstandingPayments?.length > 0 && (
-                    <Row>
-                        <Col xl={12}>
-                            <Card className="shadow-sm">
+                {/* Outstanding Payments */}
+                {preferences.showOutstandingPayments && analytics.outstandingPayments?.length > 0 && (
+                    <Card className="mb-4">
                                 <CardHeader>
                                     <div className="d-flex justify-content-between align-items-center">
-                                        <h5 className="card-title mb-0">Outstanding Payments</h5>
-                                        <Button color="link" size="sm" className="text-primary" onClick={() => navigateToSection('payments')}>
-                                            Manage All <RiArrowRightLine className="ms-1" />
+                                <h5 className="card-title mb-0 fw-semibold">
+                                    <i className="ri-money-dollar-circle-line me-2 text-warning"></i>
+                                    Outstanding Payments
+                                    <Badge color="warning" className="badge-soft ms-2">
+                                        {analytics.outstandingPayments.length}
+                                    </Badge>
+                                </h5>
+                                <Button color="outline-primary" size="sm" onClick={() => navigateToSection('payments')}>
+                                    <i className="ri-arrow-right-line ms-1"></i>
+                                    Manage All
                                         </Button>
                                     </div>
                                 </CardHeader>
-                                <CardBody className="p-3">
+                        <CardBody>
                                     <div className="table-responsive">
-                                        <table className="table align-middle table-nowrap mb-0">
+                                <table className="table table-hover align-middle mb-0">
                                             <thead className="table-light">
                                                 <tr>
-                                                    <th>Type</th>
-                                                    <th>Reference</th>
-                                                    <th>Contact</th>
-                                                    <th className="sortable" onClick={() => handleSort('amount')}>
-                                                        Amount <RiSortAsc size={12} className="ms-1" />
-                                                    </th>
-                                                    <th>Balance Type</th>
+                                            <th className="fw-semibold">Type</th>
+                                            <th className="fw-semibold">Reference</th>
+                                            <th className="fw-semibold">Contact</th>
+                                            <th className="fw-semibold">Amount</th>
+                                            <th className="fw-semibold">Status</th>
+                                            <th className="fw-semibold">Action</th>
                                                 </tr>
                                             </thead>
                                             <tbody>
                                                 {analytics.outstandingPayments
                                                     .sort((a, b) => b.days_overdue - a.days_overdue)
-                                                    .slice(0, 10)
+                                            .slice(0, 8)
                                                     .map((payment, index) => (
-                                                    <tr key={`${payment.type}-${payment.id}`} className="table-row-hover" onClick={() => handleOutstandingPaymentClick(payment)}>
+                                            <tr key={`${payment.type}-${payment.id}`}>
                                                         <td>
                                                             <Badge 
                                                                 color={payment.type === 'sales' ? 'success' : 'primary'} 
                                                                 className="badge-soft"
                                                             >
+                                                        <i className={`ri-${payment.type === 'sales' ? 'arrow-up' : 'arrow-down'}-line me-1`}></i>
                                                                 {payment.type}
                                                             </Badge>
                                                         </td>
                                                         <td>
-                                                            <h6 className="mb-0">{payment.reference}</h6>
+                                                    <h6 className="mb-0 fw-medium">{payment.reference}</h6>
                                                         </td>
                                                         <td>
                                                             <span className="text-muted">{payment.contact_name || '—'}</span>
@@ -951,131 +937,64 @@ const BusinessDashboard = () => {
                                                             </span>
                                                         </td>
                                                         <td>
-                                                            {getBalanceTypeBadge(payment.type)}
+                                                    <Badge 
+                                                        color={payment.days_overdue > 30 ? 'danger' : payment.days_overdue > 0 ? 'warning' : 'success'} 
+                                                        className="badge-soft"
+                                                    >
+                                                        {payment.days_overdue > 30 ? 'Overdue' : payment.days_overdue > 0 ? 'Pending' : 'Current'}
+                                                    </Badge>
+                                                </td>
+                                                <td>
+                                                    <Button 
+                                                        color="primary" 
+                                                        size="sm" 
+                                                        onClick={() => handleOutstandingPaymentClick(payment)}
+                                                    >
+                                                        <i className="ri-money-dollar-line me-1"></i>
+                                                        Pay Now
+                                                    </Button>
                                                         </td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     </div>
-                                    {analytics.outstandingPayments.length > 10 && (
-                                        <div className="text-center mt-3 pt-3 border-top">
-                                            <Button color="link" className="text-primary" onClick={() => navigateToSection('payments')}>
-                                                View All {analytics.outstandingPayments.length} Outstanding Payments
-                                            </Button>
-                                        </div>
-                                    )}
                                 </CardBody>
                             </Card>
-                        </Col>
-                    </Row>
                 )}
 
-                {/* Empty State for Payments */}
-                {analytics.outstandingPayments?.length === 0 && (
-                    <Row>
-                        <Col xl={12}>
-                            <Card className="shadow-sm">
+                {/* No Outstanding Payments */}
+                {preferences.showOutstandingPayments && analytics.outstandingPayments?.length === 0 && (
+                    <Card className="mb-4">
                                 <CardBody className="text-center py-4">
-                                    <i className="ri-checkbox-multiple-line text-success mb-3" style={{ fontSize: '3rem' }}></i>
-                                    <h5 className="text-success">All Payments Up to Date!</h5>
-                                    <p className="text-muted mb-3">No outstanding payments found. Great job!</p>
-                                    <Button color="success" onClick={() => navigateToSection('payments')}>
+                            <i className="ri-checkbox-multiple-line display-4 text-success mb-3"></i>
+                            <h5 className="text-success fw-semibold">All Payments Current</h5>
+                            <p className="text-muted mb-3">No outstanding payments found. Excellent financial management!</p>
+                            <Button color="outline-success" onClick={() => navigateToSection('payments')}>
+                                <i className="ri-history-line me-1"></i>
                                         View Payment History
                                     </Button>
                                 </CardBody>
                             </Card>
-                        </Col>
-                    </Row>
                 )}
 
-                {/* Filters Modal */}
+                {/* Modals */}
                 <Modal isOpen={modals.filters} toggle={() => toggleModal('filters')} size="lg">
                     <ModalHeader toggle={() => toggleModal('filters')}>
+                        <i className="ri-filter-line me-2"></i>
                         Dashboard Filters
                     </ModalHeader>
                     <ModalBody>
                         <DashboardFilters 
                             onFiltersChange={handleFiltersChange}
-                            currentFilters={filters}
+                            currentFilters={preferences.filters}
                             onRefresh={handleRefresh}
                         />
                     </ModalBody>
                 </Modal>
 
-                {/* Product Details Modal */}
-                <Modal isOpen={modals.productDetails} toggle={() => toggleModal('productDetails')} size="lg">
-                    <ModalHeader toggle={() => toggleModal('productDetails')}>
-                        Product Details
-                    </ModalHeader>
-                    <ModalBody>
-                        {selectedItem && (
-                            <Row>
-                                <Col md={6}>
-                                    <h6 className="text-muted mb-3">Product Information</h6>
-                                    <p><strong>Name:</strong> {selectedItem.name}</p>
-                                    <p><strong>Item Code:</strong> {selectedItem.itemcode || 'N/A'}</p>
-                                    <p><strong>Current Rate:</strong> {formatCurrency(selectedItem.current_rate)}</p>
-                                </Col>
-                                <Col md={6}>
-                                    <h6 className="text-muted mb-3">Sales Performance</h6>
-                                    <p><strong>Total Revenue:</strong> {formatCurrency(selectedItem.total_sales_amount)}</p>
-                                    <p><strong>Quantity Sold:</strong> {formatNumber(selectedItem.total_quantity_sold)}</p>
-                                    <p><strong>Invoice Count:</strong> {formatNumber(selectedItem.invoice_count)}</p>
-                                </Col>
-                            </Row>
-                        )}
-                    </ModalBody>
-                    <ModalFooter>
-                        <Button color="light" onClick={() => toggleModal('productDetails')}>
-                            Close
-                        </Button>
-                        <Button color="primary" onClick={() => navigateToSection('products')}>
-                            Manage Products
-                        </Button>
-                    </ModalFooter>
-                </Modal>
 
-                {/* Customer Details Modal */}
-                <Modal isOpen={modals.customerDetails} toggle={() => toggleModal('customerDetails')} size="lg">
-                    <ModalHeader toggle={() => toggleModal('customerDetails')}>
-                        Customer Details
-                    </ModalHeader>
-                    <ModalBody>
-                        {selectedItem && (
-                            <Row>
-                                <Col md={6}>
-                                    <h6 className="text-muted mb-3">Customer Information</h6>
-                                    <p><strong>Name:</strong> {selectedItem.name}</p>
-                                    <p><strong>GSTIN:</strong> {selectedItem.gstin || 'N/A'}</p>
-                                    <p><strong>Total Sales:</strong> {formatCurrency(selectedItem.total_sales)}</p>
-                                </Col>
-                                <Col md={6}>
-                                    <h6 className="text-muted mb-3">Payment Status</h6>
-                                    <p><strong>Invoice Count:</strong> {formatNumber(selectedItem.invoice_count)}</p>
-                                    <p><strong>Pending Amount:</strong> {formatCurrency(selectedItem.pending_amount)}</p>
-                                    <p><strong>Status:</strong> 
-                                        {parseFloat(selectedItem.pending_amount) > 0 ? (
-                                            <Badge color="warning" className="badge-soft-warning ms-2">Has Pending</Badge>
-                                        ) : (
-                                            <Badge color="success" className="badge-soft-success ms-2">Paid Up</Badge>
-                                        )}
-                                    </p>
-                                </Col>
-                            </Row>
-                        )}
-                    </ModalBody>
-                    <ModalFooter>
-                        <Button color="light" onClick={() => toggleModal('customerDetails')}>
-                            Close
-                        </Button>
-                        <Button color="primary" onClick={() => navigateToSection('contacts')}>
-                            Manage Contacts
-                        </Button>
-                    </ModalFooter>
-                </Modal>
 
-                {/* Payment Form Modal */}
                 <PaymentForm
                     isOpen={modals.paymentForm}
                     toggle={() => toggleModal('paymentForm')}
@@ -1091,60 +1010,114 @@ const BusinessDashboard = () => {
             </Container>
 
             <style>{`
-                /* Clean Dashboard Styles - Match Contacts Page */
+                /* Professional Dashboard Styles */
                 .metric-card {
-                    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
                     cursor: pointer;
+                    transition: all 0.2s ease;
+                    border: 1px solid var(--vz-border-color);
                 }
 
                 .metric-card:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+                    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+                    border-color: var(--vz-primary);
                 }
 
-                .clickable-card {
+                .overview-card {
                     cursor: pointer;
-                    transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+                    transition: all 0.2s ease;
+                    border: 1px solid var(--vz-border-color);
                 }
 
-                .clickable-card:hover {
+                .overview-card:hover {
                     transform: translateY(-2px);
-                    box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+                    box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+                    border-color: var(--vz-primary);
                 }
 
-                .table-row-hover {
-                    cursor: pointer;
-                    transition: background-color 0.2s ease-in-out;
+                .metric-icon {
+                    width: 2.25rem;
+                    height: 2.25rem;
+                    border-radius: 0.375rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1rem;
                 }
 
-                .table-row-hover:hover {
-                    background-color: rgba(0,0,0,0.02);
+                .overview-icon {
+                    width: 3rem;
+                    height: 3rem;
+                    border-radius: 0.5rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 1.25rem;
                 }
 
-                .sortable {
-                    cursor: pointer;
-                    user-select: none;
+                .activity-icon {
+                    width: 2rem;
+                    height: 2rem;
+                    border-radius: 0.25rem;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.875rem;
                 }
 
-                .sortable:hover {
-                    color: var(--bs-primary) !important;
+                .activity-item {
+                    border-bottom: 1px solid var(--vz-border-color);
+                    transition: all 0.2s ease;
+                }
+
+                .activity-item:last-child {
+                    border-bottom: none;
+                }
+
+                .activity-item:hover {
+                    background-color: var(--vz-light);
+                    border-radius: 0.25rem;
+                    margin: 0 -0.5rem;
+                    padding-left: 0.5rem !important;
+                    padding-right: 0.5rem !important;
+                }
+
+                .chart-container {
+                    border: 1px solid var(--vz-border-color);
+                    border-radius: 0.375rem;
+                    padding: 1rem;
+                    background: #fff;
+                }
+
+                .chart-title {
+                    color: var(--vz-dark);
+                    font-weight: 600;
+                    margin-bottom: 1rem;
+                    padding-bottom: 0.5rem;
+                    border-bottom: 1px solid var(--vz-border-color);
                 }
 
                 .progress-sm {
-                    height: 4px;
+                    height: 3px;
+                    border-radius: 1.5px;
                 }
 
-                .avatar-md {
-                    width: 3rem;
-                    height: 3rem;
+                .badge-soft-sm {
+                    font-size: 0.6875rem;
+                    padding: 0.25rem 0.5rem;
                 }
 
-                .fs-24 {
-                    font-size: 1.5rem !important;
+                .table-hover tbody tr:hover {
+                    background-color: var(--vz-primary-bg-subtle);
                 }
 
-                .fs-12 {
-                    font-size: 0.75rem !important;
+                .btn {
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                }
+
+                .btn:hover {
+                    transform: translateY(-1px);
                 }
 
                 .spin {
@@ -1156,10 +1129,95 @@ const BusinessDashboard = () => {
                     to { transform: rotate(360deg); }
                 }
 
-                /* Mobile responsiveness */
+                .fs-12 {
+                    font-size: 0.75rem !important;
+                }
+
+                .fs-13 {
+                    font-size: 0.8125rem !important;
+                }
+
+                .fs-14 {
+                    font-size: 0.875rem !important;
+                }
+
+                .overflow-hidden {
+                    overflow: hidden;
+                }
+
+                .text-truncate {
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                .cursor-pointer {
+                    cursor: pointer;
+                }
+
+                .badge-soft {
+                    font-weight: 500;
+                    transition: all 0.2s ease;
+                }
+
+                .badge-soft.cursor-pointer:hover {
+                    transform: scale(1.05);
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+                }
+
+                /* Smooth transitions for all preference changes */
+                .card, .chart-container, .activity-item {
+                    transition: all 0.3s ease;
+                }
+
+                /* Compact mode styles */
+                .compact-mode .card {
+                    margin-bottom: 0.75rem;
+                }
+
+                .compact-mode .chart-container {
+                    padding: 0.75rem;
+                }
+
+                .compact-mode .activity-item {
+                    padding: 0.5rem 0;
+                }
+
+                /* Responsive Design */
+                @media (max-width: 1200px) {
+                    .chart-container {
+                        margin-bottom: 1rem;
+                    }
+                }
+
                 @media (max-width: 768px) {
                     .d-flex.gap-2 {
                         flex-wrap: wrap;
+                        gap: 0.5rem !important;
+                    }
+                    
+                    .metric-card:hover,
+                    .overview-card:hover {
+                        transform: none;
+                    }
+                    
+                    .activity-item {
+                        padding: 0.75rem 0;
+                    }
+                    
+                    .chart-container {
+                        padding: 0.75rem;
+                    }
+                }
+
+                @media (max-width: 576px) {
+                    .d-flex.align-items-center.gap-2 {
+                        flex-direction: column;
+                        align-items: stretch !important;
+                    }
+                    
+                    .d-flex.align-items-center.gap-2 .btn {
+                        margin-bottom: 0.25rem;
                     }
                 }
             `}</style>

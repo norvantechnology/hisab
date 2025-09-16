@@ -1,0 +1,35 @@
+/* Fix for ReactSelect dropdowns inside modals */
+
+/* ReactSelect dropdown menu positioning */
+.react-select__menu {
+  z-index: 9999 !important;
+  max-height: 200px !important;
+}
+
+/* Contact dropdown container */
+.contact-dropdown-container {
+  position: relative;
+  z-index: 1;
+}
+
+/* Fix for modal dropdowns */
+.modal .react-select-container {
+  position: relative;
+}
+
+/* Ensure dropdown works in modals */
+.modal .react-select__menu {
+  z-index: 9999 !important;
+  position: absolute !important;
+  width: 100% !important;
+  max-height: 200px !important;
+  overflow-y: auto !important;
+}
+
+/* Responsive dropdown fixes */
+@media (max-width: 768px) {
+  .modal .react-select__menu {
+    max-height: 150px !important;
+    font-size: 0.875rem;
+  }
+} 

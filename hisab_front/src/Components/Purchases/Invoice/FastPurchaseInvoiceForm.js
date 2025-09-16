@@ -1073,7 +1073,7 @@ const FastPurchaseInvoiceForm = ({
                         <Col md={3}>
                             <FormGroup className="mb-0">
                             <Label className="form-label small fw-bold">Vendor *</Label>
-                                <div style={{ height: '35px', position: 'relative', zIndex: 1000 }}>
+                                <div className="contact-dropdown-container">
                                     <BankAccountContactDropdown
                                         value={validation.values.billFrom}
                                         onChange={handleBillFromChange}
@@ -1082,6 +1082,8 @@ const FastPurchaseInvoiceForm = ({
                                         placeholder="Select Vendor"
                                         error={validation.errors.billFrom}
                                         touched={validation.touched.billFrom}
+                                        showBankAccounts={true}
+                                        showContacts={true}
                                     />
                                 </div>
                                 <FormFeedback>{validation.errors.billFrom}</FormFeedback>

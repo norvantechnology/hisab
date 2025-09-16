@@ -97,6 +97,13 @@ const BankAccountDropdown = ({
       classNamePrefix={classNamePrefix}
       placeholder={placeholder}
       onInputChange={handleSearch}
+      styles={{
+        menu: (provided) => ({
+          ...provided,
+          zIndex: 9999,
+          maxHeight: '200px'
+        })
+      }}
       formatOptionLabel={(option) => {
         const account = option.account;
         const accountType = ACCOUNT_TYPES[account.accountType] || ACCOUNT_TYPES.bank;

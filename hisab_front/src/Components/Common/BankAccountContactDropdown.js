@@ -357,6 +357,7 @@ const BankAccountContactDropdown = ({
           }
           return "No options";
         }}
+
         styles={{
           control: (provided, state) => ({
             ...provided,
@@ -374,7 +375,8 @@ const BankAccountContactDropdown = ({
             borderRadius: '6px',
             boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)',
             overflow: 'hidden',
-            zIndex: 1050
+            zIndex: 9999,
+            maxHeight: '200px'
           }),
           option: (provided, state) => ({
             ...provided,
