@@ -412,4 +412,716 @@ export async function exportDashboardData(req, res) {
   } finally {
     client.release();
   }
+}
+
+// Get comprehensive chart data
+export async function getChartData(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+  const { startDate, endDate, period = '6months' } = req.query;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Get date range based on period
+    let dateCondition = '';
+    let params = [companyId];
+    
+    if (period === '6months') {
+      dateCondition = `AND "invoiceDate" >= CURRENT_DATE - INTERVAL '6 months'`;
+    } else if (period === '1year') {
+      dateCondition = `AND "invoiceDate" >= CURRENT_DATE - INTERVAL '1 year'`;
+    } else if (startDate && endDate) {
+      dateCondition = `AND "invoiceDate" BETWEEN $2 AND $3`;
+      params.push(startDate, endDate);
+    }
+
+    // Monthly revenue trend data
+    const revenueQuery = `
+      WITH months AS (
+        SELECT 
+          DATE_TRUNC('month', generate_series(
+            DATE_TRUNC('month', CURRENT_DATE - INTERVAL '6 months'),
+            DATE_TRUNC('month', CURRENT_DATE),
+            '1 month'::interval
+          )) AS month
+      ),
+      sales_data AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate") as month,
+          SUM("netReceivable") as sales,
+          SUM("paid_amount") as sales_paid
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL ${dateCondition}
+        GROUP BY DATE_TRUNC('month', "invoiceDate")
+      ),
+      purchase_data AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate") as month,
+          SUM("netPayable") as purchases,
+          SUM("paid_amount") as purchases_paid
+        FROM hisab.purchases 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL ${dateCondition}
+        GROUP BY DATE_TRUNC('month', "invoiceDate")
+      ),
+      expense_data AS (
+        SELECT 
+          DATE_TRUNC('month', "date") as month,
+          SUM(amount) as expenses
+        FROM hisab.expenses 
+        WHERE "companyId" = $1 ${dateCondition.replace('"invoiceDate"', '"date"')}
+        GROUP BY DATE_TRUNC('month', "date")
+      ),
+      income_data AS (
+        SELECT 
+          DATE_TRUNC('month', "date") as month,
+          SUM(amount) as incomes
+        FROM hisab.incomes 
+        WHERE "companyId" = $1 ${dateCondition.replace('"invoiceDate"', '"date"')}
+        GROUP BY DATE_TRUNC('month', "date")
+      )
+      SELECT 
+        m.month,
+        COALESCE(s.sales, 0) as sales,
+        COALESCE(p.purchases, 0) as purchases,
+        COALESCE(e.expenses, 0) as expenses,
+        COALESCE(i.incomes, 0) as incomes,
+        COALESCE(s.sales, 0) + COALESCE(i.incomes, 0) - COALESCE(p.purchases, 0) - COALESCE(e.expenses, 0) as profit
+      FROM months m
+      LEFT JOIN sales_data s ON m.month = s.month
+      LEFT JOIN purchase_data p ON m.month = p.month
+      LEFT JOIN expense_data e ON m.month = e.month
+      LEFT JOIN income_data i ON m.month = i.month
+      ORDER BY m.month
+    `;
+
+    // Payment status distribution
+    const paymentStatusQuery = `
+      WITH payment_stats AS (
+        SELECT 
+          COUNT(CASE WHEN "remaining_amount" = 0 THEN 1 END) as paid_count,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as pending_count,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" < CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as overdue_count
+        FROM (
+          SELECT "remaining_amount", "invoiceDate" FROM hisab.sales WHERE "companyId" = $1 AND "deletedAt" IS NULL
+          UNION ALL
+          SELECT "remaining_amount", "invoiceDate" FROM hisab.purchases WHERE "companyId" = $1 AND "deletedAt" IS NULL
+        ) combined
+      )
+      SELECT paid_count, pending_count, overdue_count FROM payment_stats
+    `;
+
+    // Top products performance
+    const topProductsQuery = `
+      SELECT 
+        p.name,
+        COALESCE(SUM(si."lineTotal"), 0) as revenue,
+        COALESCE(SUM(si.quantity), 0) as quantity
+      FROM hisab."products" p
+      LEFT JOIN hisab.sale_items si ON p.id = si."productId"
+      LEFT JOIN hisab.sales s ON si."saleId" = s.id AND s."deletedAt" IS NULL AND s."companyId" = $1
+      WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
+      GROUP BY p.id, p.name
+      HAVING COALESCE(SUM(si."lineTotal"), 0) > 0
+      ORDER BY revenue DESC
+      LIMIT 5
+    `;
+
+    // Execute queries
+    const [revenueResult, paymentStatusResult, topProductsResult] = await Promise.all([
+      client.query(revenueQuery, params),
+      client.query(paymentStatusQuery, [companyId]),
+      client.query(topProductsQuery, [companyId])
+    ]);
+
+    const chartData = {
+      revenueTrend: {
+        labels: revenueResult.rows.map(row => new Date(row.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })),
+        salesData: revenueResult.rows.map(row => parseFloat(row.sales) || 0),
+        purchasesData: revenueResult.rows.map(row => parseFloat(row.purchases) || 0),
+        profitData: revenueResult.rows.map(row => parseFloat(row.profit) || 0),
+        expensesData: revenueResult.rows.map(row => parseFloat(row.expenses) || 0),
+        incomesData: revenueResult.rows.map(row => parseFloat(row.incomes) || 0)
+      },
+      paymentStatus: {
+        labels: ['Paid', 'Pending', 'Overdue'],
+        values: [
+          parseInt(paymentStatusResult.rows[0]?.paid_count) || 0,
+          parseInt(paymentStatusResult.rows[0]?.pending_count) || 0,
+          parseInt(paymentStatusResult.rows[0]?.overdue_count) || 0
+        ]
+      },
+      topProducts: {
+        labels: topProductsResult.rows.map(row => row.name),
+        revenue: topProductsResult.rows.map(row => parseFloat(row.revenue) || 0),
+        quantity: topProductsResult.rows.map(row => parseFloat(row.quantity) || 0)
+      }
+    };
+
+    return successResponse(res, {
+      message: "Chart data fetched successfully",
+      chartData,
+      period,
+      generatedAt: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Error fetching chart data:', error);
+    return errorResponse(res, "Error fetching chart data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get revenue chart data
+export async function getRevenueChartData(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const query = `
+      WITH monthly_data AS (
+        SELECT 
+          DATE_TRUNC('month', generate_series(
+            DATE_TRUNC('month', CURRENT_DATE - INTERVAL '12 months'),
+            DATE_TRUNC('month', CURRENT_DATE),
+            '1 month'::interval
+          )) AS month
+      ),
+      current_year AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate") as month,
+          SUM("netReceivable") as amount
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "invoiceDate" >= CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', "invoiceDate")
+      ),
+      last_year AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate" + INTERVAL '1 year') as month,
+          SUM("netReceivable") as amount
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "invoiceDate" >= CURRENT_DATE - INTERVAL '24 months'
+          AND "invoiceDate" < CURRENT_DATE - INTERVAL '12 months'
+        GROUP BY DATE_TRUNC('month', "invoiceDate" + INTERVAL '1 year')
+      )
+      SELECT 
+        TO_CHAR(m.month, 'Mon') as month_name,
+        COALESCE(c.amount, 0) as current_year,
+        COALESCE(l.amount, 0) as last_year
+      FROM monthly_data m
+      LEFT JOIN current_year c ON m.month = c.month
+      LEFT JOIN last_year l ON m.month = l.month
+      ORDER BY m.month
+    `;
+
+    const result = await client.query(query, [companyId]);
+
+    return successResponse(res, {
+      message: "Revenue chart data fetched successfully",
+      data: {
+        labels: result.rows.map(row => row.month_name),
+        currentYear: result.rows.map(row => parseFloat(row.current_year) || 0),
+        lastYear: result.rows.map(row => parseFloat(row.last_year) || 0)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching revenue chart data:', error);
+    return errorResponse(res, "Error fetching revenue chart data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get cash flow chart data
+export async function getCashFlowChartData(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const query = `
+      WITH months AS (
+        SELECT 
+          DATE_TRUNC('month', generate_series(
+            DATE_TRUNC('month', CURRENT_DATE - INTERVAL '6 months'),
+            DATE_TRUNC('month', CURRENT_DATE),
+            '1 month'::interval
+          )) AS month
+      ),
+      inflows AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate") as month,
+          SUM("paid_amount") as amount
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "invoiceDate" >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY DATE_TRUNC('month', "invoiceDate")
+        
+        UNION ALL
+        
+        SELECT 
+          DATE_TRUNC('month', "date") as month,
+          SUM("paid_amount") as amount
+        FROM hisab.incomes 
+        WHERE "companyId" = $1 
+          AND "date" >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY DATE_TRUNC('month', "date")
+      ),
+      outflows AS (
+        SELECT 
+          DATE_TRUNC('month', "invoiceDate") as month,
+          SUM("paid_amount") as amount
+        FROM hisab.purchases 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "invoiceDate" >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY DATE_TRUNC('month', "invoiceDate")
+        
+        UNION ALL
+        
+        SELECT 
+          DATE_TRUNC('month', "date") as month,
+          SUM("paid_amount") as amount
+        FROM hisab.expenses 
+        WHERE "companyId" = $1 
+          AND "date" >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY DATE_TRUNC('month', "date")
+      ),
+      aggregated_inflows AS (
+        SELECT month, SUM(amount) as total_inflow
+        FROM inflows
+        GROUP BY month
+      ),
+      aggregated_outflows AS (
+        SELECT month, SUM(amount) as total_outflow
+        FROM outflows
+        GROUP BY month
+      )
+      SELECT 
+        TO_CHAR(m.month, 'Mon YYYY') as month_name,
+        COALESCE(i.total_inflow, 0) as inflow,
+        COALESCE(o.total_outflow, 0) as outflow
+      FROM months m
+      LEFT JOIN aggregated_inflows i ON m.month = i.month
+      LEFT JOIN aggregated_outflows o ON m.month = o.month
+      ORDER BY m.month
+    `;
+
+    const result = await client.query(query, [companyId]);
+
+    return successResponse(res, {
+      message: "Cash flow chart data fetched successfully",
+      data: {
+        labels: result.rows.map(row => row.month_name),
+        inflows: result.rows.map(row => parseFloat(row.inflow) || 0),
+        outflows: result.rows.map(row => parseFloat(row.outflow) || 0)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching cash flow chart data:', error);
+    return errorResponse(res, "Error fetching cash flow chart data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get payment status chart data
+export async function getPaymentStatusChartData(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const query = `
+      WITH payment_analysis AS (
+        SELECT 
+          'Sales' as category,
+          COUNT(CASE WHEN "remaining_amount" = 0 THEN 1 END) as paid,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as pending,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" < CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as overdue
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL
+        
+        UNION ALL
+        
+        SELECT 
+          'Purchases' as category,
+          COUNT(CASE WHEN "remaining_amount" = 0 THEN 1 END) as paid,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" >= CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as pending,
+          COUNT(CASE WHEN "remaining_amount" > 0 AND "invoiceDate" < CURRENT_DATE - INTERVAL '30 days' THEN 1 END) as overdue
+        FROM hisab.purchases 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL
+      )
+      SELECT 
+        SUM(paid) as total_paid,
+        SUM(pending) as total_pending,
+        SUM(overdue) as total_overdue
+      FROM payment_analysis
+    `;
+
+    const result = await client.query(query, [companyId]);
+    const row = result.rows[0];
+
+    return successResponse(res, {
+      message: "Payment status chart data fetched successfully",
+      data: {
+        labels: ['Paid', 'Pending', 'Overdue'],
+        values: [
+          parseInt(row.total_paid) || 0,
+          parseInt(row.total_pending) || 0,
+          parseInt(row.total_overdue) || 0
+        ]
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching payment status chart data:', error);
+    return errorResponse(res, "Error fetching payment status chart data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get monthly trends data
+export async function getMonthlyTrendsData(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const query = `
+      WITH quarterly_data AS (
+        SELECT 
+          EXTRACT(QUARTER FROM "invoiceDate") as quarter,
+          'Q' || EXTRACT(QUARTER FROM "invoiceDate") as quarter_label,
+          SUM("netReceivable") as sales,
+          COUNT(*) as sales_count
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "invoiceDate" >= DATE_TRUNC('year', CURRENT_DATE)
+        GROUP BY EXTRACT(QUARTER FROM "invoiceDate")
+      ),
+      customer_growth AS (
+        SELECT 
+          EXTRACT(QUARTER FROM "createdAt") as quarter,
+          COUNT(*) as new_customers
+        FROM hisab.contacts 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+          AND "contactType" = 'customer'
+          AND "createdAt" >= DATE_TRUNC('year', CURRENT_DATE)
+        GROUP BY EXTRACT(QUARTER FROM "createdAt")
+      ),
+      product_performance AS (
+        SELECT 
+          EXTRACT(QUARTER FROM s."invoiceDate") as quarter,
+          COUNT(DISTINCT si."productId") as products_sold
+        FROM hisab.sale_items si
+        JOIN hisab.sales s ON si."saleId" = s.id
+        WHERE s."companyId" = $1 AND s."deletedAt" IS NULL 
+          AND s."invoiceDate" >= DATE_TRUNC('year', CURRENT_DATE)
+        GROUP BY EXTRACT(QUARTER FROM s."invoiceDate")
+      )
+      SELECT 
+        q.quarter_label,
+        COALESCE(q.sales, 0) as revenue,
+        COALESCE(c.new_customers, 0) as customer_growth,
+        COALESCE(p.products_sold, 0) as product_sales
+      FROM quarterly_data q
+      LEFT JOIN customer_growth c ON q.quarter = c.quarter
+      LEFT JOIN product_performance p ON q.quarter = p.quarter
+      ORDER BY q.quarter
+    `;
+
+    const result = await client.query(query, [companyId]);
+
+    return successResponse(res, {
+      message: "Monthly trends data fetched successfully",
+      data: {
+        categories: result.rows.map(row => row.quarter_label),
+        revenueGrowth: result.rows.map(row => parseFloat(row.revenue) || 0),
+        customerGrowth: result.rows.map(row => parseInt(row.customer_growth) || 0),
+        productSales: result.rows.map(row => parseInt(row.product_sales) || 0)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching monthly trends data:', error);
+    return errorResponse(res, "Error fetching monthly trends data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get dashboard insights and recommendations
+export async function getDashboardInsights(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const insightsQuery = `
+      WITH current_month AS (
+        SELECT 
+          COALESCE(SUM("netReceivable"), 0) as current_sales
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL
+          AND DATE_TRUNC('month', "invoiceDate") = DATE_TRUNC('month', CURRENT_DATE)
+      ),
+      last_month AS (
+        SELECT 
+          COALESCE(SUM("netReceivable"), 0) as last_sales
+        FROM hisab.sales 
+        WHERE "companyId" = $1 AND "deletedAt" IS NULL
+          AND DATE_TRUNC('month', "invoiceDate") = DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+      ),
+      overdue_analysis AS (
+        SELECT 
+          COUNT(*) as overdue_count,
+          COALESCE(SUM("remaining_amount"), 0) as overdue_amount
+        FROM (
+          SELECT "remaining_amount" FROM hisab.sales 
+          WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+            AND "remaining_amount" > 0 AND "invoiceDate" < CURRENT_DATE - INTERVAL '30 days'
+          UNION ALL
+          SELECT "remaining_amount" FROM hisab.purchases 
+          WHERE "companyId" = $1 AND "deletedAt" IS NULL 
+            AND "remaining_amount" > 0 AND "invoiceDate" < CURRENT_DATE - INTERVAL '30 days'
+        ) overdue_items
+      ),
+      top_customer AS (
+        SELECT c.name as top_customer_name, SUM(s."netReceivable") as total_amount
+        FROM hisab.contacts c
+        JOIN hisab.sales s ON c.id = s."contactId"
+        WHERE c."companyId" = $1 AND c."contactType" = 'customer' 
+          AND c."deletedAt" IS NULL AND s."deletedAt" IS NULL
+          AND s."invoiceDate" >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '3 months')
+        GROUP BY c.id, c.name
+        ORDER BY total_amount DESC
+        LIMIT 1
+      )
+      SELECT 
+        cm.current_sales,
+        lm.last_sales,
+        oa.overdue_count,
+        oa.overdue_amount,
+        tc.top_customer_name,
+        CASE 
+          WHEN lm.last_sales > 0 THEN ROUND(((cm.current_sales - lm.last_sales) / lm.last_sales) * 100, 2)
+          ELSE 0
+        END as sales_growth_percentage,
+        CASE 
+          WHEN oa.overdue_count > 5 THEN 'high'
+          WHEN oa.overdue_count > 2 THEN 'medium'
+          ELSE 'low'
+        END as overdue_risk_level
+      FROM current_month cm, last_month lm, overdue_analysis oa, top_customer tc
+    `;
+
+    const result = await client.query(insightsQuery, [companyId]);
+    const insights = result.rows[0];
+
+    // Generate recommendations based on data
+    const recommendations = [];
+    
+    if (parseFloat(insights.sales_growth_percentage) < 0) {
+      recommendations.push({
+        type: 'warning',
+        title: 'Sales Declining',
+        message: 'Sales have decreased compared to last month. Consider reviewing your sales strategy.',
+        action: 'Review Sales Performance',
+        icon: '📉'
+      });
+    } else if (parseFloat(insights.sales_growth_percentage) > 10) {
+      recommendations.push({
+        type: 'success',
+        title: 'Strong Sales Growth',
+        message: `Sales increased by ${insights.sales_growth_percentage}% this month. Great job!`,
+        action: 'Maintain Momentum',
+        icon: '📈'
+      });
+    }
+
+    if (insights.overdue_risk_level === 'high') {
+      recommendations.push({
+        type: 'danger',
+        title: 'High Overdue Risk',
+        message: `You have ${insights.overdue_count} overdue payments totaling ₹${parseFloat(insights.overdue_amount).toLocaleString('en-IN')}.`,
+        action: 'Follow Up on Payments',
+        icon: '⚠️'
+      });
+    }
+
+    if (insights.top_customer_name) {
+      recommendations.push({
+        type: 'info',
+        title: 'Top Performing Customer',
+        message: `${insights.top_customer_name} is your top customer this quarter.`,
+        action: 'Strengthen Relationship',
+        icon: '⭐'
+      });
+    }
+
+    if (recommendations.length === 0) {
+      recommendations.push({
+        type: 'success',
+        title: 'Business Health Good',
+        message: 'Your business metrics are looking healthy. Keep up the good work!',
+        action: 'Continue Current Strategy',
+        icon: '✅'
+      });
+    }
+
+    return successResponse(res, {
+      message: "Dashboard insights fetched successfully",
+      insights: {
+        salesGrowth: parseFloat(insights.sales_growth_percentage) || 0,
+        overdueRisk: insights.overdue_risk_level,
+        topCustomer: insights.top_customer_name,
+        overdueCount: parseInt(insights.overdue_count) || 0,
+        overdueAmount: parseFloat(insights.overdue_amount) || 0,
+        currentSales: parseFloat(insights.current_sales) || 0,
+        lastMonthSales: parseFloat(insights.last_sales) || 0
+      },
+      recommendations
+    });
+
+  } catch (error) {
+    console.error('Error fetching dashboard insights:', error);
+    return errorResponse(res, "Error fetching dashboard insights", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Get recent activities for dashboard
+export async function getRecentActivities(req, res) {
+  const userId = req.currentUser?.id;
+  const companyId = req.currentUser?.companyId;
+
+  if (!userId || !companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    const activitiesQuery = `
+      WITH recent_sales AS (
+        SELECT 
+          'sale' as activity_type,
+          s."invoiceNumber" as reference,
+          s."invoiceDate" as activity_date,
+          c.name as contact_name,
+          s."netReceivable" as amount,
+          s.status,
+          s."createdAt" as created_at
+        FROM hisab.sales s
+        LEFT JOIN hisab.contacts c ON s."contactId" = c.id
+        WHERE s."companyId" = $1 AND s."deletedAt" IS NULL
+        ORDER BY s."createdAt" DESC
+        LIMIT 5
+      ),
+      recent_purchases AS (
+        SELECT 
+          'purchase' as activity_type,
+          p."invoiceNumber" as reference,
+          p."invoiceDate" as activity_date,
+          c.name as contact_name,
+          p."netPayable" as amount,
+          p.status,
+          p."createdAt" as created_at
+        FROM hisab.purchases p
+        LEFT JOIN hisab.contacts c ON p."contactId" = c.id
+        WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
+        ORDER BY p."createdAt" DESC
+        LIMIT 5
+      ),
+      recent_payments AS (
+        SELECT 
+          'payment' as activity_type,
+          'PAY-' || pay.id as reference,
+          pay."date" as activity_date,
+          c.name as contact_name,
+          pay.amount,
+          'completed' as status,
+          pay."createdAt" as created_at
+        FROM hisab.payments pay
+        LEFT JOIN hisab.contacts c ON pay."contactId" = c.id
+        WHERE pay."companyId" = $1 AND pay."deletedAt" IS NULL
+        ORDER BY pay."createdAt" DESC
+        LIMIT 5
+      )
+      SELECT * FROM recent_sales
+      UNION ALL
+      SELECT * FROM recent_purchases
+      UNION ALL
+      SELECT * FROM recent_payments
+      ORDER BY created_at DESC
+      LIMIT 15
+    `;
+
+    const result = await client.query(activitiesQuery, [companyId]);
+
+    return successResponse(res, {
+      message: "Recent activities fetched successfully",
+      activities: result.rows.map(activity => ({
+        ...activity,
+        amount: parseFloat(activity.amount) || 0,
+        timeAgo: getTimeAgo(activity.created_at)
+      }))
+    });
+
+  } catch (error) {
+    console.error('Error fetching recent activities:', error);
+    return errorResponse(res, "Error fetching recent activities", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to calculate time ago
+function getTimeAgo(date) {
+  const now = new Date();
+  const past = new Date(date);
+  const diffInSeconds = Math.floor((now - past) / 1000);
+  
+  if (diffInSeconds < 60) return 'Just now';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} minutes ago`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
+  if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} days ago`;
+  return `${Math.floor(diffInSeconds / 2592000)} months ago`;
 } 
