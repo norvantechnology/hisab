@@ -15,17 +15,46 @@ export const createPurchase = async (data) => {
     });
 };
 export const updatePurchases = async (data) => {
-    return apiCall({
-        method: 'put',
-        endpoint: '/purchase/updatePurchase',
+    console.log('🚀 STEP F: updatePurchases API service called!', {
         data,
+        endpoint: '/purchase/updatePurchase',
+        method: 'PUT',
+        timestamp: new Date().toISOString(),
+        message: 'This proves the API service function was reached'
     });
+    
+    try {
+        const result = await apiCall({
+            method: 'put',
+            endpoint: '/purchase/updatePurchase',
+            data,
+        });
+        
+        console.log('🚀 STEP G: API call result:', {
+            result,
+            success: result?.success,
+            message: 'API call completed'
+        });
+        
+        return result;
+    } catch (error) {
+        console.error('❌ STEP G ERROR: API call failed:', error);
+        throw error;
+    }
 };
 export const deletePurchase = async (params) => {
     return apiCall({
         method: 'delete',
         endpoint: '/purchase/deletePurchase',
         params,
+    });
+};
+
+export const bulkDeletePurchases = async (ids) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/purchase/bulkDeletePurchases',
+        data: { ids },
     });
 };
 export const getPurchase = async (params) => {
@@ -78,6 +107,9 @@ export const sharePurchaseInvoice = async (invoiceId, shareData) => {
   return apiCall({
     method: 'post',
     endpoint: `/purchase/share/${invoiceId}`,
-    data: shareData
+    data: {
+      ...shareData,
+      copies: 1 // Always use 1 copy for email sharing
+    }
   });
 };

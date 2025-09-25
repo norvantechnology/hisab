@@ -502,31 +502,110 @@ export async function getBankStatement(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense Payment'
               WHEN pa."allocationType" = 'income' THEN 'Income Receipt'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance Payment'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance Payment'
               ELSE 'Payment'
             END,
             ' (', p."paymentNumber", ')',
             CASE 
               WHEN c.name IS NOT NULL THEN CONCAT(' - ', c.name)
               ELSE ''
+            END,
+            -- Add adjustment information to description for clarity
+            CASE 
+              WHEN p."adjustmentType" = 'discount' THEN CONCAT(' [Discount: ₹', p."adjustmentValue", ']')
+              WHEN p."adjustmentType" = 'extra_receipt' THEN CONCAT(' [Extra Receipt: ₹', p."adjustmentValue", ']')
+              WHEN p."adjustmentType" = 'surcharge' THEN CONCAT(' [Surcharge: ₹', p."adjustmentValue", ']')
+              ELSE ''
             END
           ) as description,
           CASE 
             WHEN pa."allocationType" IN ('sale', 'income') THEN 
               -- Sales and Income payments are always INFLOWS (money coming in)
+              -- Include adjustment impact for accurate bank statement
+              CASE 
+                WHEN p."adjustmentType" = 'discount' THEN 
+                  -- Discount reduces the inflow
+                  pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                WHEN p."adjustmentType" = 'extra_receipt' THEN 
+                  -- Extra receipt increases the inflow  
+                  pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                WHEN p."adjustmentType" = 'surcharge' THEN 
+                  -- Surcharge increases the inflow
+                  pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                ELSE 
               pa."paidAmount"
+              END
             WHEN pa."allocationType" IN ('purchase', 'expense') THEN 
               -- Purchase and Expense payments are always OUTFLOWS (money going out)
-              -pa."paidAmount"
+              -- Include adjustment impact for accurate bank statement
+              -(CASE 
+                WHEN p."adjustmentType" = 'discount' THEN 
+                  -- Discount reduces the outflow
+                  pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                WHEN p."adjustmentType" = 'extra_receipt' THEN 
+                  -- Extra receipt increases the outflow
+                  pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                WHEN p."adjustmentType" = 'surcharge' THEN 
+                  -- Surcharge increases the outflow
+                  pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                ELSE 
+                  pa."paidAmount"
+              END)
             WHEN pa."allocationType" = 'current-balance' THEN 
               -- For current-balance, direction depends on balance type
+              -- Include adjustment impact for accurate bank statement
               CASE 
                 WHEN pa."balanceType" = 'receivable' THEN 
                   -- They owe us, so we're receiving money back (INFLOW)
-                  pa."paidAmount"
+                  CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END
                 WHEN pa."balanceType" = 'payable' THEN 
                   -- We owe them, so we're paying money back (OUTFLOW)
-                  -pa."paidAmount"
-                ELSE -pa."paidAmount"
+                  -(CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END)
+                ELSE 
+                  -(CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END)
+              END
+            WHEN pa."allocationType" = 'opening-balance' THEN 
+              -- For opening-balance, direction depends on balance type
+              -- Include adjustment impact for accurate bank statement
+              CASE 
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
+                  CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
+                  -(CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END)
+                ELSE 
+                  -(CASE 
+                    WHEN p."adjustmentType" = 'discount' THEN pa."paidAmount" - COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'extra_receipt' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    WHEN p."adjustmentType" = 'surcharge' THEN pa."paidAmount" + COALESCE(p."adjustmentValue", 0)
+                    ELSE pa."paidAmount"
+                  END)
               END
             ELSE 
               -- Default case: use payment type
@@ -545,6 +624,7 @@ export async function getBankStatement(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense'
               WHEN pa."allocationType" = 'income' THEN 'Income'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance'
               ELSE 'Payment'
             END,
             ' Payment'
@@ -944,6 +1024,7 @@ export async function exportBankStatementPDF(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense Payment'
               WHEN pa."allocationType" = 'income' THEN 'Income Receipt'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance Payment'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance Payment'
               ELSE 'Payment'
             END,
             ' (', p."paymentNumber", ')',
@@ -970,6 +1051,17 @@ export async function exportBankStatementPDF(req, res) {
                   -pa."paidAmount"
                 ELSE -pa."paidAmount"
               END
+            WHEN pa."allocationType" = 'opening-balance' THEN 
+              -- For opening-balance, direction depends on balance type
+              CASE 
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
+                  pa."paidAmount"
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
+                  -pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
             ELSE 
               -- Default case: use payment type
               CASE 
@@ -987,6 +1079,7 @@ export async function exportBankStatementPDF(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense'
               WHEN pa."allocationType" = 'income' THEN 'Income'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance'
               ELSE 'Payment'
             END,
             ' Payment'
@@ -1404,6 +1497,7 @@ export async function getBankTransactionTracking(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense Payment'
               WHEN pa."allocationType" = 'income' THEN 'Income Receipt'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance Payment'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance Payment'
               ELSE 'Payment'
             END,
             ' (', p."paymentNumber", ')',
@@ -1430,6 +1524,17 @@ export async function getBankTransactionTracking(req, res) {
                   -pa."paidAmount"
                 ELSE -pa."paidAmount"
               END
+            WHEN pa."allocationType" = 'opening-balance' THEN 
+              -- For opening-balance, direction depends on balance type
+              CASE 
+                WHEN pa."balanceType" = 'receivable' THEN 
+                  -- They owe us, so we're receiving money back (INFLOW)
+                  pa."paidAmount"
+                WHEN pa."balanceType" = 'payable' THEN 
+                  -- We owe them, so we're paying money back (OUTFLOW)
+                  -pa."paidAmount"
+                ELSE -pa."paidAmount"
+              END
             ELSE 
               -- Default case: use payment type
               CASE 
@@ -1446,6 +1551,7 @@ export async function getBankTransactionTracking(req, res) {
               WHEN pa."allocationType" = 'expense' THEN 'Expense'
               WHEN pa."allocationType" = 'income' THEN 'Income'
               WHEN pa."allocationType" = 'current-balance' THEN 'Balance'
+              WHEN pa."allocationType" = 'opening-balance' THEN 'Opening Balance'
               ELSE 'Payment'
             END,
             ' Payment'

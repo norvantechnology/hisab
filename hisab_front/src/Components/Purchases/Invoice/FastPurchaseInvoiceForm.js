@@ -33,6 +33,7 @@ import {
     RiArrowDownSLine,
     RiArrowUpSLine
 } from 'react-icons/ri';
+import PaymentAdjustmentModal from '../../Common/PaymentAdjustmentModal';
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import { toast } from 'react-toastify';
@@ -52,6 +53,15 @@ const FastPurchaseInvoiceForm = ({
     isLoading = false,
     apiError = null
 }) => {
+    // Payment adjustment modal state
+    const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+        isOpen: false,
+        paymentInfo: null,
+        pendingFormData: null
+    });
+
+
+
     // All state declarations first
     const [items, setItems] = useState([]);
     const [newItem, setNewItem] = useState({
@@ -104,11 +114,7 @@ const FastPurchaseInvoiceForm = ({
         invoiceNumber: Yup.string().required('Invoice number is required'),
         date: Yup.date().required('Date is required'),
         billFrom: Yup.string().required('Bill from is required'),
-        billFromBank: Yup.string().when(['status', 'billFrom'], {
-            is: (status, billFrom) => status === 'paid' && billFrom && billFrom.startsWith('contact_'),
-            then: (schema) => schema.required('Bank account is required when status is paid and vendor is a contact'),
-            otherwise: (schema) => schema
-        }),
+        billFromBank: Yup.string(),
         taxType: Yup.string().required('Tax type is required'),
         rateType: Yup.string().when('taxType', {
             is: (taxType) => {
@@ -129,14 +135,10 @@ const FastPurchaseInvoiceForm = ({
             then: (schema) => schema.min(0, 'Discount value cannot be negative').required('Discount value is required'),
             otherwise: (schema) => schema
         }),
-        status: Yup.string().when('billFrom', {
-            is: (billFrom) => billFrom && billFrom.startsWith('contact_'),
-            then: (schema) => schema.required('Status is required'),
-            otherwise: (schema) => schema
-        }),
+        status: Yup.string(), // Simplified - not required in edit mode
         internalNotes: Yup.string().max(250, 'Notes cannot exceed 250 characters'),
         transportationCharge: Yup.number().nullable().min(0, 'Transportation charge cannot be negative'),
-    }), []);
+    }), [isEditMode]);
 
     // Formik validation object
     const validation = useFormik({
@@ -160,6 +162,13 @@ const FastPurchaseInvoiceForm = ({
         },
         validationSchema,
         onSubmit: async (values) => {
+            console.log('🚀 Purchase form onSubmit called:', {
+                isEditMode,
+                values,
+                items,
+                itemsLength: items.length
+            });
+            
             if (items.length === 0) {
                 toast.error('Please add at least one item');
                 return;
@@ -168,16 +177,60 @@ const FastPurchaseInvoiceForm = ({
             try {
                 setIsSubmitting(true);
                 const calculatedValues = calculateInvoiceTotals(values, items);
+                console.log('📊 Calculated values for submission:', calculatedValues);
                 await onSubmit(calculatedValues);
             } catch (error) {
                 console.error('Error submitting form:', error);
+                console.log('🔍 Error details:', {
+                    status: error.status,
+                    data: error.data,
+                    requiresPaymentAdjustment: error.data?.requiresPaymentAdjustment,
+                    paymentInfo: error.data?.paymentInfo
+                });
+                
+                if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                    console.log('✅ Payment adjustment modal should open now');
+                    // Payment adjustment required - show adjustment modal
+                    const modalState = {
+                        isOpen: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: calculatedValues
+                    };
+                    console.log('🔍 Setting modal state:', modalState);
+                    setPaymentAdjustmentModal(modalState);
+                    return; // Don't close the form yet, and don't re-throw the error
+                }
+                
+                // Re-throw other errors to be handled by parent
+                throw error;
             } finally {
                 setIsSubmitting(false);
             }
         }
     });
 
-
+    // Handle payment adjustment choice
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentAdjustmentModal.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+            await onSubmit(formData);
+            
+            // Close the payment adjustment modal
+            setPaymentAdjustmentModal({
+                isOpen: false,
+                paymentInfo: null,
+                pendingFormData: null
+            });
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            // Keep the modal open and let parent handle the error
+            throw error;
+        }
+    };
 
     // Update new item calculations in real-time
     const updateNewItemCalculations = useCallback((updatedItem) => {
@@ -825,12 +878,27 @@ const FastPurchaseInvoiceForm = ({
 
     // Event handlers
     const handleBillFromChange = useCallback((selectedOption) => {
-        validation.setFieldValue('billFrom', selectedOption?.value || '');
-        if (!selectedOption?.value?.startsWith('contact_')) {
+        const value = selectedOption?.value || '';
+        validation.setFieldValue('billFrom', value);
+        
+        if (value.startsWith('bank_')) {
+            // Bank account selected = Direct payment = Status: 'paid'
+            const bankId = value.replace('bank_', '');
+            validation.setFieldValue('status', 'paid');
             validation.setFieldValue('billFromBank', '');
             setSelectedContact(null);
-        } else {
+            console.log(`🏦 Bank account selected: Direct purchase payment, status set to 'paid'`);
+        } else if (value.startsWith('contact_')) {
+            // Contact selected = Credit transaction = Status: 'pending' (can be changed)
+            validation.setFieldValue('status', 'pending');
+            validation.setFieldValue('billFromBank', '');
             setSelectedContact(selectedOption?.contact || null);
+            console.log(`👥 Contact selected: Credit purchase, status set to 'pending'`);
+        } else {
+            // No selection
+            validation.setFieldValue('status', 'pending');
+            validation.setFieldValue('billFromBank', '');
+            setSelectedContact(null);
         }
     }, []);
 
@@ -907,6 +975,13 @@ const FastPurchaseInvoiceForm = ({
 
     const handleStatusChange = useCallback((e) => {
         const newStatus = e.target.value;
+        
+        // Prevent status change if bank account is selected (should always be 'paid')
+        if (validation.values.billFrom && validation.values.billFrom.startsWith('bank_')) {
+            console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+            return;
+        }
+        
         validation.setFieldValue('status', newStatus);
         
         if (newStatus === 'pending' && validation.values.billFromBank) {
@@ -916,14 +991,19 @@ const FastPurchaseInvoiceForm = ({
 
     // Conditional display logic
     const shouldShowStatusDropdown = useMemo(() => {
+        // Only show status dropdown for contact selections (hide for bank accounts and empty selections)
         return validation.values.billFrom && validation.values.billFrom.startsWith('contact_');
     }, [validation.values.billFrom]);
 
     const shouldShowBankAccountDropdown = useMemo(() => {
+        // Hide Payment Bank dropdown in edit mode
+        if (isEditMode) {
+            return false;
+        }
         return validation.values.status === 'paid' && 
                validation.values.billFrom && 
                validation.values.billFrom.startsWith('contact_');
-    }, [validation.values.status, validation.values.billFrom]);
+    }, [validation.values.status, validation.values.billFrom, isEditMode]);
 
     const shouldShowTaxRate = useMemo(() => {
         const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
@@ -941,6 +1021,18 @@ const FastPurchaseInvoiceForm = ({
     }, [validation.values.discountScope]);
 
     const isProcessing = isSubmitting || isLoading;
+
+    // Debug: Monitor form validation state
+    useEffect(() => {
+        console.log('🔍 Purchase form validation state changed:', {
+            isValid: validation.isValid,
+            isEditMode,
+            errors: validation.errors,
+            statusValue: validation.values.status,
+            itemsLength: items.length,
+            buttonShouldBeDisabled: isProcessing || items.length === 0 || !validation.isValid
+        });
+    }, [validation.isValid, validation.errors, isEditMode, items.length, isProcessing]);
 
     // Effects
     useEffect(() => {
@@ -1001,6 +1093,7 @@ const FastPurchaseInvoiceForm = ({
     }, [validation.values.rateType, updateNewItemCalculations]);
 
     return (
+        <>
         <Modal isOpen={isOpen} toggle={toggle} size="xl" centered className="fast-invoice-modal" style={{ maxWidth: '70vw' }}>
             <ModalHeader toggle={toggle}>
                 <h5 className="mb-0">
@@ -1089,27 +1182,30 @@ const FastPurchaseInvoiceForm = ({
                                 <FormFeedback>{validation.errors.billFrom}</FormFeedback>
                             </FormGroup>
                         </Col>
-                        <Col md={1}>
-                            <FormGroup className="mb-0">
-                                <Label className="form-label small fw-bold">Status</Label>
-                            <Input
-                                type="select"
-                                size="sm"
-                                    name="status"
-                                    value={validation.values.status}
-                                    onChange={handleStatusChange}
-                                    onBlur={validation.handleBlur}
-                                    invalid={validation.touched.status && !!validation.errors.status}
-                                    disabled={isProcessing}
-                                    style={{ height: '35px' }}
-                                >
-                                    {STATUS_OPTIONS.map(status => (
-                                        <option key={status.value} value={status.value}>{status.label}</option>
-                                ))}
-                            </Input>
-                                <FormFeedback>{validation.errors.status}</FormFeedback>
-                            </FormGroup>
-                        </Col>
+                        {/* Status field - only show for contact selections */}
+                        {!isEditMode && shouldShowStatusDropdown && (
+                            <Col md={1}>
+                                <FormGroup className="mb-0">
+                                    <Label className="form-label small fw-bold">Status</Label>
+                                <Input
+                                    type="select"
+                                    size="sm"
+                                        name="status"
+                                        value={validation.values.status}
+                                        onChange={handleStatusChange}
+                                        onBlur={validation.handleBlur}
+                                        invalid={validation.touched.status && !!validation.errors.status}
+                                        disabled={isProcessing}
+                                        style={{ height: '35px' }}
+                                    >
+                                        {STATUS_OPTIONS.map(status => (
+                                            <option key={status.value} value={status.value}>{status.label}</option>
+                                    ))}
+                                </Input>
+                                    <FormFeedback>{validation.errors.status}</FormFeedback>
+                                </FormGroup>
+                            </Col>
+                        )}
                         <Col md={2}>
                             <FormGroup className="mb-0">
                                 <Label className="form-label small fw-bold">Tax Type *</Label>
@@ -1808,6 +1904,30 @@ const FastPurchaseInvoiceForm = ({
                                 color="primary" 
                                 type="submit" 
                                 disabled={isProcessing || items.length === 0 || !validation.isValid}
+                                onClick={() => {
+                                    console.log('🔍 Purchase form validation debug:', {
+                                        isValid: validation.isValid,
+                                        isProcessing,
+                                        isEditMode,
+                                        itemsLength: items.length,
+                                        buttonDisabled: isProcessing || items.length === 0 || !validation.isValid,
+                                        errors: validation.errors,
+                                        touched: validation.touched,
+                                        statusValue: validation.values.status,
+                                        billFromValue: validation.values.billFrom,
+                                        allValues: validation.values
+                                    });
+                                    
+                                    if (!validation.isValid) {
+                                        console.log('🔍 Purchase form validation errors:', {
+                                            isValid: validation.isValid,
+                                            errors: validation.errors,
+                                            touched: validation.touched,
+                                            isEditMode,
+                                            statusValue: validation.values.status
+                                        });
+                                    }
+                                }}
                                 size="sm"
                                 title="Create Invoice (Ctrl+S)"
                             >
@@ -1828,6 +1948,28 @@ const FastPurchaseInvoiceForm = ({
                 </ModalFooter>
             </Form>
         </Modal>
+
+        {/* Payment Adjustment Modal */}
+        {paymentAdjustmentModal.isOpen && (
+            <>
+                {console.log('🎯 Rendering PaymentAdjustmentModal with props:', {
+                    isOpen: paymentAdjustmentModal.isOpen,
+                    paymentInfo: paymentAdjustmentModal.paymentInfo,
+                    newAmount: paymentAdjustmentModal.pendingFormData?.netPayable,
+                    isLoading
+                })}
+            <PaymentAdjustmentModal
+                isOpen={paymentAdjustmentModal.isOpen}
+                            toggle={() => setPaymentAdjustmentModal(prev => ({ ...prev, isOpen: false }))}
+                paymentInfo={paymentAdjustmentModal.paymentInfo}
+                newAmount={paymentAdjustmentModal.pendingFormData?.netPayable}
+                onConfirm={handlePaymentAdjustmentChoice}
+                isLoading={isLoading}
+                transactionType="purchase"
+            />
+            </>
+        )}
+        </>
     );
 };
 

@@ -50,7 +50,8 @@ const ContactsPage = () => {
             export: false,
             import: false,
             statement: false
-        }
+        },
+        selectedItems: []
     });
 
     const {
@@ -73,7 +74,8 @@ const ContactsPage = () => {
         viewMode,
         contactTypeFilter,
         balanceTypeFilter,
-        modals
+        modals,
+        selectedItems
     } = state;
 
     const [pagination, setPagination] = useState({
@@ -115,7 +117,6 @@ const ContactsPage = () => {
     const fetchData = async () => {
         // Don't proceed if no company is selected
         if (!selectedCompanyId) {
-            console.log('No company selected, skipping contacts fetch');
             return;
         }
 
@@ -130,16 +131,7 @@ const ContactsPage = () => {
                 search: filters.search
             });
 
-            // Debug logging to see what data we're receiving
-            console.log('=== CONTACTS API RESPONSE DEBUG ===');
-            console.log('Full response:', response);
-            console.log('Contacts data:', response?.contacts);
-            if (response?.contacts && response.contacts.length > 0) {
-                console.log('First contact calculatedBalance:', response.contacts[0].calculatedBalance);
-                console.log('First contact currentBalance:', response.contacts[0].currentBalance);
-                console.log('First contact currentBalanceType:', response.contacts[0].currentBalanceType);
-            }
-            console.log('=== END DEBUG ===');
+
 
             setState(prev => ({
                 ...prev,
@@ -371,8 +363,24 @@ const ContactsPage = () => {
         }));
     };
 
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
     const prepareExportData = () => {
-        return contacts.map(contact => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? contacts.filter(contact => selectedItems.includes(contact.id))
+            : contacts;
+
+        console.log('📊 Contacts CSV Export:', {
+            totalContacts: contacts.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(contact => ({
             'Name': contact.name || 'N/A',
             'GSTIN': contact.gstin || 'N/A',
             'Type': contact.contactType ? contact.contactType.charAt(0).toUpperCase() + contact.contactType.slice(1) : 'N/A',
@@ -439,6 +447,8 @@ const ContactsPage = () => {
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
                         onViewStatement={handleStatementClick}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 

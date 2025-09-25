@@ -27,6 +27,7 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import PaymentAdjustmentModal from '../../Common/PaymentAdjustmentModal';
 import { listProducts } from '../../../services/products';
 import { getNextInvoiceNumber } from '../../../services/salesInvoice';
 import ItemModal from './ItemModal';
@@ -44,6 +45,12 @@ const SalesInvoiceForm = ({
   isLoading = false,
   apiError = null
 }) => {
+  const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+    isOpen: false,
+    paymentInfo: null,
+    pendingFormData: null
+  });
+
   const getInitialItems = useCallback(() => {
     return selectedInvoice?.items?.map(item => {
       // Calculate the correct values for the item using common utility function
@@ -168,11 +175,7 @@ const SalesInvoiceForm = ({
     date: Yup.date().required('Date is required'),
     billTo: Yup.string().required('Bill to is required'),
     status: Yup.string(), // Made optional - will default to 'pending'
-    billToBank: Yup.string().when(['status', 'billTo'], {
-      is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
-      then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
-      otherwise: (schema) => schema
-    }),
+            billToBank: Yup.string(),
     taxType: Yup.string().required('Tax type is required'),
     rateType: Yup.string(), // Made optional - system can work without explicit rate type selection
 
@@ -316,6 +319,18 @@ const SalesInvoiceForm = ({
         toggle();
       } catch (error) {
         console.error('Error submitting form:', error);
+        
+        if (error.status === 409 && error.data?.paymentConflict) {
+          // Payment conflict detected - show adjustment modal
+          setPaymentAdjustmentModal({
+            isOpen: true,
+            paymentInfo: error.data.paymentInfo,
+            pendingFormData: calculatedValues
+          });
+          return; // Don't close the form yet
+        }
+        // Re-throw other errors to be handled by parent
+        throw error;
       } finally {
         setIsSubmitting(false);
         setSubmitting(false);
@@ -325,15 +340,23 @@ const SalesInvoiceForm = ({
 
   // Custom handler for billTo dropdown (ReactSelect)
   const handleBillToChange = (selectedOption) => {
-    validation.setFieldValue('billTo', selectedOption?.value || '');
+    const value = selectedOption?.value || '';
+    validation.setFieldValue('billTo', value);
     
-    // When a contact is selected, automatically set status to 'pending'
-    if (selectedOption?.value?.startsWith('contact_')) {
+    if (value.startsWith('bank_')) {
+      // Bank account selected = Direct payment = Status: 'paid'
+      validation.setFieldValue('status', 'paid');
+      validation.setFieldValue('billToBank', '');
+      setSelectedContact(null);
+      console.log(`🏦 Bank account selected: Direct sales payment, status set to 'paid'`);
+    } else if (value.startsWith('contact_')) {
+      // Contact selected = Credit transaction = Status: 'pending' (can be changed)
       validation.setFieldValue('status', 'pending');
-      // Store the selected contact information for billing address display
+      validation.setFieldValue('billToBank', '');
       setSelectedContact(selectedOption?.contact || null);
+      console.log(`👥 Contact selected: Credit sales, status set to 'pending'`);
     } else {
-      // For non-contacts, set status to 'pending' as well (they can change it if needed)
+      // No selection
       validation.setFieldValue('status', 'pending');
       validation.setFieldValue('billToBank', '');
       setSelectedContact(null);
@@ -348,6 +371,13 @@ const SalesInvoiceForm = ({
   // Custom handler for status changes
   const handleStatusChange = (e) => {
     const newStatus = e.target.value;
+    
+    // Prevent status change if bank account is selected (should always be 'paid')
+    if (validation.values.billTo && validation.values.billTo.startsWith('bank_')) {
+      console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+      return;
+    }
+    
     validation.setFieldValue('status', newStatus);
     
     // Clear bank account if status changes from 'paid' to 'pending'
@@ -528,7 +558,7 @@ const SalesInvoiceForm = ({
 
   // Check if status dropdown should be shown
   const shouldShowStatusDropdown = useMemo(() => {
-    // Show status dropdown only when a contact is selected
+    // Only show status dropdown for contact selections (hide for bank accounts and empty selections)
     return validation.values.billTo && 
            validation.values.billTo.startsWith('contact_');
   }, [validation.values.billTo]);
@@ -1197,7 +1227,7 @@ const SalesInvoiceForm = ({
                     placeholder="Select Customer"
                     error={validation.errors.billTo}
                     touched={validation.touched.billTo}
-                      showBankAccounts={false}
+                      showBankAccounts={true}
                       showContacts={true}
                   />
                   </div>

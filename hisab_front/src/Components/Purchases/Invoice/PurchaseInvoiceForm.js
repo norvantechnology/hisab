@@ -27,6 +27,7 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import PaymentAdjustmentModal from '../../Common/PaymentAdjustmentModal';
 import { listProducts } from '../../../services/products';
 import { getNextInvoiceNumber } from '../../../services/purchaseInvoice';
 import ItemModal from './ItemModal';
@@ -44,6 +45,12 @@ const PurchaseInvoiceForm = ({
   isLoading = false,
   apiError = null
 }) => {
+  const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+    isOpen: false,
+    paymentInfo: null,
+    pendingFormData: null
+  });
+
   const getInitialItems = useCallback(() => {
 
     
@@ -174,11 +181,7 @@ const PurchaseInvoiceForm = ({
     invoiceNumber: Yup.string().required('Invoice number is required'),
     date: Yup.date().required('Date is required'),
     billFrom: Yup.string().required('Bill from is required'),
-    billFromBank: Yup.string().when(['status', 'billFrom'], {
-      is: (status, billFrom) => status === 'paid' && billFrom && billFrom.startsWith('contact_'),
-      then: (schema) => schema.required('Bank account is required when status is paid and vendor is a contact'),
-      otherwise: (schema) => schema
-    }),
+            billFromBank: Yup.string(),
     taxType: Yup.string().required('Tax type is required'),
     rateType: Yup.string().when('taxType', {
       is: (taxType) => {
@@ -347,12 +350,47 @@ const PurchaseInvoiceForm = ({
         await onSubmit(calculatedValues);
       } catch (error) {
         console.error('Error submitting form:', error);
+        
+        if (error.status === 409 && error.data?.paymentConflict) {
+          // Payment conflict detected - show adjustment modal
+          setPaymentAdjustmentModal({
+            isOpen: true,
+            paymentInfo: error.data.paymentInfo,
+            pendingFormData: calculatedValues
+          });
+          return; // Don't close the form yet
+        }
+        // Re-throw other errors to be handled by parent
+        throw error;
       } finally {
         setIsSubmitting(false);
         setSubmitting(false);
       }
     }
   });
+
+  // Handle payment adjustment choice
+  const handlePaymentAdjustmentChoice = async (choice) => {
+    try {
+      const formData = {
+        ...paymentAdjustmentModal.pendingFormData,
+        paymentAdjustmentChoice: choice
+      };
+      
+      await onSubmit(formData);
+      
+      // Close the payment adjustment modal
+      setPaymentAdjustmentModal({
+        isOpen: false,
+        paymentInfo: null,
+        pendingFormData: null
+      });
+    } catch (error) {
+      console.error('Error handling payment adjustment:', error);
+      // Keep the modal open and let parent handle the error
+      throw error;
+    }
+  };
 
   // Function to calculate item totals (moved here to avoid dependency issues)
   const calculateItemTotal = useCallback((item, taxType = 'with_tax') => {
@@ -454,14 +492,26 @@ const PurchaseInvoiceForm = ({
 
   // Custom handler for billFrom dropdown (ReactSelect)
   const handleBillFromChange = useCallback((selectedOption) => {
-    validation.setFieldValue('billFrom', selectedOption?.value || '');
-    // Only clear billFromBank if the selected option is not a contact
-    if (!selectedOption?.value?.startsWith('contact_')) {
+    const value = selectedOption?.value || '';
+    validation.setFieldValue('billFrom', value);
+    
+    if (value.startsWith('bank_')) {
+      // Bank account selected = Direct payment = Status: 'paid'
+      validation.setFieldValue('status', 'paid');
       validation.setFieldValue('billFromBank', '');
       setSelectedContact(null);
-    } else {
-      // Store the selected contact information for billing address display
+      console.log(`🏦 Bank account selected: Direct purchase payment, status set to 'paid'`);
+    } else if (value.startsWith('contact_')) {
+      // Contact selected = Credit transaction = Status: 'pending' (can be changed)
+      validation.setFieldValue('status', 'pending');
+      validation.setFieldValue('billFromBank', '');
       setSelectedContact(selectedOption?.contact || null);
+      console.log(`👥 Contact selected: Credit purchase, status set to 'pending'`);
+    } else {
+      // No selection
+      validation.setFieldValue('status', 'pending');
+      validation.setFieldValue('billFromBank', '');
+      setSelectedContact(null);
     }
   }, []);
 
@@ -473,6 +523,13 @@ const PurchaseInvoiceForm = ({
   // Custom handler for status changes
   const handleStatusChange = useCallback((e) => {
     const newStatus = e.target.value;
+    
+    // Prevent status change if bank account is selected (should always be 'paid')
+    if (validation.values.billFrom && validation.values.billFrom.startsWith('bank_')) {
+      console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+      return;
+    }
+    
     validation.setFieldValue('status', newStatus);
     
     // Clear bank account if status changes from 'paid' to 'pending'
@@ -563,7 +620,7 @@ const PurchaseInvoiceForm = ({
 
   // Check if status dropdown should be shown
   const shouldShowStatusDropdown = useMemo(() => {
-    // Show status dropdown only when a contact is selected
+    // Only show status dropdown for contact selections (hide for bank accounts and empty selections)
     return validation.values.billFrom && 
            validation.values.billFrom.startsWith('contact_');
   }, [validation.values.billFrom]);
@@ -1289,7 +1346,7 @@ const PurchaseInvoiceForm = ({
                     placeholder="Select Vendor"
                     error={validation.errors.billFrom}
                     touched={validation.touched.billFrom}
-                      showBankAccounts={false}
+                      showBankAccounts={true}
                       showContacts={true}
                   />
                   </div>
@@ -1816,6 +1873,17 @@ const PurchaseInvoiceForm = ({
           </div>
         </ModalFooter>
       </Modal>
+
+      {/* Payment Adjustment Modal */}
+      <PaymentAdjustmentModal
+        isOpen={paymentAdjustmentModal.isOpen}
+        toggle={() => setPaymentAdjustmentModal(prev => ({ ...prev, isOpen: false }))}
+        paymentInfo={paymentAdjustmentModal.paymentInfo}
+        newAmount={paymentAdjustmentModal.pendingFormData?.netPayable}
+        onConfirm={handlePaymentAdjustmentChoice}
+        isLoading={isLoading}
+        transactionType="purchase"
+      />
 
       <ItemModal
         isOpen={addItemModal}

@@ -4,7 +4,12 @@ import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.j
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 import { generatePDFFromTemplate, generateInvoicePDFFileName, createPurchaseInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
-import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
+import { 
+  handlePaymentAllocationsOnTransactionDelete, 
+  checkPaymentAllocationConflict,
+  updatePaymentAllocations,
+  calculateAmountsAfterAdjustment 
+} from "../utils/paymentAllocationUtils.js";
 
 export async function createPurchase(req, res) {
   const client = await pool.connect();
@@ -282,7 +287,8 @@ export async function updatePurchase(req, res) {
     netPayable,
     billFromBank,
     billFromContact,
-    status
+    status,
+    paymentAdjustmentChoice // New parameter to handle payment adjustments
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -342,6 +348,35 @@ export async function updatePurchase(req, res) {
 
     const oldPurchase = purchaseRes.rows[0];
     const finalStatus = status || oldPurchase.status;
+
+    // Check for payment allocation conflicts using utility function
+    const currentPaidAmount = parseFloat(oldPurchase.paid_amount || 0);
+    const oldNetPayable = parseFloat(oldPurchase.netPayable || 0);
+    const newNetPayable = parseFloat(netPayable || 0);
+
+    const conflictResult = await checkPaymentAllocationConflict(
+      client, 
+      'purchase', 
+      purchaseId, 
+      companyId, 
+      oldNetPayable, 
+      newNetPayable, 
+      paymentAdjustmentChoice
+    );
+
+    // If payment adjustment is needed but no choice provided, return conflict info
+    if (conflictResult.requiresPaymentAdjustment) {
+      await client.query("ROLLBACK");
+      
+      return res.status(409).json({
+        success: false,
+        message: "Payment adjustment required",
+        requiresPaymentAdjustment: true,
+        paymentInfo: conflictResult.paymentInfo
+      });
+    }
+
+    const { hasPaymentAllocations, paymentAdjustmentMade, allocations } = conflictResult;
 
     for (const item of items) {
       const { productId, serialNumbers = [] } = item;
@@ -454,14 +489,31 @@ export async function updatePurchase(req, res) {
       }
     }
 
-    // Reverse bank balance changes from old purchase (only if it was paid via bank)
-    if (oldPurchase.bankAccountId && oldPurchase.status === 'paid') {
-      await client.query(
-        `UPDATE hisab."bankAccounts"
+    // Check if this purchase was paid via Payment module
+    const isPaymentModuleTransaction = hasPaymentAllocations;
+    
+    console.log(`🔍 Purchase bank balance reversal check:`, {
+      purchaseId,
+      oldPurchaseBankAccountId: oldPurchase.bankAccountId,
+      oldPurchaseStatus: oldPurchase.status,
+      hasPaymentAllocations,
+      isPaymentModuleTransaction,
+      willReverseOldBankBalance: oldPurchase.bankAccountId && oldPurchase.status === 'paid' && !isPaymentModuleTransaction
+    });
+    
+    // Reverse bank balance changes from old purchase (only if it was paid directly via bank, not via Payment module)
+    if (oldPurchase.bankAccountId && oldPurchase.status === 'paid' && !isPaymentModuleTransaction) {
+        console.log(`🔄 Reversing old direct bank purchase impact: +${oldPurchase.netPayable} to bank ${oldPurchase.bankAccountId}`);
+        await client.query(
+          `UPDATE hisab."bankAccounts"
          SET "currentBalance" = "currentBalance" + $1
-         WHERE "id" = $2 AND "companyId" = $3`,
-        [oldPurchase.netPayable, oldPurchase.bankAccountId, companyId]
-      );
+           WHERE "id" = $2 AND "companyId" = $3`,
+          [oldPurchase.netPayable, oldPurchase.bankAccountId, companyId]
+        );
+    } else if (isPaymentModuleTransaction) {
+        console.log(`⏭️ Skipping old purchase bank balance reversal - paid via Payment module (will be handled by payment adjustment)`);
+    } else {
+        console.log(`ℹ️ No old bank balance to reverse - purchase was not paid via bank or was pending`);
     }
 
     await client.query(
@@ -470,48 +522,34 @@ export async function updatePurchase(req, res) {
       [purchaseId, companyId]
     );
 
-    // Get current payment status before updating
-    const currentPurchaseQuery = await client.query(
-      `SELECT "paid_amount", "remaining_amount", "netPayable" FROM hisab."purchases" 
-       WHERE "id" = $1 AND "companyId" = $2`,
-      [purchaseId, companyId]
+    // Use the already fetched oldPurchase data instead of querying again
+    // const currentPaidAmount and oldNetPayable are already declared above
+    
+    // Calculate amounts using utility function
+    const amountResult = calculateAmountsAfterAdjustment(
+      newNetPayable,
+      currentPaidAmount,
+      paymentAdjustmentChoice,
+      paymentAdjustmentMade
     );
+
+    let { remainingAmount, paidAmount } = amountResult;
     
-    const currentPurchase = currentPurchaseQuery.rows[0];
-    const currentPaidAmount = parseFloat(currentPurchase.paid_amount || 0);
-    const oldNetPayable = parseFloat(currentPurchase.netPayable || 0);
-    
-    // Calculate new remaining amount based on the new total and existing payments
-    let remainingAmount, paidAmount;
-    
-    if (currentPaidAmount > 0) {
-      // There are existing payments, preserve them
-      paidAmount = currentPaidAmount;
-      
-      // If the new total is different, adjust the remaining amount
-      if (netPayable !== oldNetPayable) {
-        remainingAmount = Math.max(0, netPayable - currentPaidAmount);
-        
-        // If paid amount exceeds new total, adjust accordingly
-        if (currentPaidAmount >= netPayable) {
-          remainingAmount = 0;
-          // Note: We keep paidAmount as is, even if it exceeds netPayable
-          // This creates an overpayment scenario that can be handled separately
-        }
-      } else {
-        // Total didn't change, keep existing remaining amount
-        remainingAmount = parseFloat(currentPurchase.remaining_amount || 0);
-      }
-    } else {
-      // No existing payments, use status-based logic
-      if (finalStatus === 'paid') {
-        remainingAmount = 0;
-        paidAmount = netPayable;
-      } else {
-        remainingAmount = netPayable;
-        paidAmount = 0;
-      }
-    }
+    // Always use the calculated status from utility function
+    // The utility function handles all scenarios correctly
+    let finalStatusToUse = amountResult.status;
+
+    console.log('📊 Status calculation debug:', {
+      paymentAdjustmentMade,
+      amountResultStatus: amountResult.status,
+      originalFinalStatus: finalStatus,
+      finalStatusToUse,
+      remainingAmount,
+      paidAmount,
+      newNetPayable,
+      currentPaidAmount,
+      shouldBePending: remainingAmount > 0
+    });
 
     await client.query(
       `UPDATE hisab."purchases"
@@ -553,13 +591,24 @@ export async function updatePurchase(req, res) {
         taxAmount,
         transportationCharge,
         netPayable,
-        finalStatus,
+        finalStatusToUse,
         remainingAmount,
         paidAmount,
         purchaseId,
         companyId
       ]
     );
+
+    // Handle payment allocation updates if needed
+    if (paymentAdjustmentMade) {
+      await updatePaymentAllocations(
+        client,
+        'purchase',
+        allocations,
+        newNetPayable,
+        paymentAdjustmentChoice
+      );
+    }
 
     // Add new items and update inventory
     for (const item of items) {
@@ -620,7 +669,8 @@ export async function updatePurchase(req, res) {
     }
 
     // Only update bank balance if status is 'paid' and bank account is provided
-    if (bankAccountId && finalStatus === 'paid') {
+    // Skip if payment adjustment was made (bank balance already updated above)
+    if (bankAccountId && finalStatusToUse === 'paid' && !paymentAdjustmentMade) {
       await client.query(
         `UPDATE hisab."bankAccounts"
          SET "currentBalance" = "currentBalance" - $1
@@ -634,7 +684,8 @@ export async function updatePurchase(req, res) {
     return successResponse(res, {
       message: "Purchase updated successfully",
       purchaseId,
-      status: finalStatus
+      status: finalStatusToUse,
+      paymentAdjustmentMade: paymentAdjustmentMade || false
     });
 
   } catch (error) {
@@ -714,16 +765,11 @@ export async function deletePurchase(req, res) {
     // Validate inventory before deletion
     for (const item of itemsRes.rows) {
       if (item.isInventoryTracked) {
-        console.log("item.currentStock", item.currentStock)
-        console.log("item.qty", item.qty)
 
         // Convert both values to numbers for proper comparison
         const currentStock = parseFloat(item.currentStock);
         const requiredQty = parseFloat(item.qty);
 
-        console.log("currentStock (parsed)", currentStock)
-        console.log("requiredQty (parsed)", requiredQty)
-        console.log("currentStock < requiredQty", currentStock < requiredQty)
 
         // Check if we have enough stock to deduct
         if (currentStock < requiredQty) {
@@ -818,7 +864,6 @@ export async function deletePurchase(req, res) {
     const allocations = paymentAllocationsQuery.rows;
 
     if (allocations.length > 0) {
-      console.log(`🔍 Found ${allocations.length} payment allocation(s) for purchase ${id}`);
       
       // Handle each payment allocation
       for (const allocation of allocations) {
@@ -833,7 +878,6 @@ export async function deletePurchase(req, res) {
 
         // If this payment only has this one allocation, delete the entire payment
         if (allPaymentAllocations.rows.length === 1) {
-          console.log(`🗑️ Deleting payment ${allocation.paymentNumber} as it only allocated to this purchase`);
           
           // Get payment details for reversal
           const paymentDetails = await client.query(
@@ -855,14 +899,8 @@ export async function deletePurchase(req, res) {
               );
             }
 
-            // Reverse contact balance impact
-            const contactBalanceImpact = payment.paymentType === 'payment' ? payment.amount : -payment.amount;
-            await client.query(
-              `UPDATE hisab."contacts" 
-               SET "currentBalance" = "currentBalance" - $1 
-               WHERE id = $2`,
-              [contactBalanceImpact, payment.contactId]
-            );
+            // Contact balance impact is handled automatically through real-time calculation
+            // No need to update stored contact balance as it's calculated dynamically
 
             // Delete the payment
             await client.query(
@@ -874,7 +912,6 @@ export async function deletePurchase(req, res) {
           }
         } else {
           // Payment has multiple allocations - remove only this allocation and adjust payment
-          console.log(`🔄 Adjusting payment ${allocation.paymentNumber} - removing allocation for this purchase`);
           
           // Calculate new payment amount
           const currentPaymentAmount = parseFloat(allocation.payment_amount || 0);
@@ -1772,7 +1809,8 @@ export async function sharePurchaseInvoice(req, res) {
       userId: req.currentUser?.id,
       companyId: req.currentUser?.companyId,
       moduleType: 'purchase',
-      templateId: null
+      templateId: null,
+      copies: req.body.copies || 1 // Always use 1 copy for email sharing
     });
     const pdfFileName = generateInvoicePDFFileName(templateData, 'purchase');
 
@@ -1783,57 +1821,65 @@ Date: ${new Date(purchase.invoiceDate).toLocaleDateString('en-IN')}.
 Thank you for your business!`;
 
     if (shareType === 'email') {
-      // Send via email
-      await sendEmail({
-        to: recipient,
-        subject: `Purchase Invoice #${purchase.invoiceNumber} - ${purchase.companyName}`,
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
-              <h1 style="margin: 0; font-size: 28px;">Purchase Invoice</h1>
-              <p style="margin: 10px 0 0 0; opacity: 0.9;">${purchase.companyName}</p>
-            </div>
-            
-            <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-radius: 0 0 10px 10px;">
-              <p style="font-size: 16px; line-height: 1.6; color: #333;">
-                Dear Supplier,
-              </p>
-              
-              <p style="font-size: 16px; line-height: 1.6; color: #333;">
-                ${defaultDescription}
-              </p>
-              
-              <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
-                <h3 style="margin: 0 0 10px 0; color: #2563eb;">Invoice Details:</h3>
-                <p style="margin: 5px 0; color: #333;"><strong>Invoice Number:</strong> ${purchase.invoiceNumber}</p>
-                <p style="margin: 5px 0; color: #333;"><strong>Date:</strong> ${new Date(purchase.invoiceDate).toLocaleDateString('en-IN')}</p>
-                <p style="margin: 5px 0; color: #333;"><strong>Amount:</strong> ₹${parseFloat(purchase.netPayable || 0).toFixed(2)}</p>
-                <p style="margin: 5px 0; color: #333;"><strong>Status:</strong> ${purchase.status}</p>
+      // Send via email asynchronously (don't wait for email delivery)
+      setImmediate(async () => {
+        try {
+          await sendEmail({
+            to: recipient,
+            subject: `Purchase Invoice #${purchase.invoiceNumber} - ${purchase.companyName}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <div style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+                  <h1 style="margin: 0; font-size: 28px;">Purchase Invoice</h1>
+                  <p style="margin: 10px 0 0 0; opacity: 0.9;">${purchase.companyName}</p>
+                </div>
+                
+                <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-radius: 0 0 10px 10px;">
+                  <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                    Dear Supplier,
+                  </p>
+                  
+                  <p style="font-size: 16px; line-height: 1.6; color: #333;">
+                    ${defaultDescription}
+                  </p>
+                  
+                  <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+                    <h3 style="margin: 0 0 10px 0; color: #2563eb;">Invoice Details:</h3>
+                    <p style="margin: 5px 0; color: #333;"><strong>Invoice Number:</strong> ${purchase.invoiceNumber}</p>
+                    <p style="margin: 5px 0; color: #333;"><strong>Date:</strong> ${new Date(purchase.invoiceDate).toLocaleDateString('en-IN')}</p>
+                    <p style="margin: 5px 0; color: #333;"><strong>Amount:</strong> ₹${parseFloat(purchase.netPayable || 0).toFixed(2)}</p>
+                    <p style="margin: 5px 0; color: #333;"><strong>Status:</strong> ${purchase.status}</p>
+                  </div>
+                  
+                  <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                    Please find the detailed invoice attached as a PDF document.
+                  </p>
+                  
+                  <p style="font-size: 14px; line-height: 1.6; color: #666;">
+                    If you have any questions regarding this invoice, please contact us.
+                  </p>
+                  
+                  <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px;">
+                    <p>This is an automated message from ${purchase.companyName}</p>
+                  </div>
+                </div>
               </div>
-              
-              <p style="font-size: 14px; line-height: 1.6; color: #666;">
-                Please find the detailed invoice attached as a PDF document.
-              </p>
-              
-              <p style="font-size: 14px; line-height: 1.6; color: #666;">
-                If you have any questions regarding this invoice, please contact us.
-              </p>
-              
-              <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px;">
-                <p>This is an automated message from ${purchase.companyName}</p>
-              </div>
-            </div>
-          </div>
-        `,
-        attachments: [{
-          filename: pdfFileName,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }]
+            `,
+            attachments: [{
+              filename: pdfFileName,
+              content: pdfBuffer,
+              contentType: 'application/pdf'
+            }]
+          });
+          console.log(`✅ Purchase invoice ${purchase.invoiceNumber} sent successfully to ${recipient}`);
+        } catch (emailError) {
+          console.error(`❌ Failed to send purchase invoice ${purchase.invoiceNumber} to ${recipient}:`, emailError);
+        }
       });
 
+      // Return success immediately without waiting for email delivery
       return successResponse(res, {
-        message: "Purchase invoice shared successfully via email",
+        message: "Purchase invoice is being sent via email",
         shareType: 'email',
         recipient: recipient
       });

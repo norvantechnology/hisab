@@ -7,41 +7,53 @@ const convertNumberToWords = (amount) => {
   const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
   const teens = ['Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
 
+  // Helper function to convert numbers less than 1000
+  const convertHundreds = (num) => {
+    let result = '';
+    
+    if (num >= 100) {
+      result += ones[Math.floor(num / 100)] + ' Hundred ';
+      num %= 100;
+    }
+    
+    if (num >= 20) {
+      result += tens[Math.floor(num / 10)] + ' ';
+      num %= 10;
+    } else if (num >= 10) {
+      result += teens[num - 10] + ' ';
+      return result.trim();
+    }
+    
+    if (num > 0) {
+      result += ones[num] + ' ';
+    }
+    
+    return result.trim();
+  };
+
   if (amount === 0) return 'Zero';
   if (amount < 0) return 'Minus ' + convertNumberToWords(-amount);
 
   let result = '';
+  let rupees = Math.floor(amount);
   
-  if (amount >= 10000000) {
-    result += convertNumberToWords(Math.floor(amount / 10000000)) + ' Crore ';
-    amount %= 10000000;
+  if (rupees >= 10000000) {
+    result += convertHundreds(Math.floor(rupees / 10000000)) + ' Crore ';
+    rupees %= 10000000;
   }
   
-  if (amount >= 100000) {
-    result += convertNumberToWords(Math.floor(amount / 100000)) + ' Lakh ';
-    amount %= 100000;
+  if (rupees >= 100000) {
+    result += convertHundreds(Math.floor(rupees / 100000)) + ' Lakh ';
+    rupees %= 100000;
   }
   
-  if (amount >= 1000) {
-    result += convertNumberToWords(Math.floor(amount / 1000)) + ' Thousand ';
-    amount %= 1000;
+  if (rupees >= 1000) {
+    result += convertHundreds(Math.floor(rupees / 1000)) + ' Thousand ';
+    rupees %= 1000;
   }
   
-  if (amount >= 100) {
-    result += ones[Math.floor(amount / 100)] + ' Hundred ';
-    amount %= 100;
-  }
-  
-  if (amount >= 20) {
-    result += tens[Math.floor(amount / 10)] + ' ';
-    amount %= 10;
-  } else if (amount >= 10) {
-    result += teens[amount - 10] + ' ';
-    return result.trim() + ' Only';
-  }
-  
-  if (amount > 0) {
-    result += ones[amount] + ' ';
+  if (rupees > 0) {
+    result += convertHundreds(rupees) + ' ';
   }
   
   return result.trim() + ' Only';

@@ -2,6 +2,7 @@ import { compareSync } from "bcrypt";
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
 import { createPaymentReceiptTemplateData, generatePDFFromTemplate, generatePaymentPDFFileName } from "../utils/templatePDFGenerator.js";
+import { calculateContactCurrentBalance } from "../utils/balanceCalculator.js";
 
 // Helper function to check if new columns exist in payment_allocations table
 async function checkNewColumnsExist(client) {
@@ -56,21 +57,13 @@ export async function createPayment(req, res) {
     await client.query("BEGIN");
 
     // OPTIMIZATION 1: Single query to get all required data with FOR UPDATE
-    const [contactQuery, bankQuery] = await Promise.all([
-      client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-        [contactId, companyId]
-      ),
-      client.query(
-        `SELECT "currentBalance" FROM hisab."bankAccounts" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
-        [bankAccountId, companyId]
-      )
-    ]);
+    // UPDATED: Only query bank balance since we no longer store contact balance
+    const bankQuery = await client.query(
+      `SELECT "currentBalance" FROM hisab."bankAccounts" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
+      [bankAccountId, companyId]
+    );
 
-    if (!contactQuery.rows.length) {
-      await client.query("ROLLBACK");
-      return errorResponse(res, "Contact not found", 404);
-    }
+    // UPDATED: Contact existence should be validated elsewhere, focusing on bank validation
     if (!bankQuery.rows.length) {
       await client.query("ROLLBACK");
       return errorResponse(res, "Bank account not found", 404);
@@ -78,29 +71,42 @@ export async function createPayment(req, res) {
 
     // OPTIMIZATION 2: Pre-fetch all transaction data in batch
     const transactionIds = transactionAllocations
-      .filter(allocation => allocation.transactionId !== 'current-balance')
+      .filter(allocation => allocation.transactionId !== 'current-balance' && allocation.transactionId !== 'opening-balance')
       .map(allocation => allocation.transactionId);
+
+    console.log('🔍 processNewTransactionAllocations - Transaction IDs for database queries:', {
+      allAllocations: transactionAllocations.map(a => ({ id: a.transactionId, type: a.transactionType })),
+      filteredTransactionIds: transactionIds,
+      shouldBeEmpty: transactionIds.length === 0 ? 'YES' : 'NO - This might cause the error'
+    });
 
     let transactionsData = {};
     if (transactionIds.length > 0) {
-      const [purchasesQuery, salesQuery, expensesQuery, incomesQuery] = await Promise.all([
-        client.query(
+      console.log('🔍 About to execute database queries with transactionIds:', transactionIds);
+      
+      console.log('🔍 Executing purchases query...');
+      const purchasesQuery = await client.query(
           `SELECT id, "netPayable", "remaining_amount", "paid_amount" FROM hisab."purchases" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
           [transactionIds, companyId]
-        ),
-        client.query(
+      );
+      
+      console.log('🔍 Executing sales query...');
+      const salesQuery = await client.query(
           `SELECT id, "netReceivable", "remaining_amount", "paid_amount" FROM hisab."sales" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
           [transactionIds, companyId]
-        ),
-        client.query(
+      );
+      
+      console.log('🔍 Executing expenses query...');
+      const expensesQuery = await client.query(
           `SELECT id, "amount", "remaining_amount", "paid_amount", "status", "bankAccountId" FROM hisab."expenses" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
           [transactionIds, companyId]
-        ),
-        client.query(
+      );
+      
+      console.log('🔍 Executing incomes query...');
+      const incomesQuery = await client.query(
           `SELECT id, "amount", "status", "bankAccountId", "remaining_amount", "paid_amount" FROM hisab."incomes" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
           [transactionIds, companyId]
-        )
-      ]);
+      );
 
       // Create lookup maps for faster access
       purchasesQuery.rows.forEach(row => transactionsData[`purchase_${row.id}`] = row);
@@ -130,6 +136,12 @@ export async function createPayment(req, res) {
         } else {
           payableAmount += paidAmount;
         }
+      } else if (allocation.transactionId === 'opening-balance') {
+        // ADDED: Handle opening-balance allocations
+        // Opening balance payments only affect bank balance, not receivable/payable calculation
+        currentBalanceAmount += paidAmount;
+        // Do NOT add to receivableAmount or payableAmount
+        // Opening balance is handled separately and should not affect payment type calculation
       } else if (transactionType === 'purchase') {
         purchaseAmount += paidAmount;
         if (balanceType === 'receivable') {
@@ -161,14 +173,27 @@ export async function createPayment(req, res) {
       }
     });
 
-    // Calculate net amount for bank impact
+    // Calculate net amount for bank impact excluding opening balance (which is handled separately)
     const netAmount = receivableAmount - payableAmount;
     
-    // Fix: Correct payment type logic
+    // For opening balance only payments, determine type based on opening balance type
+    let paymentType, absoluteNetAmount;
+    
+    if (receivableAmount === 0 && payableAmount === 0 && currentBalanceAmount > 0) {
+      // This is an opening balance only payment
+      // Get the opening balance type from the contact to determine payment direction
+      const openingBalanceAllocation = transactionAllocations.find(a => a.transactionId === 'opening-balance');
+      const balanceType = openingBalanceAllocation?.type || 'receivable';
+      
+      paymentType = balanceType === 'receivable' ? 'receipt' : 'payment';
+      absoluteNetAmount = currentBalanceAmount;
+    } else {
+      // Regular payment calculation
     // If we have more payable (we owe them) -> we pay -> outflow -> 'payment'
     // If we have more receivable (they owe us) -> we receive -> inflow -> 'receipt'
-    const paymentType = payableAmount > receivableAmount ? 'payment' : 'receipt';
-    const absoluteNetAmount = Math.abs(netAmount);
+      paymentType = payableAmount > receivableAmount ? 'payment' : 'receipt';
+      absoluteNetAmount = Math.abs(netAmount) + currentBalanceAmount; // Add opening balance amount
+    }
 
     // Apply adjustments to the net amount
     const adjValue = parseFloat(adjustmentValue || 0);
@@ -204,41 +229,8 @@ export async function createPayment(req, res) {
     }
 
     // Calculate contact balance impact
-    const { currentBalance, currentBalanceType } = contactQuery.rows[0];
-    const currentBalanceValue = parseFloat(currentBalance || 0);
-    let newCurrentBalance = currentBalanceValue;
-    let newCurrentBalanceType = currentBalanceType;
-
-    if (currentBalanceAmount > 0) {
-      const currentBalanceAllocation = transactionAllocations.find(
-        allocation => allocation.transactionId === 'current-balance'
-      );
-      const currentBalanceType_allocation = currentBalanceAllocation?.type ||
-        (paymentType === 'receipt' ? 'receivable' : 'payable');
-
-      if (currentBalanceType_allocation === 'receivable') {
-        if (currentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - currentBalanceAmount);
-        } else if (currentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - currentBalanceAmount);
-        }
-      } else if (currentBalanceType_allocation === 'payable') {
-        if (currentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - currentBalanceAmount);
-        } else if (currentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - currentBalanceAmount);
-        }
-      }
-
-      if (newCurrentBalance < 0) {
-        newCurrentBalance = Math.abs(newCurrentBalance);
-        newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
-      }
-
-      if (newCurrentBalance === 0) {
-        newCurrentBalanceType = 'payable';
-      }
-    }
+    // UPDATED: Removed stored contact balance logic since we no longer store balance
+    // Contact balance is now always calculated real-time using calculateContactCurrentBalance()
 
     // Create payment record
     const paymentResult = await client.query(
@@ -272,15 +264,8 @@ export async function createPayment(req, res) {
       );
     }
 
-    // Update contact balance if current-balance payment is made
-    if (currentBalanceAmount > 0) {
-      await client.query(
-        `UPDATE hisab."contacts" 
-         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $3 AND "companyId" = $4`,
-        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
-      );
-    }
+    // UPDATED: No longer need to update stored contact balance since it's calculated real-time
+    // Contact balance is now always calculated using calculateContactCurrentBalance()
 
     // OPTIMIZATION 5: Prepare batch operations for allocations and transaction updates
     const allocationQueries = [];
@@ -303,6 +288,24 @@ export async function createPayment(req, res) {
             null,
             null,
             'current-balance',
+            parseFloat(allocation.amount || 0),
+            paidAmount,
+            balanceType
+          ]
+        });
+      } else if (allocation.transactionId === 'opening-balance') {
+        // ADDED: Handle opening-balance allocations
+        allocationQueries.push({
+          query: `INSERT INTO hisab."payment_allocations" (
+            "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+          params: [
+            paymentId,
+            null,
+            null,
+            null,
+            null,
+            'opening-balance',
             parseFloat(allocation.amount || 0),
             paidAmount,
             balanceType
@@ -337,7 +340,7 @@ export async function createPayment(req, res) {
               null,
               null,
               'purchase',
-              parseFloat(allocation.amount || 0),
+              paidAmount, // Store the actual paid amount, not the full transaction amount
               paidAmount,
               balanceType
             ]
@@ -372,7 +375,7 @@ export async function createPayment(req, res) {
               null,
               null,
               'sale',
-              parseFloat(allocation.amount || 0),
+              paidAmount, // Store the actual paid amount, not the full transaction amount
               paidAmount,
               balanceType
             ]
@@ -407,7 +410,7 @@ export async function createPayment(req, res) {
             allocation.transactionId,
             null,
             'expense',
-            parseFloat(allocation.amount || 0),
+            paidAmount, // Store the actual paid amount, not the full transaction amount
             paidAmount,
             balanceType
           ]
@@ -442,7 +445,7 @@ export async function createPayment(req, res) {
             null,
             allocation.transactionId,
             'income',
-            parseFloat(allocation.amount || 0),
+            paidAmount, // Store the actual paid amount, not the full transaction amount
             paidAmount,
             balanceType
           ]
@@ -456,6 +459,9 @@ export async function createPayment(req, res) {
       ...allocationQueries.map(q => client.query(q.query, q.params)),
       ...transactionUpdateQueries.map(q => client.query(q.query, q.params))
     ]);
+
+    // ADDED: Handle opening balance updates when payments are made against opening balance
+    await handleOpeningBalanceUpdates(client, transactionAllocations, contactId, companyId);
 
     await client.query("COMMIT");
 
@@ -496,8 +502,7 @@ export async function createPayment(req, res) {
         adjustedAmount
       },
       accountingImpact: {
-        currentContactBalance: currentBalanceValue,
-        currentContactBalanceType: currentBalanceType,
+        // UPDATED: Removed stored contact balance since it's calculated real-time
         bankBalanceChange: bankImpact,
         adjustmentApplied: adjustmentType && adjustmentType !== 'none' ? {
           type: adjustmentType,
@@ -558,7 +563,7 @@ export async function updatePayment(req, res) {
         [id]
       ),
       client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts" WHERE id = $1 AND "companyId" = $2 FOR UPDATE`,
+        `SELECT "id", "name" FROM hisab."contacts" WHERE id = $1 AND "companyId" = $2`,
         [contactId, companyId]
       ),
       client.query(
@@ -604,6 +609,12 @@ export async function updatePayment(req, res) {
         } else {
           oldPayableAmount += paidAmount;
         }
+      } else if (allocation.allocationType === 'opening-balance') {
+        // ADDED: Handle opening-balance allocations
+        // Opening balance payments only affect bank balance, not receivable/payable calculation
+        oldCurrentBalanceAmount += paidAmount;
+        // Do NOT add to oldReceivableAmount or oldPayableAmount
+        // Opening balance is handled separately and should not affect payment type calculation
       } else if (transactionType === 'purchase') {
         oldPurchaseAmount += paidAmount;
         if (balanceType === 'receivable') {
@@ -635,9 +646,19 @@ export async function updatePayment(req, res) {
       }
     });
 
+    // Calculate old net amount excluding opening balance (which is handled separately)
     const oldNetAmount = oldReceivableAmount - oldPayableAmount;
     const oldPaymentType = existingPayment.paymentType;
-    const oldAbsoluteNetAmount = Math.abs(oldNetAmount);
+    
+    // For opening balance only payments, use the current balance amount
+    let oldAbsoluteNetAmount;
+    if (oldReceivableAmount === 0 && oldPayableAmount === 0 && oldCurrentBalanceAmount > 0) {
+      // This was an opening balance only payment
+      oldAbsoluteNetAmount = oldCurrentBalanceAmount;
+    } else {
+      // Regular payment calculation
+      oldAbsoluteNetAmount = Math.abs(oldNetAmount) + oldCurrentBalanceAmount; // Add opening balance amount
+    }
     const oldAdjValue = parseFloat(existingPayment.adjustmentValue || 0);
     let oldOriginalAmount = oldAbsoluteNetAmount;
     let oldAdjustedAmount = oldAbsoluteNetAmount;
@@ -670,6 +691,12 @@ export async function updatePayment(req, res) {
         } else {
           newPayableAmount += paidAmount;
         }
+      } else if (allocation.transactionId === 'opening-balance') {
+        // ADDED: Handle opening-balance allocations
+        // Opening balance payments only affect bank balance, not receivable/payable calculation
+        newCurrentBalanceAmount += paidAmount;
+        // Do NOT add to newReceivableAmount or newPayableAmount
+        // Opening balance is handled separately and should not affect payment type calculation
       } else if (transactionType === 'purchase') {
         newPurchaseAmount += paidAmount;
         if (balanceType === 'receivable') {
@@ -701,9 +728,26 @@ export async function updatePayment(req, res) {
       }
     });
 
+    // Calculate net amount excluding opening balance (which is handled separately)
     const newNetAmount = newReceivableAmount - newPayableAmount;
-    const newPaymentType = newNetAmount > 0 ? 'receipt' : 'payment';
-    const newAbsoluteNetAmount = Math.abs(newNetAmount);
+    
+    // For opening balance only payments, determine type based on opening balance type
+    let newPaymentType, newAbsoluteNetAmount;
+    
+    if (newReceivableAmount === 0 && newPayableAmount === 0 && newCurrentBalanceAmount > 0) {
+      // This is an opening balance only payment
+      // Get the opening balance type from the contact to determine payment direction
+      const openingBalanceAllocation = transactionAllocations.find(a => a.transactionId === 'opening-balance');
+      const balanceType = openingBalanceAllocation?.type || 'receivable';
+      
+      newPaymentType = balanceType === 'receivable' ? 'receipt' : 'payment';
+      newAbsoluteNetAmount = newCurrentBalanceAmount;
+    } else {
+      // Regular payment calculation
+      newPaymentType = newNetAmount > 0 ? 'receipt' : 'payment';
+      newAbsoluteNetAmount = Math.abs(newNetAmount) + newCurrentBalanceAmount; // Add opening balance amount
+    }
+    
     const newAdjValue = parseFloat(adjustmentValue || 0);
     let newOriginalAmount = newAbsoluteNetAmount;
     let newAdjustedAmount = newAbsoluteNetAmount;
@@ -715,9 +759,11 @@ export async function updatePayment(req, res) {
       newAdjustedAmount = newAbsoluteNetAmount;
     }
 
-    const { currentBalance, currentBalanceType } = contactQuery.rows[0];
-    const currentBalanceValue = parseFloat(currentBalance || 0);
-
+    // STEP 2: First reverse old bank impact before applying new one
+    // FIXED: Opening balance transactions now properly handled:
+    // - Opening balance amounts don't affect receivable/payable calculation
+    // - Bank balance impact is calculated correctly for opening balance only payments
+    // - Payment type is determined by opening balance type for pure opening balance payments
     // Calculate old bank impact - FIXED LOGIC
     let oldBankImpact = 0;
     if (existingPayment.adjustmentType === 'discount') {
@@ -728,55 +774,57 @@ export async function updatePayment(req, res) {
       oldBankImpact = oldPaymentType === 'payment' ? -oldAbsoluteNetAmount : oldAbsoluteNetAmount;
     }
 
-    // Reverse old bank impact
+    console.log('🏦 Bank balance update debug:', {
+      oldPaymentType,
+      newPaymentType,
+      oldAbsoluteNetAmount,
+      newAbsoluteNetAmount,
+      oldAdjustedAmount,
+      newAdjustedAmount,
+      oldBankImpact,
+      existingBankId: existingPayment.bankId,
+      newBankId: bankAccountId,
+      oldCurrentBalanceAmount,
+      newCurrentBalanceAmount,
+      oldReceivableAmount,
+      oldPayableAmount,
+      newReceivableAmount,
+      newPayableAmount
+    });
+
+    // Reverse old bank impact first
     if (oldBankImpact !== 0) {
+      console.log(`🔄 Reversing old bank impact: ${oldBankImpact} from bank ${existingPayment.bankId}`);
       await client.query(
         `UPDATE hisab."bankAccounts" SET "currentBalance" = "currentBalance" - $1 WHERE id = $2`,
         [oldBankImpact, existingPayment.bankId]
       );
     }
 
-    // Reverse old contact balance impact
-    if (oldCurrentBalanceAmount > 0) {
-      let newCurrentBalance = currentBalanceValue;
-      let newCurrentBalanceType = currentBalanceType;
-      
-      const oldCurrentBalanceAllocation = existingAllocations.find(
-        allocation => allocation.allocationType === 'current-balance'
-      );
-      const oldCurrentBalanceType_allocation = oldCurrentBalanceAllocation?.balanceType || 'payable';
+    // Calculate new bank impact
+    let newBankImpact = 0;
+    if (adjustmentType === 'discount') {
+      newBankImpact = newPaymentType === 'payment' ? -newAdjustedAmount : newAdjustedAmount;
+    } else if (adjustmentType === 'extra_receipt' || adjustmentType === 'surcharge') {
+      newBankImpact = newPaymentType === 'payment' ? -newOriginalAmount : newOriginalAmount;
+    } else {
+      newBankImpact = newPaymentType === 'payment' ? -newAbsoluteNetAmount : newAbsoluteNetAmount;
+    }
 
-      if (oldCurrentBalanceType_allocation === 'receivable') {
-        if (currentBalanceType === 'receivable') {
-          newCurrentBalance = newCurrentBalance + oldCurrentBalanceAmount;
-        } else if (currentBalanceType === 'payable') {
-          newCurrentBalance = newCurrentBalance - oldCurrentBalanceAmount;
-        }
-      } else if (oldCurrentBalanceType_allocation === 'payable') {
-        if (currentBalanceType === 'payable') {
-          newCurrentBalance = newCurrentBalance + oldCurrentBalanceAmount;
-        } else if (currentBalanceType === 'receivable') {
-          newCurrentBalance = newCurrentBalance - oldCurrentBalanceAmount;
-        }
-      }
+    console.log(`💰 Calculated new bank impact: ${newBankImpact} for bank ${bankAccountId}`);
 
-      if (newCurrentBalance < 0) {
-        newCurrentBalance = Math.abs(newCurrentBalance);
-        newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
-      }
-
-      if (newCurrentBalance === 0) {
-        newCurrentBalanceType = 'payable';
-      }
-
-      // Update contact balance with the reversed values
+    // Apply new bank impact
+    if (newBankImpact !== 0) {
+      console.log(`✅ Applying new bank impact: ${newBankImpact} to bank ${bankAccountId}`);
       await client.query(
-        `UPDATE hisab."contacts" 
-         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $3 AND "companyId" = $4`,
-        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
+        `UPDATE hisab."bankAccounts" SET "currentBalance" = "currentBalance" + $1 WHERE id = $2`,
+        [newBankImpact, bankAccountId]
       );
     }
+
+    // Reverse old contact balance impact
+    // UPDATED: Removed all contact balance update logic since we no longer store balance
+    // Contact balance is now always calculated real-time using calculateContactCurrentBalance()
 
     // Reverse transaction impacts using the centralized function
     const reversalQueries = await reverseTransactionAllocations(client, existingAllocations, companyId, existingPayment);
@@ -789,76 +837,10 @@ export async function updatePayment(req, res) {
     // Delete old allocations
     await client.query(`DELETE FROM hisab."payment_allocations" WHERE "paymentId" = $1`, [id]);
 
-    // Apply new contact balance impact
-    if (newCurrentBalanceAmount > 0) {
-      let newCurrentBalance = currentBalanceValue;
-      let newCurrentBalanceType = currentBalanceType;
+    // STEP 3: Handle opening balance updates for edit scenario
+    await handleOpeningBalanceUpdateForEdit(client, existingAllocations, transactionAllocations, existingPayment.contactId, companyId);
 
-      // Calculate new contact balance based on current-balance allocation
-      const currentBalanceAllocation = transactionAllocations.find(
-        allocation => allocation.transactionId === 'current-balance'
-      );
-      const currentBalanceType_allocation = currentBalanceAllocation?.type || 'payable';
-
-      if (currentBalanceType_allocation === 'receivable') {
-        if (currentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
-        } else if (currentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
-        }
-      } else if (currentBalanceType_allocation === 'payable') {
-        if (currentBalanceType === 'payable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
-        } else if (currentBalanceType === 'receivable') {
-          newCurrentBalance = Math.max(0, currentBalanceValue - newCurrentBalanceAmount);
-        }
-      }
-
-      if (newCurrentBalance < 0) {
-        newCurrentBalance = Math.abs(newCurrentBalance);
-        newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
-      }
-
-      if (newCurrentBalance === 0) {
-        newCurrentBalanceType = 'payable';
-      }
-
-      await client.query(
-        `UPDATE hisab."contacts" 
-         SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $3 AND "companyId" = $4`,
-        [newCurrentBalance, newCurrentBalanceType, contactId, companyId]
-      );
-    }
-
-    // Calculate new bank impact - FIXED LOGIC
-    let newBankImpact = 0;
-    if (adjustmentType === 'discount') {
-      newBankImpact = newPaymentType === 'payment' ? -newAdjustedAmount : newAdjustedAmount;
-    } else if (adjustmentType === 'extra_receipt' || adjustmentType === 'surcharge') {
-      newBankImpact = newPaymentType === 'payment' ? -newOriginalAmount : newOriginalAmount;
-    } else {
-      newBankImpact = newPaymentType === 'payment' ? -newAbsoluteNetAmount : newAbsoluteNetAmount;
-    }
-
-    // Apply new bank impact
-    if (newBankImpact !== 0) {
-      await client.query(
-        `UPDATE hisab."bankAccounts" SET "currentBalance" = "currentBalance" + $1 WHERE id = $2`,
-        [newBankImpact, bankAccountId]
-      );
-    }
-
-    // STEP 1: Revert old allocations from transactions
-    await revertOldTransactionAllocations(client, existingAllocations, companyId);
-
-    // STEP 2: Delete old allocation records
-    await client.query(
-      `DELETE FROM hisab."payment_allocations" WHERE "paymentId" = $1`,
-      [id]
-    );
-
-    // STEP 3: Process new transaction allocations using the centralized function
+    // STEP 4: Process new transaction allocations using the centralized function
     const { allocationQueries, transactionUpdateQueries } = await processNewTransactionAllocations(client, transactionAllocations, id, companyId, bankAccountId);
 
     // Execute all queries in batches for better performance
@@ -870,12 +852,12 @@ export async function updatePayment(req, res) {
       await Promise.all(batch.map(query => client.query(query.query, query.params)));
     }
 
-    // Update payment record
+    // Update payment record with new values
     const updatedPaymentResult = await client.query(
       `UPDATE hisab."payments" 
        SET "contactId" = $1, "bankId" = $2, "date" = $3, "amount" = $4,
            "paymentType" = $5, "description" = $6, "adjustmentType" = $7, "adjustmentValue" = $8, "updatedAt" = NOW()
-       WHERE id = $9 RETURNING *`,
+       WHERE id = $9 AND "companyId" = $10 RETURNING *`,
       [
         contactId,
         bankAccountId,
@@ -885,7 +867,8 @@ export async function updatePayment(req, res) {
         description || null,
         adjustmentType || null,
         adjustmentValue || null,
-        id
+        id,
+        companyId
       ]
     );
 
@@ -905,7 +888,6 @@ export async function updatePayment(req, res) {
              WHERE "id" = $2 AND "companyId" = $3`,
             [pdfUrl, id, companyId]
           );
-          console.log(`✅ PDF regenerated successfully for payment ${id}`);
         } finally {
           pdfClient.release();
         }
@@ -916,7 +898,6 @@ export async function updatePayment(req, res) {
 
     const endTime = Date.now();
     const executionTime = endTime - startTime;
-    console.log(`⚡ Payment update completed in ${executionTime}ms`);
 
     return successResponse(res, {
       message: "Payment updated successfully",
@@ -943,8 +924,7 @@ export async function updatePayment(req, res) {
         }
       },
       accountingImpact: {
-        currentContactBalance: currentBalanceValue,
-        currentContactBalanceType: currentBalanceType,
+        // UPDATED: Removed stored contact balance references
         bankBalanceChange: newBankImpact,
         oldBankBalanceChange: -oldBankImpact,
         netBankBalanceChange: newBankImpact - oldBankImpact
@@ -975,10 +955,7 @@ export async function getPaymentDetails(req, res) {
       SELECT 
         p.*,
         c."name" as "contactName",
-        c."balanceType" as "contactBalanceType",
-        c."openingBalance" as "contactOpeningBalance",
-        c."currentBalance" as "contactCurrentBalance",
-        c."currentBalanceType" as "contactCurrentBalanceType",
+        c."openingBalanceType" as "contactOpeningBalanceType",
         c."billingAddress1" as "contactBillingAddress1",
         c."billingAddress2" as "contactBillingAddress2",
         c."billingCity" as "contactBillingCity",
@@ -1018,12 +995,14 @@ export async function getPaymentDetails(req, res) {
         pa."paidAmount",
         -- Purchase data
         pur."invoiceNumber" as "purchaseInvoiceNumber",
+        pur."invoiceDate" as "purchaseDate",
         pur."remaining_amount" as "purchasePendingAmount",
         pur."status" as "purchaseStatus",
         pur_contact."name" as "purchaseSupplierName",
         -- Sale data
         s."invoiceNumber" as "saleInvoiceNumber",
         s."remaining_amount" as "salePendingAmount",
+        s."invoiceDate" as "saleDate",
         s."status" as "saleStatus",
         s_contact."name" as "saleCustomerName",
         -- Expense data
@@ -1067,8 +1046,27 @@ export async function getPaymentDetails(req, res) {
           transformedAllocation.description = 'Current Balance Settlement';
           transformedAllocation.reference = 'Current Balance';
           transformedAllocation.transactionId = 'current-balance';
+          transformedAllocation.date = payment.date; // Use payment date for current balance
           transformedAllocation.pendingAmount = payment.contactCurrentBalance;
           transformedAllocation.balanceType = payment.contactCurrentBalanceType;
+          break;
+          
+        case 'opening-balance':
+          transformedAllocation.description = 'Opening Balance Settlement';
+          transformedAllocation.reference = 'Opening Balance';
+          transformedAllocation.transactionId = 'opening-balance';
+          transformedAllocation.date = payment.date; // Use payment date for opening balance
+          // Get the current opening balance to calculate pending amount
+          const currentOpeningBalance = parseFloat(payment.contactOpeningBalance || 0);
+          const paidAmount = parseFloat(allocation.paidAmount || 0);
+          
+          // Calculate the original opening balance (current + what was paid)
+          const originalOpeningBalance = currentOpeningBalance + paidAmount;
+          
+          // Set the correct amounts for opening balance
+          transformedAllocation.amount = originalOpeningBalance; // Original opening balance
+          transformedAllocation.pendingAmount = currentOpeningBalance; // Current remaining balance
+          transformedAllocation.paidAmount = paidAmount; // What was paid in this payment
           break;
           
         case 'purchase':
@@ -1081,6 +1079,7 @@ export async function getPaymentDetails(req, res) {
           transformedAllocation.pendingAmount = allocation.purchasePendingAmount;
           transformedAllocation.status = allocation.purchaseStatus;
           transformedAllocation.transactionId = allocation.purchaseId;
+          transformedAllocation.date = allocation.purchaseDate;
           break;
           
         case 'sale':
@@ -1093,6 +1092,7 @@ export async function getPaymentDetails(req, res) {
           transformedAllocation.pendingAmount = allocation.salePendingAmount;
           transformedAllocation.status = allocation.saleStatus;
           transformedAllocation.transactionId = allocation.saleId;
+          transformedAllocation.date = allocation.saleDate;
           break;
           
         case 'expense':
@@ -1101,6 +1101,7 @@ export async function getPaymentDetails(req, res) {
           transformedAllocation.pendingAmount = allocation.expenseAmount;
           transformedAllocation.status = allocation.expenseStatus;
           transformedAllocation.transactionId = allocation.expenseId;
+          transformedAllocation.date = allocation.expenseDate;
           break;
           
         case 'income':
@@ -1109,6 +1110,8 @@ export async function getPaymentDetails(req, res) {
           transformedAllocation.pendingAmount = allocation.incomeAmount;
           transformedAllocation.status = allocation.incomeStatus;
           transformedAllocation.transactionId = allocation.incomeId;
+          transformedAllocation.date = allocation.incomeDate;
+          transformedAllocation.date = allocation.incomeDate;
           break;
           
         default:
@@ -1122,34 +1125,34 @@ export async function getPaymentDetails(req, res) {
 
     const isPayment = payment.paymentType === 'payment';
 
+    // Return flat structure like listPayments API for PaymentViewModal compatibility
     return successResponse(res, {
-      payment: {
-        id: payment.id,
-        paymentNumber: payment.paymentNumber,
-        companyId: payment.companyId,
-        contactId: payment.contactId,
-        contactName: payment.contactName,
-        bankId: payment.bankId,
-        bankAccountName: payment.bankAccountName,
-        date: payment.date,
-        amount: payment.amount,
-        paymentType: payment.paymentType,
-        description: payment.description,
-        adjustmentType: payment.adjustmentType,
-        adjustmentValue: payment.adjustmentValue,
-        allocations: transformedAllocations,
-        createdAt: payment.createdAt,
-        createdBy: payment.createdByName
-      },
-      accountingImpact: {
-        contactBalanceChange: isPayment ? -payment.amount : payment.amount,
-        currentContactBalance: payment.contactCurrentBalance,
-        currentContactBalanceType: payment.contactCurrentBalanceType,
-        ...(payment.bankId && {
-          bankBalanceChange: isPayment ? -payment.amount : payment.amount,
-          currentBankBalance: payment.bankCurrentBalance
-        })
-      }
+      id: payment.id,
+      paymentNumber: payment.paymentNumber,
+      date: payment.date?.toISOString?.()?.split('T')[0] || payment.date, // Format date like listPayments
+      contactId: payment.contactId,
+      bankId: payment.bankId,
+      amount: payment.amount,
+      paymentType: payment.paymentType,
+      description: payment.description,
+      adjustmentType: payment.adjustmentType || 'none',
+      adjustmentValue: payment.adjustmentValue,
+      companyId: payment.companyId,
+      createdBy: payment.createdBy,
+      createdAt: payment.createdAt,
+      updatedAt: payment.updatedAt,
+      contactName: payment.contactName,
+      contactBillingAddress1: payment.contactBillingAddress1,
+      contactBillingAddress2: payment.contactBillingAddress2,
+      contactBillingCity: payment.contactBillingCity,
+      contactBillingState: payment.contactBillingState,
+      contactBillingPincode: payment.contactBillingPincode,
+      contactBillingCountry: payment.contactBillingCountry,
+      bankName: payment.bankAccountName,
+      bankAccountType: payment.bankAccountType || 'bank',
+      createdByName: payment.createdByName,
+      allocationCount: transformedAllocations.length.toString(),
+      transactions: transformedAllocations
     });
 
   } catch (error) {
@@ -1193,7 +1196,7 @@ export async function deletePayment(req, res) {
     }
 
     const paymentQuery = await client.query(
-      `SELECT p.*, c."currentBalance", c."currentBalanceType"
+      `SELECT p.*, c."openingBalance", c."openingBalanceType"
        FROM hisab."payments" p
        JOIN hisab."contacts" c ON p."contactId" = c."id"
        WHERE p."id" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL FOR UPDATE`,
@@ -1206,8 +1209,8 @@ export async function deletePayment(req, res) {
     }
 
     const payment = paymentQuery.rows[0];
-    const { currentBalance, currentBalanceType } = payment;
-    const currentBalanceValue = parseFloat(currentBalance) || 0;
+    // UPDATED: No longer use stored balance, calculate real-time if needed
+    // const { currentBalance, currentBalanceType } = payment; // These columns no longer exist
 
     // Get allocations with proper columns based on schema version
     let allocationsQuery;
@@ -1241,6 +1244,14 @@ export async function deletePayment(req, res) {
       const transactionType = allocation.allocationType || 'purchase';
 
       if (allocation.allocationType === 'current-balance') {
+        currentBalanceAmount += paidAmount;
+        if (balanceType === 'receivable') {
+          receivableAmount += paidAmount;
+        } else {
+          payableAmount += paidAmount;
+        }
+      } else if (allocation.allocationType === 'opening-balance') {
+        // Handle opening balance allocation - this will be reversed later
         currentBalanceAmount += paidAmount;
         if (balanceType === 'receivable') {
           receivableAmount += paidAmount;
@@ -1301,6 +1312,9 @@ export async function deletePayment(req, res) {
       [id]
     );
 
+    // ADDED: Handle opening balance reversal when payment is deleted
+    await handleOpeningBalanceReversal(client, allocations, payment.contactId, companyId);
+
     // Reverse bank balance impact
     if (payment.bankId) {
       const bankQuery = await client.query(
@@ -1330,59 +1344,8 @@ export async function deletePayment(req, res) {
       }
     }
 
-    // Reverse contact balance impact if current-balance payment was made
-    if (currentBalanceAmount > 0) {
-      const currentBalanceAllocation = allocations.find(
-        allocation => allocation.allocationType === 'current-balance'
-      );
-      const currentBalanceType_allocation = currentBalanceAllocation?.balanceType || 'payable';
-
-      // Get current contact balance
-      const contactQuery = await client.query(
-        `SELECT "currentBalance", "currentBalanceType" FROM hisab."contacts" 
-         WHERE "id" = $1 AND "companyId" = $2 FOR UPDATE`,
-        [payment.contactId, companyId]
-      );
-
-      if (contactQuery.rows.length > 0) {
-        const { currentBalance, currentBalanceType } = contactQuery.rows[0];
-        const currentBalanceValue = parseFloat(currentBalance || 0);
-        let newCurrentBalance = currentBalanceValue;
-        let newCurrentBalanceType = currentBalanceType;
-
-        // Reverse the current balance impact
-        if (currentBalanceType_allocation === 'receivable') {
-          if (currentBalanceType === 'receivable') {
-            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
-          } else if (currentBalanceType === 'payable') {
-            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
-          }
-        } else if (currentBalanceType_allocation === 'payable') {
-          if (currentBalanceType === 'payable') {
-            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
-          } else if (currentBalanceType === 'receivable') {
-            newCurrentBalance = currentBalanceValue + currentBalanceAmount;
-          }
-        }
-
-        if (newCurrentBalance < 0) {
-          newCurrentBalance = Math.abs(newCurrentBalance);
-          newCurrentBalanceType = currentBalanceType === 'receivable' ? 'payable' : 'receivable';
-        }
-
-        if (newCurrentBalance === 0) {
-          newCurrentBalanceType = 'payable';
-        }
-
-        // Update contact balance with the reversed values
-        await client.query(
-          `UPDATE hisab."contacts" 
-           SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
-           WHERE "id" = $3 AND "companyId" = $4`,
-          [newCurrentBalance, newCurrentBalanceType, payment.contactId, companyId]
-        );
-      }
-    }
+    // UPDATED: Removed all contact balance update logic since we no longer store balance
+    // Contact balance is now always calculated real-time using calculateContactCurrentBalance()
 
     // Mark payment as deleted
     const deleteResult = await client.query(
@@ -1399,8 +1362,7 @@ export async function deletePayment(req, res) {
       message: "Payment deleted successfully",
       payment: deleteResult.rows[0],
       accountingImpact: {
-        currentContactBalance: currentBalanceValue,
-        currentContactBalanceType: currentBalanceType,
+        // UPDATED: Removed stored contact balance references
         currentBalanceAmount,
         purchaseAmount,
         expenseAmount,
@@ -1420,7 +1382,15 @@ export async function deletePayment(req, res) {
 
   } catch (error) {
     await client.query("ROLLBACK");
-    return errorResponse(res, "Error deleting payment", 500);
+    console.error("Error in deletePayment:", error);
+    console.error("Error details:", {
+      code: error.code,
+      message: error.message,
+      detail: error.detail,
+      hint: error.hint,
+      position: error.position
+    });
+    return errorResponse(res, `Error deleting payment: ${error.message}`, 500);
   } finally {
     client.release();
   }
@@ -1440,9 +1410,9 @@ export async function getPendingTransactions(req, res) {
   const client = await pool.connect();
 
   try {
-    // 1. Get contact details to verify existence and get current balance
+    // 1. Get contact details to verify existence and calculate current balance
     const contactQuery = await client.query(
-      `SELECT "name", "currentBalance", "currentBalanceType" 
+      `SELECT "name", "openingBalance", "openingBalanceType" 
        FROM hisab."contacts" 
        WHERE id = $1 AND "companyId" = $2`,
       [contactId, companyId]
@@ -1453,8 +1423,12 @@ export async function getPendingTransactions(req, res) {
     }
 
     const contact = contactQuery.rows[0];
-    const currentBalance = parseFloat(contact.currentBalance) || 0;
-    const isPayable = contact.currentBalanceType === 'payable';
+    
+    // Calculate current balance using the balance calculator
+    const { balance: currentBalance, balanceType: currentBalanceType } = await calculateContactCurrentBalance(client, contactId, companyId);
+    const isPayable = currentBalanceType === 'payable';
+
+    // DEBUG: Log the calculated balance to see if opening balance is included
 
     // 2. Get all pending purchases for this contact including remaining amounts
     const pendingPurchases = await client.query(
@@ -1537,22 +1511,44 @@ export async function getPendingTransactions(req, res) {
       [contactId, companyId]
     );
 
-    // 6. Format transactions - include current balance as first transaction if pending amount > 0
+    // 6. Format transactions - Include opening balance if amount > 0, then actual pending transactions
     const transactions = [];
 
-    // Add current balance only if it has pending amount
-    if (Math.abs(currentBalance) > 0) {
-      transactions.push({
-        id: 'current-balance',
-        type: 'current-balance',
-        description: 'Current Balance',
-        amount: Math.abs(currentBalance),
-        paidAmount: 0,
-        balanceType: contact.currentBalanceType,
-        date: null,
-        isCurrentBalance: true,
-        pendingAmount: Math.abs(currentBalance)
-      });
+    // Add opening balance as a transaction only if there's a remaining unpaid amount
+    const openingBalanceAmount = parseFloat(contact.openingBalance || 0);
+    if (openingBalanceAmount !== 0) {
+      // Check how much of the opening balance has been paid
+      const openingBalancePaymentsQuery = await client.query(
+        `SELECT COALESCE(SUM(pa."paidAmount"), 0) as totalPaid
+         FROM hisab."payment_allocations" pa
+         JOIN hisab."payments" p ON pa."paymentId" = p."id"
+         WHERE pa."allocationType" = 'opening-balance' 
+           AND p."contactId" = $1 
+           AND p."companyId" = $2 
+           AND p."deletedAt" IS NULL`,
+        [contactId, companyId]
+      );
+      
+      const totalPaidAgainstOpeningBalance = parseFloat(openingBalancePaymentsQuery.rows[0]?.totalPaid || 0);
+      
+      // Calculate the original opening balance before any payments
+      const originalOpeningBalance = openingBalanceAmount + totalPaidAgainstOpeningBalance;
+      const remainingOpeningBalance = openingBalanceAmount; // This is already the remaining amount
+      
+      // Only show opening balance if there was an original opening balance
+      if (originalOpeningBalance > 0.01) {
+        transactions.push({
+          id: 'opening-balance',
+          type: 'opening-balance',
+          description: 'Opening Balance',
+          amount: originalOpeningBalance, // Show original amount, not remaining
+          paidAmount: totalPaidAgainstOpeningBalance,
+          balanceType: contact.openingBalanceType || 'payable',
+          date: null,
+          isOpeningBalance: true,
+          pendingAmount: Math.abs(remainingOpeningBalance)
+        });
+      }
     }
 
     // Add purchases with pending amount > 0
@@ -1560,8 +1556,7 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(purchase.remainingAmount) || parseFloat(purchase.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: `purchase_${purchase.id}`, // Create unique ID with type prefix
-          originalId: purchase.id, // Keep original ID for backend operations
+          id: purchase.id, // Use numeric ID directly for payment processing
           type: 'purchase',
           description: `Purchase#${purchase.invoiceNumber}`,
           amount: parseFloat(purchase.amount),
@@ -1579,8 +1574,7 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(sale.remainingAmount) || parseFloat(sale.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: `sale_${sale.id}`, // Create unique ID with type prefix
-          originalId: sale.id, // Keep original ID for backend operations
+          id: sale.id, // Use numeric ID directly for payment processing
           type: 'sale',
           description: `Sale#${sale.invoiceNumber}`,
           amount: parseFloat(sale.amount),
@@ -1598,8 +1592,7 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(expense.remainingAmount) || parseFloat(expense.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: `expense_${expense.id}`, // Create unique ID with type prefix
-          originalId: expense.id, // Keep original ID for backend operations
+          id: expense.id, // Use numeric ID directly for payment processing
           type: 'expense',
           description: `Expense#${expense.id}`,
           amount: parseFloat(expense.amount),
@@ -1616,8 +1609,7 @@ export async function getPendingTransactions(req, res) {
       const pendingAmount = parseFloat(income.remainingAmount) || parseFloat(income.amount);
       if (pendingAmount > 0) {
         transactions.push({
-          id: `income_${income.id}`, // Create unique ID with type prefix
-          originalId: income.id, // Keep original ID for backend operations
+          id: income.id, // Use numeric ID directly for payment processing
           type: 'income',
           description: `Income#${income.id}`,
           amount: parseFloat(income.amount),
@@ -1638,37 +1630,90 @@ export async function getPendingTransactions(req, res) {
       .filter(t => t.balanceType === 'receivable')
       .reduce((sum, transaction) => sum + parseFloat(transaction.pendingAmount), 0);
 
-    const netPendingAmount = totalPendingPayable - totalPendingReceivable;
-    const netBalanceType = netPendingAmount >= 0 ? 'payable' : 'receivable';
-
-    transactions.forEach((t, i) => {
-              // Processing transaction allocation
-    });
-
-    // 8. Calculate summary by transaction type
+    // 8. Calculate summary by transaction type with opening balance consideration
     const summary = {
-      totalPending: Math.abs(netPendingAmount), // This now includes current balance since it's in transactions
-      netBalanceType: netBalanceType,
-      totalPendingPayable: totalPendingPayable,
-      totalPendingReceivable: totalPendingReceivable,
-      payableStatus: netBalanceType, // Use calculated net balance type instead of stored current balance type
-      suggestedPayment: netBalanceType === 'payable' ? Math.abs(netPendingAmount) : 0,
-      breakdown: {
-        currentBalance: Math.abs(currentBalance),
+      // Current balance from calculation (includes opening balance + all pending transactions)
+      currentBalance: Math.abs(currentBalance),
+      currentBalanceType: currentBalanceType,
+      
+      // Breakdown by transaction type
+      pendingAmounts: {
+        purchases: totalPendingPayable > 0 ? pendingPurchases.rows.reduce((sum, p) => sum + parseFloat(p.remainingAmount || 0), 0) : 0,
+        sales: totalPendingReceivable > 0 ? pendingSales.rows.reduce((sum, s) => sum + parseFloat(s.remainingAmount || 0), 0) : 0,
+        expenses: pendingExpenses.rows.reduce((sum, e) => sum + parseFloat(e.remainingAmount || 0), 0),
+        incomes: pendingIncomes.rows.reduce((sum, i) => sum + parseFloat(i.remainingAmount || 0), 0)
+      },
+      
+      // Totals by balance type (including opening balance)
+      totalPendingPayable: pendingPurchases.rows.reduce((sum, p) => sum + parseFloat(p.remainingAmount || 0), 0) + 
+                          pendingExpenses.rows.reduce((sum, e) => sum + parseFloat(e.remainingAmount || 0), 0) +
+                          (contact.openingBalanceType === 'payable' ? parseFloat(contact.openingBalance || 0) : 0),
+      totalPendingReceivable: pendingSales.rows.reduce((sum, s) => sum + parseFloat(s.remainingAmount || 0), 0) + 
+                             pendingIncomes.rows.reduce((sum, i) => sum + parseFloat(i.remainingAmount || 0), 0) +
+                             (contact.openingBalanceType === 'receivable' ? parseFloat(contact.openingBalance || 0) : 0),
+      
+      // Opening balance information
+      openingBalance: {
+        amount: parseFloat(contact.openingBalance || 0),
+        type: contact.openingBalanceType || 'payable'
+      },
+      
+      // Transaction counts
+      transactionCounts: {
         pendingPurchases: pendingPurchases.rows.length,
         pendingSales: pendingSales.rows.length,
         pendingExpenses: pendingExpenses.rows.length,
         pendingIncomes: pendingIncomes.rows.length,
-        totalTransactions: transactions.length
-      }
+        totalPendingTransactions: transactions.length
+      },
+      
+      // Net calculation
+      netPendingAmount: (pendingPurchases.rows.reduce((sum, p) => sum + parseFloat(p.remainingAmount || 0), 0) + 
+                       pendingExpenses.rows.reduce((sum, e) => sum + parseFloat(e.remainingAmount || 0), 0)) -
+                      (pendingSales.rows.reduce((sum, s) => sum + parseFloat(s.remainingAmount || 0), 0) + 
+                       pendingIncomes.rows.reduce((sum, i) => sum + parseFloat(i.remainingAmount || 0), 0)),
+      
+      suggestedPayment: currentBalanceType === 'payable' ? Math.abs(currentBalance) : 0,
+      
+      // FIXED: Add totalPending for frontend compatibility
+      totalPending: Math.abs(currentBalance), // This should show the current balance (including opening balance)
+      payableStatus: currentBalanceType // This should match the current balance type
     };
+
+    // DEBUG: Log the summary calculation to see what values are being set
+    transactions.forEach((t, i) => {
+    });
+    
+    // MANUAL VERIFICATION: Calculate expected balance manually
+    const contactOpeningBalanceAmount = parseFloat(contact.openingBalance || 0);
+    const contactOpeningBalanceType = contact.openingBalanceType || 'payable';
+    
+    // FIXED: Don't add opening balance separately since it's already in the transactions list
+    // Just sum up all the transactions from the list
+    let expectedBalance = 0;
+    
+    // Add all receivable transactions (they owe us)
+    expectedBalance += totalPendingReceivable;
+    
+    // Subtract all payable transactions (we owe them)
+    expectedBalance -= totalPendingPayable;
+    
+    const expectedBalanceType = expectedBalance >= 0 ? 'receivable' : 'payable';
+    const expectedBalanceAmount = Math.abs(expectedBalance);
+    
+    
+    // DEBUG: Keep logging but remove the override since the core calculation should now be correct
+    if (expectedBalanceAmount.toFixed(2) !== summary.currentBalance.toFixed(2) || expectedBalanceType !== summary.currentBalanceType) {
+    } else {
+    }
+    
 
     return successResponse(res, {
       contact: {
         id: contactId,
         name: contact.name,
         currentBalance,
-        balanceType: contact.currentBalanceType,
+        balanceType: currentBalanceType,
       },
       transactions,
       summary
@@ -1684,7 +1729,6 @@ export async function getPendingTransactions(req, res) {
 
 export async function listPayments(req, res) {
   const listStartTime = Date.now();
-  console.log(`🚀 ListPayments started`);
   
   const {
     page = 1,
@@ -1708,7 +1752,6 @@ export async function listPayments(req, res) {
     // Calculate offset for pagination
     const offset = (page - 1) * limit;
     const queryBuildTime = Date.now();
-    console.log(`⏱️ Query build setup: ${queryBuildTime - listStartTime}ms`);
 
     // Build the base query - using to_char to format the date as YYYY-MM-DD
     let query = `
@@ -1855,7 +1898,6 @@ export async function listPayments(req, res) {
     const client = await pool.connect();
     try {
       const mainQueriesTime = Date.now();
-      console.log(`⏱️ Starting main queries: ${mainQueriesTime - listStartTime}ms`);
       
       // Execute both queries in parallel
       const [paymentsResult, countResult] = await Promise.all([
@@ -1864,7 +1906,6 @@ export async function listPayments(req, res) {
       ]);
       
       const afterMainQueriesTime = Date.now();
-      console.log(`📊 Main queries completed: ${afterMainQueriesTime - mainQueriesTime}ms`);
 
       const payments = paymentsResult.rows;
       const total = parseInt(countResult.rows[0].count);
@@ -1876,14 +1917,12 @@ export async function listPayments(req, res) {
       // Get allocations for payments that have them
       if (payments.length > 0) {
         const allocationsStartTime = Date.now();
-        console.log(`🔍 Starting allocations processing for ${payments.length} payments`);
         
         const paymentIdsWithAllocations = payments
           .filter(p => p.allocationCount > 0)
           .map(p => p.id);
 
         if (paymentIdsWithAllocations.length > 0) {
-          console.log(`📋 Processing allocations for ${paymentIdsWithAllocations.length} payments with allocations`);
           let allocationsQuery;
           
           if (hasNewColumns) {
@@ -1969,7 +2008,6 @@ export async function listPayments(req, res) {
           }
 
           const allocationsStartTime = Date.now();
-          console.log(`🔍 Starting allocations query for ${paymentIdsWithAllocations.length} payments`);
           
           // Use simplified allocations query for better performance
           const simplifiedAllocationsQuery = `
@@ -1993,7 +2031,6 @@ export async function listPayments(req, res) {
           const allocations = allocationsResult.rows;
           
           const allocationsQueryTime = Date.now();
-          console.log(`📋 Allocations query completed: ${allocationsQueryTime - allocationsStartTime}ms`);
 
           const paymentIdsWithCurrentBalance = allocations
             .filter(a => a.allocationType === 'current-balance')
@@ -2001,21 +2038,14 @@ export async function listPayments(req, res) {
 
           let contactBalances = {};
           if (paymentIdsWithCurrentBalance.length > 0) {
-            const paymentsWithContactsQuery = `
-              SELECT 
-                p.id as "paymentId",
-                p."contactId",
-                c."currentBalance",
-                c."currentBalanceType"
-              FROM hisab."payments" p
-              JOIN hisab."contacts" c ON p."contactId" = c."id"
-              WHERE p.id = ANY($1)
-            `;
-            const paymentsWithContactsResult = await client.query(paymentsWithContactsQuery, [paymentIdsWithCurrentBalance]);
-            paymentsWithContactsResult.rows.forEach(row => {
-              contactBalances[row.paymentId] = {
-                pendingAmount: row.currentBalance,
-                balanceType: row.currentBalanceType
+            // UPDATED: No longer query stored contact balance since we don't store it
+            // For payments with current-balance allocations, we'll calculate balance real-time if needed
+            // For now, we'll mark them as needing balance calculation
+            paymentIdsWithCurrentBalance.forEach(paymentId => {
+              contactBalances[paymentId] = {
+                pendingAmount: 0, // Will be calculated real-time if needed
+                balanceType: 'payable', // Default value
+                needsCalculation: true // Flag to indicate real-time calculation needed
               };
             });
           }
@@ -2041,11 +2071,19 @@ export async function listPayments(req, res) {
               transformedAllocation.description = 'Current Balance Settlement';
               transformedAllocation.reference = 'Current Balance';
               transformedAllocation.transactionId = 'current-balance';
+          transformedAllocation.date = payment.date; // Use payment date for current balance
               if (contactBalances[allocation.paymentId]) {
                 transformedAllocation.pendingAmount = contactBalances[allocation.paymentId].pendingAmount;
                 transformedAllocation.balanceType = contactBalances[allocation.paymentId].balanceType;
                 transformedAllocation.originalAmount = contactBalances[allocation.paymentId].pendingAmount || allocation.amount;
               }
+            } else if (allocation.allocationType === 'opening-balance') {
+              transformedAllocation.description = 'Opening Balance Settlement';
+              transformedAllocation.reference = 'Opening Balance';
+              transformedAllocation.transactionId = 'opening-balance';
+          transformedAllocation.date = payment.date; // Use payment date for opening balance
+              // Note: In list view, we don't need detailed amount calculations for performance
+              // The allocation already contains the basic amount and paidAmount data
             }
             // Simplified transformation for better performance (no complex transaction details needed for list view)
 
@@ -2064,7 +2102,6 @@ export async function listPayments(req, res) {
 
       const finalTime = Date.now();
       const totalExecutionTime = finalTime - listStartTime;
-      console.log(`🏁 ListPayments completed in ${totalExecutionTime}ms`);
 
       return successResponse(res, {
         payments,
@@ -2199,6 +2236,11 @@ async function generatePaymentPDFInternal(paymentId, companyId, userId, copies =
         case 'current-balance':
           description = 'Current Balance Settlement';
           reference = 'Current Balance';
+          break;
+          
+        case 'opening-balance':
+          description = 'Opening Balance Settlement';
+          reference = 'Opening Balance';
           break;
           
         case 'purchase':
@@ -2519,11 +2561,18 @@ async function reverseTransactionAllocations(client, existingAllocations, compan
 // Helper function to optimize new transaction allocations
 async function processNewTransactionAllocations(client, transactionAllocations, paymentId, companyId, bankAccountId) {
   const transactionIds = transactionAllocations
-    .filter(allocation => allocation.transactionId !== 'current-balance')
+    .filter(allocation => allocation.transactionId !== 'current-balance' && allocation.transactionId !== 'opening-balance')
     .map(allocation => allocation.transactionId);
+
+  console.log('🔍 processNewTransactionAllocations - DEBUG:', {
+    allAllocations: transactionAllocations.map(a => ({ id: a.transactionId, type: a.transactionType })),
+    filteredTransactionIds: transactionIds,
+    willQueryDatabase: transactionIds.length > 0
+  });
 
   let transactionsData = {};
   if (transactionIds.length > 0) {
+    console.log('🔍 About to execute database queries with transactionIds:', transactionIds);
     const [purchasesQuery, salesQuery, expensesQuery, incomesQuery] = await Promise.all([
       client.query(
         `SELECT id, "netPayable", "remaining_amount", "paid_amount" FROM hisab."purchases" WHERE id = ANY($1) AND "companyId" = $2 FOR UPDATE`,
@@ -2574,6 +2623,24 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
           balanceType
         ]
       });
+    } else if (allocation.transactionId === 'opening-balance') {
+      // ADDED: Handle opening-balance allocations
+      allocationQueries.push({
+        query: `INSERT INTO hisab."payment_allocations" (
+          "paymentId", "purchaseId", "saleId", "expenseId", "incomeId", "allocationType", "amount", "paidAmount", "balanceType", "createdAt"
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+        params: [
+          paymentId,
+          null,
+          null,
+          null,
+          null,
+          'opening-balance',
+          parseFloat(allocation.amount || 0),
+          paidAmount,
+          balanceType
+        ]
+      });
     } else if (transactionType === 'purchase') {
       const transactionKey = `purchase_${allocation.transactionId}`;
       const purchase = transactionsData[transactionKey];
@@ -2608,7 +2675,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
             null,
             null,
             'purchase',
-            parseFloat(allocation.amount || 0),
+            purchaseAmount, // Use the actual purchase amount from database, not frontend payload
             paidAmount,
             balanceType
           ]
@@ -2648,7 +2715,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
             null,
             null,
             'sale',
-            parseFloat(allocation.amount || 0),
+            paidAmount, // Store the actual paid amount, not the full transaction amount
             paidAmount,
             balanceType
           ]
@@ -2683,7 +2750,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
             allocation.transactionId,
             null,
             'expense',
-            parseFloat(allocation.amount || 0),
+            paidAmount, // Store the actual paid amount, not the full transaction amount
             paidAmount,
             balanceType
           ]
@@ -2718,7 +2785,7 @@ async function processNewTransactionAllocations(client, transactionAllocations, 
               null,
               allocation.transactionId,
               'income',
-              parseFloat(allocation.amount || 0),
+              paidAmount, // Store the actual paid amount, not the full transaction amount
               paidAmount,
               balanceType
             ]
@@ -3022,6 +3089,11 @@ export async function getPaymentForPrint(req, res) {
           reference = 'Current Balance';
           break;
           
+        case 'opening-balance':
+          description = 'Opening Balance Settlement';
+          reference = 'Opening Balance';
+          break;
+          
         case 'purchase':
           description = allocation.purchaseSupplierName ? 
             `Purchase from ${allocation.purchaseSupplierName}` : 
@@ -3116,15 +3188,6 @@ export async function getPaymentForPrint(req, res) {
     // Create template data using same function as PDF generation
     const paymentData = createPaymentReceiptTemplateData(pdfData);
 
-    console.log('🔍 getPaymentForPrint API - Final data:', {
-      paymentId: id,
-      hasAllocations: paymentData.hasAllocations,
-      allocationsCount: paymentData.allocations?.length || 0,
-      firstAllocation: paymentData.allocations?.[0],
-      companyName: paymentData.companyName,
-      customerName: paymentData.customerName
-    });
-
     return successResponse(res, {
       message: "Payment data retrieved successfully for printing",
       paymentData: paymentData
@@ -3133,6 +3196,280 @@ export async function getPaymentForPrint(req, res) {
   } catch (error) {
     console.error("Error getting payment for print:", error);
     return errorResponse(res, "Failed to get payment data for printing", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Helper function to handle opening balance updates when payments are made
+async function handleOpeningBalanceUpdates(client, transactionAllocations, contactId, companyId) {
+  try {
+    // Check if there are any opening balance allocations
+    const openingBalanceAllocations = transactionAllocations.filter(
+      allocation => allocation.transactionId === 'opening-balance'
+    );
+
+    if (openingBalanceAllocations.length === 0) {
+      return; // No opening balance allocations
+    }
+
+    // Calculate total payment against opening balance
+    const totalOpeningBalancePayment = openingBalanceAllocations.reduce(
+      (sum, allocation) => sum + parseFloat(allocation.paidAmount || 0), 
+      0
+    );
+
+    if (totalOpeningBalancePayment <= 0) {
+      return; // No actual payment amount
+    }
+
+    // Get current opening balance
+    const contactResult = await client.query(
+      `SELECT "openingBalance", "openingBalanceType" 
+       FROM hisab."contacts" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [contactId, companyId]
+    );
+
+    if (contactResult.rows.length === 0) {
+      console.error(`Contact ${contactId} not found for opening balance update`);
+      return;
+    }
+
+    const contact = contactResult.rows[0];
+    const currentOpeningBalance = parseFloat(contact.openingBalance || 0);
+    const openingBalanceType = contact.openingBalanceType;
+
+    if (currentOpeningBalance <= 0) {
+      return;
+    }
+
+    // Calculate new opening balance after payment
+    const newOpeningBalance = Math.max(0, currentOpeningBalance - totalOpeningBalancePayment);
+
+    // Update the opening balance in contacts table
+    await client.query(
+      `UPDATE hisab."contacts" 
+       SET "openingBalance" = $1, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $2 AND "companyId" = $3`,
+      [newOpeningBalance, contactId, companyId]
+    );
+
+
+    // Note: We don't change the openingBalanceType even when balance becomes 0
+    // because the database constraint only allows 'payable' or 'receivable'
+    // The balance amount of 0 is sufficient to indicate no remaining balance
+    if (newOpeningBalance === 0) {
+    }
+
+  } catch (error) {
+    console.error('Error updating opening balance:', error);
+    throw error; // Re-throw to trigger transaction rollback
+  }
+}
+
+// Helper function to handle opening balance updates in edit scenarios
+async function handleOpeningBalanceUpdateForEdit(client, oldAllocations, newAllocations, contactId, companyId) {
+  try {
+    // Calculate old opening balance payment amount
+    const oldOpeningBalanceAllocations = oldAllocations.filter(
+      allocation => allocation.allocationType === 'opening-balance'
+    );
+    const oldOpeningBalancePayment = oldOpeningBalanceAllocations.reduce(
+      (sum, allocation) => sum + parseFloat(allocation.paidAmount || 0), 
+      0
+    );
+
+    // Calculate new opening balance payment amount
+    const newOpeningBalanceAllocations = newAllocations.filter(
+      allocation => allocation.transactionId === 'opening-balance'
+    );
+    const newOpeningBalancePayment = newOpeningBalanceAllocations.reduce(
+      (sum, allocation) => sum + parseFloat(allocation.paidAmount || 0), 
+      0
+    );
+
+    // Calculate the difference
+    const paymentDifference = newOpeningBalancePayment - oldOpeningBalancePayment;
+
+    // If no change in opening balance payments, return
+    if (paymentDifference === 0) {
+      return;
+    }
+
+    // Get current opening balance
+    const contactResult = await client.query(
+      `SELECT "openingBalance", "openingBalanceType" 
+       FROM hisab."contacts" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [contactId, companyId]
+    );
+
+    if (contactResult.rows.length === 0) {
+      console.error(`Contact ${contactId} not found for opening balance update`);
+      return;
+    }
+
+    const contact = contactResult.rows[0];
+    const currentOpeningBalance = parseFloat(contact.openingBalance || 0);
+
+    // Apply the difference to the opening balance
+    // If paymentDifference is positive, more payment is being made (reduce balance)
+    // If paymentDifference is negative, less payment is being made (increase balance)
+    const newOpeningBalance = Math.max(0, currentOpeningBalance - paymentDifference);
+
+    // Update the opening balance in contacts table
+    await client.query(
+      `UPDATE hisab."contacts" 
+       SET "openingBalance" = $1, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $2 AND "companyId" = $3`,
+      [newOpeningBalance, contactId, companyId]
+    );
+
+    console.log(`🔄 Opening balance updated for contact ${contactId}:`, {
+      oldBalance: currentOpeningBalance,
+      newBalance: newOpeningBalance,
+      paymentDifference,
+      oldPayment: oldOpeningBalancePayment,
+      newPayment: newOpeningBalancePayment
+    });
+
+  } catch (error) {
+    console.error('Error updating opening balance for edit:', error);
+    throw error; // Re-throw to trigger transaction rollback
+  }
+}
+
+// Helper function to handle opening balance reversals when payments are deleted
+async function handleOpeningBalanceReversal(client, allocations, contactId, companyId) {
+  try {
+    // Check if there are any opening balance allocations to reverse
+    const openingBalanceAllocations = allocations.filter(
+      allocation => allocation.allocationType === 'opening-balance'
+    );
+
+    if (openingBalanceAllocations.length === 0) {
+      return; // No opening balance allocations to reverse
+    }
+
+    // Calculate total payment that was made against opening balance
+    const totalOpeningBalancePayment = openingBalanceAllocations.reduce(
+      (sum, allocation) => sum + parseFloat(allocation.paidAmount || 0), 
+      0
+    );
+
+    if (totalOpeningBalancePayment <= 0) {
+      return; // No actual payment amount to reverse
+    }
+
+    // Get current opening balance
+    const contactResult = await client.query(
+      `SELECT "openingBalance", "openingBalanceType" 
+       FROM hisab."contacts" 
+       WHERE "id" = $1 AND "companyId" = $2`,
+      [contactId, companyId]
+    );
+
+    if (contactResult.rows.length === 0) {
+      console.error(`Contact ${contactId} not found for opening balance reversal`);
+      return;
+    }
+
+    const contact = contactResult.rows[0];
+    const currentOpeningBalance = parseFloat(contact.openingBalance || 0);
+    const openingBalanceType = contact.openingBalanceType;
+
+    // Calculate new opening balance after reversal (add back the payment amount)
+    const newOpeningBalance = currentOpeningBalance + totalOpeningBalancePayment;
+
+    // Update the opening balance in contacts table
+    await client.query(
+      `UPDATE hisab."contacts" 
+       SET "openingBalance" = $1, "updatedAt" = CURRENT_TIMESTAMP
+       WHERE "id" = $2 AND "companyId" = $3`,
+      [newOpeningBalance, contactId, companyId]
+    );
+
+    // If the opening balance was previously set to 'none' or had no type, restore it
+    if (!openingBalanceType || openingBalanceType === 'none') {
+      // We need to determine the correct balance type based on the allocation
+      const allocationBalanceType = openingBalanceAllocations[0].balanceType || 'receivable';
+      await client.query(
+        `UPDATE hisab."contacts" 
+         SET "openingBalanceType" = $1, "updatedAt" = CURRENT_TIMESTAMP
+         WHERE "id" = $2 AND "companyId" = $3`,
+        [allocationBalanceType, contactId, companyId]
+      );
+    }
+
+  } catch (error) {
+    console.error('Error reversing opening balance:', error);
+    throw error; // Re-throw to trigger transaction rollback
+  }
+}
+
+export async function getPaymentsForTransaction(req, res) {
+  const { transactionType, transactionId } = req.params;
+  const { companyId } = req.currentUser || {};
+
+  if (!companyId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  if (!transactionType || !transactionId) {
+    return errorResponse(res, "Transaction type and ID are required", 400);
+  }
+
+  // Map transaction types to their respective columns
+  const transactionColumnMap = {
+    purchase: 'purchaseId',
+    sale: 'saleId',
+    expense: 'expenseId',
+    income: 'incomeId'
+  };
+
+  const column = transactionColumnMap[transactionType];
+  if (!column) {
+    return errorResponse(res, "Invalid transaction type", 400);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    // Get payments and allocations for this transaction
+    const paymentsQuery = `
+      SELECT 
+        p.id,
+        p."paymentNumber",
+        p.date,
+        p.amount,
+        p."paymentType",
+        p.description,
+        p."adjustmentType",
+        p."adjustmentValue",
+        pa."paidAmount",
+        pa."balanceType",
+        c.name as "contactName"
+      FROM hisab."payment_allocations" pa
+      JOIN hisab."payments" p ON pa."paymentId" = p.id
+      LEFT JOIN hisab."contacts" c ON p."contactId" = c.id
+      WHERE pa."${column}" = $1 
+        AND p."companyId" = $2 
+        AND p."deletedAt" IS NULL
+      ORDER BY p.date DESC, p."createdAt" DESC
+    `;
+
+    const result = await client.query(paymentsQuery, [transactionId, companyId]);
+
+    return successResponse(res, {
+      payments: result.rows,
+      transactionType,
+      transactionId
+    });
+
+  } catch (error) {
+    console.error("Error getting payments for transaction:", error);
+    return errorResponse(res, "Failed to get payments for transaction", 500);
   } finally {
     client.release();
   }

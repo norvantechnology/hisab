@@ -15,76 +15,77 @@ export async function getBusinessAnalytics(req, res) {
   const client = await pool.connect();
 
   try {
-    // Simple parameterized queries
+    // Build dynamic query conditions with proper parameter management
     let params = [companyId];
     let paramIndex = 1;
 
-    // 1. Financial Summary
+    // Build conditions for each table
     let salesConditions = 'WHERE "companyId" = $1 AND "deletedAt" IS NULL';
     let purchasesConditions = 'WHERE "companyId" = $1 AND "deletedAt" IS NULL';
     let expensesConditions = 'WHERE "companyId" = $1';
     let incomesConditions = 'WHERE "companyId" = $1';
 
+    // Add date filters
     if (startDate) {
       paramIndex++;
+      params.push(startDate);
       salesConditions += ` AND "invoiceDate" >= $${paramIndex}`;
       purchasesConditions += ` AND "invoiceDate" >= $${paramIndex}`;
       expensesConditions += ` AND "date" >= $${paramIndex}`;
       incomesConditions += ` AND "date" >= $${paramIndex}`;
-      params.push(startDate);
     }
 
     if (endDate) {
       paramIndex++;
+      params.push(endDate);
       salesConditions += ` AND "invoiceDate" <= $${paramIndex}`;
       purchasesConditions += ` AND "invoiceDate" <= $${paramIndex}`;
       expensesConditions += ` AND "date" <= $${paramIndex}`;
       incomesConditions += ` AND "date" <= $${paramIndex}`;
-      params.push(endDate);
     }
 
     if (status && status !== 'all') {
       paramIndex++;
+      params.push(status);
       salesConditions += ` AND status = $${paramIndex}`;
       purchasesConditions += ` AND status = $${paramIndex}`;
       expensesConditions += ` AND status = $${paramIndex}`;
       incomesConditions += ` AND status = $${paramIndex}`;
-      params.push(status);
     }
 
     const financialSummaryQuery = `
       WITH sales_summary AS (
         SELECT 
-          COALESCE(SUM("netReceivable"), 0) as total_sales,
-          COALESCE(SUM("paid_amount"), 0) as sales_received,
-          COALESCE(SUM("remaining_amount"), 0) as sales_pending,
+          COALESCE(SUM(COALESCE("netReceivable", 0)), 0) as total_sales,
+          COALESCE(SUM(COALESCE("paid_amount", 0)), 0) as sales_received,
+          COALESCE(SUM(COALESCE("remaining_amount", 0)), 0) as sales_pending,
           COUNT(id) as total_sales_count
         FROM hisab.sales
         ${salesConditions}
       ),
       purchase_summary AS (
         SELECT 
-          COALESCE(SUM("netPayable"), 0) as total_purchases,
-          COALESCE(SUM("paid_amount"), 0) as purchases_paid,
-          COALESCE(SUM("remaining_amount"), 0) as purchases_pending,
+          COALESCE(SUM(COALESCE("netPayable", 0)), 0) as total_purchases,
+          COALESCE(SUM(COALESCE("paid_amount", 0)), 0) as purchases_paid,
+          COALESCE(SUM(COALESCE("remaining_amount", 0)), 0) as purchases_pending,
           COUNT(id) as total_purchase_count
         FROM hisab.purchases
         ${purchasesConditions}
       ),
       expense_summary AS (
         SELECT 
-          COALESCE(SUM(amount), 0) as total_expenses,
-          COALESCE(SUM(paid_amount), 0) as expenses_paid,
-          COALESCE(SUM(remaining_amount), 0) as expenses_pending,
+          COALESCE(SUM(COALESCE(amount, 0)), 0) as total_expenses,
+          COALESCE(SUM(COALESCE(paid_amount, 0)), 0) as expenses_paid,
+          COALESCE(SUM(COALESCE(remaining_amount, 0)), 0) as expenses_pending,
           COUNT(id) as total_expense_count
         FROM hisab.expenses
         ${expensesConditions}
       ),
       income_summary AS (
         SELECT 
-          COALESCE(SUM(amount), 0) as total_incomes,
-          COALESCE(SUM(paid_amount), 0) as incomes_received,
-          COALESCE(SUM(remaining_amount), 0) as incomes_pending,
+          COALESCE(SUM(COALESCE(amount, 0)), 0) as total_incomes,
+          COALESCE(SUM(COALESCE(paid_amount, 0)), 0) as incomes_received,
+          COALESCE(SUM(COALESCE(remaining_amount, 0)), 0) as incomes_pending,
           COUNT(id) as total_income_count
         FROM hisab.incomes
         ${incomesConditions}
@@ -111,7 +112,38 @@ export async function getBusinessAnalytics(req, res) {
       FROM sales_summary s, purchase_summary p, expense_summary e, income_summary i
     `;
 
+    // Quick validation query to check if there are any records
+    const validationResult = await client.query(`
+      SELECT 
+        COUNT(*) as total_records,
+        SUM(CASE WHEN "netReceivable" IS NOT NULL THEN 1 ELSE 0 END) as sales_with_receivable,
+        SUM(CASE WHEN "netPayable" IS NOT NULL THEN 1 ELSE 0 END) as purchases_with_payable
+      FROM (
+        SELECT "netReceivable", NULL as "netPayable" FROM hisab."sales" WHERE "companyId" = $1 AND "deletedAt" IS NULL
+        UNION ALL
+        SELECT NULL as "netReceivable", "netPayable" FROM hisab."purchases" WHERE "companyId" = $1 AND "deletedAt" IS NULL
+      ) combined
+    `, [companyId]);
+
     // 2. Top Products - Updated to use correct table and column names
+    let productFilters = '';
+    if (startDate || endDate || status) {
+      productFilters = `AND s."companyId" = $1`;
+      if (startDate) {
+        productFilters += ` AND s."invoiceDate" >= $2`;
+      }
+      if (endDate) {
+        const endDateParamIndex = startDate ? 3 : 2;
+        productFilters += ` AND s."invoiceDate" <= $${endDateParamIndex}`;
+      }
+      if (status && status !== 'all') {
+        let statusParamIndex = 2;
+        if (startDate) statusParamIndex++;
+        if (endDate) statusParamIndex++;
+        productFilters += ` AND s.status = $${statusParamIndex}`;
+      }
+    }
+
     const topProductsQuery = `
       SELECT 
         p.id,
@@ -124,11 +156,7 @@ export async function getBusinessAnalytics(req, res) {
         COALESCE(SUM(si."lineTotal"), 0) as total_sales_amount
       FROM hisab."products" p
       LEFT JOIN hisab.sale_items si ON p.id = si."productId"
-      LEFT JOIN hisab.sales s ON si."saleId" = s.id AND s."deletedAt" IS NULL ${startDate || endDate || status ? `
-        AND s."companyId" = $1 
-        ${startDate ? `AND s."invoiceDate" >= $${params.indexOf(startDate) + 1}` : ''}
-        ${endDate ? `AND s."invoiceDate" <= $${params.indexOf(endDate) + 1}` : ''}
-        ${status && status !== 'all' ? `AND s.status = $${params.indexOf(status) + 1}` : ''}` : ''}
+      LEFT JOIN hisab.sales s ON si."saleId" = s.id AND s."deletedAt" IS NULL ${productFilters}
       WHERE p."companyId" = $1 AND p."deletedAt" IS NULL
       GROUP BY p.id, p.name, p."itemCode", p.rate
       HAVING COALESCE(SUM(si."lineTotal"), 0) > 0
@@ -137,6 +165,24 @@ export async function getBusinessAnalytics(req, res) {
     `;
 
     // 3. Top Customers
+    let customerFilters = '';
+    if (startDate || endDate || status) {
+      customerFilters = `AND s."companyId" = $1`;
+      if (startDate) {
+        customerFilters += ` AND s."invoiceDate" >= $2`;
+      }
+      if (endDate) {
+        const endDateParamIndex = startDate ? 3 : 2;
+        customerFilters += ` AND s."invoiceDate" <= $${endDateParamIndex}`;
+      }
+      if (status && status !== 'all') {
+        let statusParamIndex = 2;
+        if (startDate) statusParamIndex++;
+        if (endDate) statusParamIndex++;
+        customerFilters += ` AND s.status = $${statusParamIndex}`;
+      }
+    }
+
     const topCustomersQuery = `
       SELECT 
         c.id,
@@ -146,11 +192,7 @@ export async function getBusinessAnalytics(req, res) {
         COALESCE(SUM(s."remaining_amount"), 0) as pending_amount,
         COUNT(s.id) as invoice_count
       FROM hisab.contacts c
-      LEFT JOIN hisab.sales s ON c.id = s."contactId" AND s."deletedAt" IS NULL ${startDate || endDate || status ? `
-        AND s."companyId" = $1 
-        ${startDate ? `AND s."invoiceDate" >= $${params.indexOf(startDate) + 1}` : ''}
-        ${endDate ? `AND s."invoiceDate" <= $${params.indexOf(endDate) + 1}` : ''}
-        ${status && status !== 'all' ? `AND s.status = $${params.indexOf(status) + 1}` : ''}` : ''}
+      LEFT JOIN hisab.sales s ON c.id = s."contactId" AND s."deletedAt" IS NULL ${customerFilters}
       WHERE c."companyId" = $1 
         AND c."contactType" = 'customer'
         AND c."deletedAt" IS NULL
@@ -174,7 +216,29 @@ export async function getBusinessAnalytics(req, res) {
       ORDER BY ba."currentBalance" DESC
     `;
 
-    // 5. Outstanding Payments
+    // 5. Outstanding Payments - Use same condition building as other queries
+    let outstandingSalesConditions = 'WHERE s."companyId" = $1 AND s."deletedAt" IS NULL AND s."remaining_amount" > 0';
+    let outstandingPurchasesConditions = 'WHERE p."companyId" = $1 AND p."deletedAt" IS NULL AND p."remaining_amount" > 0';
+    
+    if (startDate) {
+      outstandingSalesConditions += ` AND s."invoiceDate" >= $2`;
+      outstandingPurchasesConditions += ` AND p."invoiceDate" >= $2`;
+    }
+    
+    if (endDate) {
+      const endDateParamIndex = startDate ? 3 : 2;
+      outstandingSalesConditions += ` AND s."invoiceDate" <= $${endDateParamIndex}`;
+      outstandingPurchasesConditions += ` AND p."invoiceDate" <= $${endDateParamIndex}`;
+    }
+    
+    if (status && status !== 'all') {
+      let statusParamIndex = 2;
+      if (startDate) statusParamIndex++;
+      if (endDate) statusParamIndex++;
+      outstandingSalesConditions += ` AND s.status = $${statusParamIndex}`;
+      outstandingPurchasesConditions += ` AND p.status = $${statusParamIndex}`;
+    }
+
     const outstandingQuery = `
       WITH outstanding_sales AS (
         SELECT 
@@ -188,10 +252,7 @@ export async function getBusinessAnalytics(req, res) {
           (CURRENT_DATE - s."invoiceDate"::date) as days_overdue
         FROM hisab.sales s
         LEFT JOIN hisab.contacts c ON s."contactId" = c.id
-        WHERE s."companyId" = $1 AND s."deletedAt" IS NULL AND s."remaining_amount" > 0
-          ${startDate ? `AND s."invoiceDate" >= $${params.indexOf(startDate) + 1}` : ''}
-          ${endDate ? `AND s."invoiceDate" <= $${params.indexOf(endDate) + 1}` : ''}
-          ${status && status !== 'all' ? `AND s.status = $${params.indexOf(status) + 1}` : ''}
+        ${outstandingSalesConditions}
       ),
       outstanding_purchases AS (
         SELECT 
@@ -205,10 +266,7 @@ export async function getBusinessAnalytics(req, res) {
           (CURRENT_DATE - p."invoiceDate"::date) as days_overdue
         FROM hisab.purchases p
         LEFT JOIN hisab.contacts c ON p."contactId" = c.id
-        WHERE p."companyId" = $1 AND p."deletedAt" IS NULL AND p."remaining_amount" > 0
-          ${startDate ? `AND p."invoiceDate" >= $${params.indexOf(startDate) + 1}` : ''}
-          ${endDate ? `AND p."invoiceDate" <= $${params.indexOf(endDate) + 1}` : ''}
-          ${status && status !== 'all' ? `AND p.status = $${params.indexOf(status) + 1}` : ''}
+        ${outstandingPurchasesConditions}
       )
       SELECT * FROM outstanding_sales
       UNION ALL
@@ -232,8 +290,37 @@ export async function getBusinessAnalytics(req, res) {
       client.query(outstandingQuery, params)
     ]);
 
+    // Validate and format financial data
+    const financialData = financialResult.rows[0] || {};
+    
+    // Ensure all numeric values are properly parsed
+    const formattedFinancialData = {
+      total_sales: parseFloat(financialData.total_sales || 0),
+      sales_received: parseFloat(financialData.sales_received || 0),
+      sales_pending: parseFloat(financialData.sales_pending || 0),
+      total_sales_count: parseInt(financialData.total_sales_count || 0),
+      
+      total_purchases: parseFloat(financialData.total_purchases || 0),
+      purchases_paid: parseFloat(financialData.purchases_paid || 0),
+      purchases_pending: parseFloat(financialData.purchases_pending || 0),
+      total_purchase_count: parseInt(financialData.total_purchase_count || 0),
+      
+      total_expenses: parseFloat(financialData.total_expenses || 0),
+      expenses_paid: parseFloat(financialData.expenses_paid || 0),
+      expenses_pending: parseFloat(financialData.expenses_pending || 0),
+      total_expense_count: parseInt(financialData.total_expense_count || 0),
+      
+      total_incomes: parseFloat(financialData.total_incomes || 0),
+      incomes_received: parseFloat(financialData.incomes_received || 0),
+      incomes_pending: parseFloat(financialData.incomes_pending || 0),
+      total_income_count: parseInt(financialData.total_income_count || 0),
+      
+      gross_profit: parseFloat(financialData.gross_profit || 0),
+      net_cash_flow: parseFloat(financialData.net_cash_flow || 0)
+    };
+
     const analytics = {
-      financialSummary: financialResult.rows[0] || {},
+      financialSummary: formattedFinancialData,
       topProducts: productsResult.rows || [],
       topCustomers: customersResult.rows || [],
       bankAccounts: bankResult.rows || [],
@@ -957,7 +1044,19 @@ export async function getDashboardInsights(req, res) {
     // Generate recommendations based on data
     const recommendations = [];
     
-    if (parseFloat(insights.sales_growth_percentage) < 0) {
+    // Check if insights data exists before accessing properties
+    if (!insights) {
+      console.warn('No insights data found for company:', companyId);
+      return res.json({
+        success: true,
+        data: {
+          recommendations: [],
+          insights: {}
+        }
+      });
+    }
+    
+    if (insights.sales_growth_percentage && parseFloat(insights.sales_growth_percentage) < 0) {
       recommendations.push({
         type: 'warning',
         title: 'Sales Declining',
@@ -965,7 +1064,7 @@ export async function getDashboardInsights(req, res) {
         action: 'Review Sales Performance',
         icon: '📉'
       });
-    } else if (parseFloat(insights.sales_growth_percentage) > 10) {
+    } else if (insights.sales_growth_percentage && parseFloat(insights.sales_growth_percentage) > 10) {
       recommendations.push({
         type: 'success',
         title: 'Strong Sales Growth',

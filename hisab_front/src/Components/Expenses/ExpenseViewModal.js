@@ -1,8 +1,55 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Button, Badge, Row, Col, Card, CardBody } from 'reactstrap';
 import { RiWalletLine, RiBankLine, RiUser3Line, RiCalendarLine, RiAlarmWarningLine, RiArrowRightLine, RiFileTextLine, RiPriceTag3Line } from 'react-icons/ri';
+import { getPaymentsForTransaction, getPaymentDetails } from '../../services/payment';
+import PaymentViewModal from '../Payments/PaymentViewModal';
+import { toast } from 'react-toastify';
 
 const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
+    const [relatedPayments, setRelatedPayments] = useState([]);
+    const [paymentsLoading, setPaymentsLoading] = useState(false);
+    const [selectedPayment, setSelectedPayment] = useState(null);
+    const [showPaymentModal, setShowPaymentModal] = useState(false);
+
+    useEffect(() => {
+        if (isOpen && expense?.id) {
+            fetchRelatedPayments();
+        }
+    }, [isOpen, expense?.id]);
+
+    const fetchRelatedPayments = async () => {
+        if (!expense?.id) return;
+        
+        setPaymentsLoading(true);
+        try {
+            const response = await getPaymentsForTransaction('expense', expense.id);
+            if (response.success) {
+                setRelatedPayments(response.payments || []);
+            }
+        } catch (error) {
+            console.error('Error fetching related payments:', error);
+            setRelatedPayments([]);
+        } finally {
+            setPaymentsLoading(false);
+        }
+    };
+
+    const handlePaymentClick = async (payment) => {
+        try {
+            // Fetch complete payment details including allocations
+            const response = await getPaymentDetails(payment.id);
+            if (response.success) {
+                setSelectedPayment(response); // Use flat response structure
+                setShowPaymentModal(true);
+            } else {
+                toast.error('Failed to load payment details');
+            }
+        } catch (error) {
+            console.error('Error fetching payment details:', error);
+            toast.error('Failed to load payment details');
+        }
+    };
+
     const getPaymentMethodDisplay = () => {
         const { bankAccountName, contactName, status } = expense || {};
         
@@ -126,6 +173,7 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
     };
 
     return (
+        <>
         <Modal isOpen={isOpen} toggle={toggle} size="lg">
             <ModalHeader toggle={toggle} className="bg-light">
                 <div className="d-flex align-items-center">
@@ -254,11 +302,77 @@ const ExpenseViewModal = ({ isOpen, toggle, expense }) => {
                         </Card>
                     </div>
                 )}
+
+                {/* Payment Details Section - Always show */}
+                <Card className="border-0 shadow-sm mb-3">
+                    <CardBody>
+                        <h6 className="card-title text-danger mb-3 d-flex align-items-center">
+                            <RiWalletLine className="me-2" />
+                            Payment Details
+                        </h6>
+                        {paymentsLoading ? (
+                            <div className="text-center py-2">
+                                <div className="spinner-border spinner-border-sm text-danger" role="status">
+                                    <span className="visually-hidden">Loading...</span>
+                                </div>
+                                <small className="text-muted ms-2">Loading payments...</small>
+                            </div>
+                        ) : relatedPayments.length > 0 ? (
+                            <div className="payment-list">
+                                {relatedPayments.map((payment, index) => (
+                                    <div 
+                                        key={payment.id} 
+                                        className="d-flex justify-content-between align-items-center py-2 px-2 border rounded mb-2 bg-white cursor-pointer"
+                                        onClick={() => handlePaymentClick(payment)}
+                                        style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+                                        onMouseEnter={(e) => e.target.closest('div').style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'}
+                                        onMouseLeave={(e) => e.target.closest('div').style.boxShadow = 'none'}
+                                    >
+                                        <div className="flex-grow-1">
+                                            <div className="fw-medium small text-danger">{payment.paymentNumber}</div>
+                                            <div className="text-muted small">{new Date(payment.date).toLocaleDateString()}</div>
+                                        </div>
+                                        <div className="text-end me-2">
+                                            <div className="fw-bold small text-danger">₹{parseFloat(payment.paidAmount || 0).toFixed(2)}</div>
+                                            {payment.adjustmentType && payment.adjustmentType !== 'none' && (
+                                                <div className="text-muted small">
+                                                    {payment.adjustmentType === 'extra_receipt' ? '+' : 
+                                                     payment.adjustmentType === 'discount' ? '-' : '+'}
+                                                    ₹{parseFloat(payment.adjustmentValue || 0).toFixed(2)}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <RiArrowRightLine className="text-muted" size={14} />
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="text-center py-3 text-muted">
+                                <RiWalletLine size={24} className="mb-2 opacity-50" />
+                                <div>No payments found</div>
+                                <small>This expense has not been paid through the payment module</small>
+                            </div>
+                        )}
+                    </CardBody>
+                </Card>
             </ModalBody>
             <ModalFooter className="bg-light">
                 <Button color="secondary" onClick={toggle}>Close</Button>
             </ModalFooter>
         </Modal>
+
+        {/* Payment View Modal */}
+        {selectedPayment && (
+            <PaymentViewModal
+                isOpen={showPaymentModal}
+                toggle={() => {
+                    setShowPaymentModal(false);
+                    setSelectedPayment(null);
+                }}
+                payment={selectedPayment}
+            />
+        )}
+        </>
     );
 };
 

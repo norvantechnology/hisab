@@ -1,6 +1,11 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse } from "../utils/index.js";
-import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
+import { 
+  handlePaymentAllocationsOnTransactionDelete, 
+  checkPaymentAllocationConflict,
+  updatePaymentAllocations,
+  calculateAmountsAfterAdjustment 
+} from "../utils/paymentAllocationUtils.js";
 
 export async function createExpenseCategory(req, res) {
   const { name } = req.body;
@@ -398,16 +403,54 @@ export async function deleteExpense(req, res) {
 
     const { bankAccountId, contactId, amount, status } = verifyResult.rows[0];
 
-    // Revert bank account balance if bankAccountId is present
-    // This covers both direct bank payments and contact payments that were paid
-    if (bankAccountId) {
-      await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" + $1,
-             "updatedAt" = CURRENT_TIMESTAMP
-         WHERE "id" = $2`,
-        [amount, bankAccountId]
-      );
+    // Handle payment allocations if they exist, otherwise handle direct bank adjustment
+    // First check if there are any payment allocations
+    const checkAllocationsQuery = await client.query(
+      `SELECT COUNT(*) as count FROM hisab."payment_allocations" pa
+       JOIN hisab."payments" p ON pa."paymentId" = p.id
+       WHERE pa."expenseId" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL`,
+      [id, companyId]
+    );
+    
+    const hasPaymentAllocations = parseInt(checkAllocationsQuery.rows[0].count) > 0;
+    
+    if (hasPaymentAllocations) {
+      // Expense has payment allocations - use centralized function
+      await handlePaymentAllocationsOnTransactionDelete(client, 'expense', id, companyId, userId);
+    } else {
+      // Direct bank expense (no payment allocations) - manually reverse bank balance
+      
+      if (bankAccountId && status === 'paid') {
+        // First, fetch current bank balance
+        const currentBankBalanceResult = await client.query(
+          `SELECT id, "currentBalance", "accountName" FROM hisab."bankAccounts"
+           WHERE "id" = $1 AND "companyId" = $2`,
+          [bankAccountId, companyId]
+        );
+        
+        if (currentBankBalanceResult.rows.length === 0) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, "Bank account not found", 404);
+        }
+        
+        const currentBankBalance = parseFloat(currentBankBalanceResult.rows[0].currentBalance);
+        const adjustmentAmount = parseFloat(amount);
+        const newBankBalance = currentBankBalance + adjustmentAmount; // Add for expense deletion
+        
+
+        
+        // Then, update bank balance
+        const bankUpdateResult = await client.query(
+          `UPDATE hisab."bankAccounts"
+           SET "currentBalance" = $1,
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $2 AND "companyId" = $3
+           RETURNING id, "currentBalance", "accountName"`,
+          [newBankBalance, bankAccountId, companyId]
+        );
+        
+
+      }
     }
 
     const deleteQuery = `
@@ -417,14 +460,13 @@ export async function deleteExpense(req, res) {
     `;
     const deletedExpense = await client.query(deleteQuery, [id]);
 
+
+
     await client.query("COMMIT");
 
     if (deletedExpense.rows.length === 0) {
       return errorResponse(res, "Failed to delete expense", 500);
     }
-
-    // CRITICAL: Handle payment allocations before deleting
-    await handlePaymentAllocationsOnTransactionDelete(client, 'expense', id, companyId, userId);
 
     return successResponse(res, {
       message: "Expense deleted successfully",
@@ -450,11 +492,22 @@ export async function updateExpense(req, res) {
     id,
     bankAccountId,
     contactId,
-    status
+    status,
+    paymentAdjustmentChoice // New parameter to handle payment adjustments
   } = req.body;
 
   const userId = req.currentUser?.id;
   const companyId = req.currentUser?.companyId;
+
+  // Clean up empty string values to null for database compatibility
+  const cleanBankAccountId = bankAccountId === '' ? null : bankAccountId;
+  const cleanContactId = contactId === '' ? null : contactId;
+  const cleanCategoryId = categoryId === '' ? null : categoryId;
+
+  // Validate status if provided - reject 'partial' status completely
+  if (status && !['paid', 'pending'].includes(status)) {
+    return errorResponse(res, `Invalid status '${status}'. Only 'paid' and 'pending' are allowed.`, 400);
+  }
 
   if (!userId || !companyId) {
     return errorResponse(res, "Unauthorized access - user or company not identified", 401);
@@ -503,13 +556,42 @@ export async function updateExpense(req, res) {
     const finalNotes = notes !== undefined ? notes : oldNotes;
     const finalDueDate = dueDate !== undefined ? new Date(dueDate).toISOString().split('T')[0] : oldDueDate;
     
-    // Allow updating payment method fields
-    const finalBankAccountId = bankAccountId !== undefined ? bankAccountId : oldBankAccountId;
-    const finalContactId = contactId !== undefined ? contactId : oldContactId;
+    // Check for payment allocation conflicts using utility function
+    const conflictResult = await checkPaymentAllocationConflict(
+      client, 
+      'expense', 
+      id, 
+      companyId, 
+      oldAmount, 
+      finalAmount, 
+      paymentAdjustmentChoice
+    );
+
+    // If payment adjustment is needed but no choice provided, return conflict info
+    if (conflictResult.requiresPaymentAdjustment) {
+      await client.query("ROLLBACK");
+      
+      return res.status(409).json({
+        success: false,
+        message: "Payment adjustment required",
+        requiresPaymentAdjustment: true,
+        paymentInfo: conflictResult.paymentInfo
+      });
+    }
+
+    const { hasPaymentAllocations, paymentAdjustmentMade, allocations } = conflictResult;
+    
+    // Allow updating payment method fields (use cleaned values)
+    const finalBankAccountId = cleanBankAccountId !== undefined ? cleanBankAccountId : oldBankAccountId;
+    const finalContactId = cleanContactId !== undefined ? cleanContactId : oldContactId;
     
     // Determine status based on payment method combination
     let finalStatus = oldStatus;
     if (status !== undefined) {
+      // Only allow valid statuses ('paid' and 'pending' only)
+      if (!['paid', 'pending'].includes(status)) {
+        return errorResponse(res, "Status must be either 'paid' or 'pending'", 400);
+      }
       finalStatus = status;
     } else {
       // Auto-determine status based on payment method
@@ -525,17 +607,32 @@ export async function updateExpense(req, res) {
       }
     }
 
-    // Calculate new payment amounts based on status
-    let finalRemainingAmount = oldRemainingAmount;
-    let finalPaidAmount = oldPaidAmount;
+    // Calculate amounts using utility function
+    const amountResult = calculateAmountsAfterAdjustment(
+      finalAmount,
+      oldPaidAmount,
+      paymentAdjustmentChoice,
+      paymentAdjustmentMade
+    );
 
-    if (finalStatus === 'paid') {
-      finalRemainingAmount = 0;
-      finalPaidAmount = parseFloat(finalAmount);
-    } else if (finalStatus === 'pending') {
-      finalRemainingAmount = parseFloat(finalAmount);
-      finalPaidAmount = 0;
-    }
+    let { remainingAmount: finalRemainingAmount, paidAmount: finalPaidAmount } = amountResult;
+    
+    // Always use the calculated status from utility function
+    let finalStatusToUse = amountResult.status;
+
+    console.log('📊 Expense status calculation debug:', {
+      paymentAdjustmentMade,
+      amountResultStatus: amountResult.status,
+      originalFinalStatus: finalStatus,
+      finalStatusToUse,
+      finalRemainingAmount,
+      finalPaidAmount,
+      finalAmount,
+      oldPaidAmount,
+      shouldBePending: finalRemainingAmount > 0
+    });
+        
+    // Payment allocation updates will be handled separately if needed
 
     // Verify category if it's being updated
     if (categoryId !== undefined) {
@@ -578,27 +675,39 @@ export async function updateExpense(req, res) {
       }
     }
 
-    // Handle bank account balance updates
-    // First, reverse the old bank account balance if it existed and was paid
-    if (oldBankAccountId && oldStatus === 'paid') {
-      await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" + $1,
-             "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [oldAmount, oldBankAccountId]
+    // Handle bank account balance updates (only if no payment adjustment was made)
+    if (!paymentAdjustmentMade) {
+      // Check if this expense has payment allocations (payment module transaction)
+      const hasPaymentAllocations = await client.query(
+        `SELECT COUNT(*) as count FROM hisab."payment_allocations" pa
+         JOIN hisab."payments" p ON pa."paymentId" = p.id
+         WHERE pa."expenseId" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL`,
+        [id, companyId]
       );
-    }
+      
+      const isPaymentModuleTransaction = parseInt(hasPaymentAllocations.rows[0].count) > 0;
+      
+      // First, reverse the old bank account balance if it was a direct bank expense (not payment module)
+      if (oldBankAccountId && oldStatus === 'paid' && !isPaymentModuleTransaction) {
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" + $1,
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [oldAmount, oldBankAccountId]
+        );
+      }
 
-    // Then, subtract from the new bank account balance if it's a paid transaction
-    if (finalBankAccountId && finalStatus === 'paid') {
-      await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" - $1,
-             "updatedAt" = CURRENT_TIMESTAMP
-         WHERE id = $2`,
-        [finalAmount, finalBankAccountId]
-      );
+      // Then, subtract from the new bank account balance if it's a paid transaction
+      if (finalBankAccountId && finalStatus === 'paid') {
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" - $1,
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [finalAmount, finalBankAccountId]
+        );
+      }
     }
 
     const updateQuery = `
@@ -627,17 +736,30 @@ export async function updateExpense(req, res) {
       finalDueDate,
       finalBankAccountId,
       finalContactId,
-      finalStatus,
+      finalStatusToUse,
       finalRemainingAmount,
       finalPaidAmount,
       id
     ]);
 
+    // Handle payment allocation updates if needed
+    if (paymentAdjustmentMade) {
+      await updatePaymentAllocations(
+        client,
+        'expense',
+        allocations,
+        finalAmount,
+        paymentAdjustmentChoice
+      );
+    }
+
     await client.query("COMMIT");
 
     return successResponse(res, {
       message: "Expense updated successfully",
-      expense: result.rows[0]
+      expense: result.rows[0],
+      status: finalStatusToUse,
+      paymentAdjustmentMade: paymentAdjustmentMade || false
     });
 
   } catch (error) {
@@ -727,8 +849,28 @@ export async function getExpenses(req, res) {
 
     const result = await client.query(query, params);
 
+    // Fix any inconsistent status values
+    const correctedExpenses = result.rows.map(expense => {
+      const remainingAmount = parseFloat(expense.remaining_amount || 0);
+      const paidAmount = parseFloat(expense.paid_amount || 0);
+      
+      // Determine correct status based on amounts (only 'paid' and 'pending' allowed)
+      let correctStatus = expense.status;
+      if (remainingAmount === 0 && paidAmount > 0) {
+        correctStatus = 'paid';
+      } else if (remainingAmount > 0) {
+        // Any remaining amount means it's still pending (no 'partial' status)
+        correctStatus = 'pending';
+      }
+      
+      return {
+        ...expense,
+        status: correctStatus
+      };
+    });
+
     return successResponse(res, {
-      expenses: result.rows,
+      expenses: correctedExpenses,
       pagination: {
         total,
         totalPages,
@@ -740,6 +882,104 @@ export async function getExpenses(req, res) {
   } catch (error) {
     console.error(error);
     return errorResponse(res, "Error fetching expenses", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Bulk delete expenses
+export async function bulkDeleteExpenses(req, res) {
+  const { ids } = req.body;
+  const companyId = req.currentUser?.companyId;
+  const userId = req.currentUser?.id;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return errorResponse(res, "Expense IDs array is required", 400);
+  }
+
+  if (!companyId || !userId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // Process each expense deletion
+    for (const id of ids) {
+      try {
+        // First verify the expense belongs to the user and get details
+        const verifyQuery = `
+          SELECT "bankAccountId", "contactId", "amount", "status" FROM hisab."expenses"
+          WHERE "id" = $1 AND "userId" = $2 AND "companyId" = $3
+          LIMIT 1
+        `;
+        const verifyResult = await client.query(verifyQuery, [id, userId, companyId]);
+
+        if (verifyResult.rows.length === 0) {
+          errors.push(`Expense ID ${id} not found or unauthorized`);
+          errorCount++;
+          continue;
+        }
+
+        const { bankAccountId, contactId, amount, status } = verifyResult.rows[0];
+
+        // Revert bank account balance if bankAccountId is present
+        // This covers both direct bank payments and contact payments that were paid
+        if (bankAccountId) {
+          await client.query(
+            `UPDATE hisab."bankAccounts" 
+             SET "currentBalance" = "currentBalance" + $1,
+                 "updatedAt" = CURRENT_TIMESTAMP
+             WHERE "id" = $2`,
+            [amount, bankAccountId]
+          );
+        }
+
+        // Handle payment allocations before deleting
+        await handlePaymentAllocationsOnTransactionDelete(client, 'expense', id, companyId, userId);
+
+        // Delete the expense
+        const deleteQuery = `
+          DELETE FROM hisab."expenses"
+          WHERE "id" = $1
+          RETURNING *
+        `;
+        const deletedExpense = await client.query(deleteQuery, [id]);
+
+        if (deletedExpense.rows.length === 0) {
+          errors.push(`Failed to delete expense ID ${id}`);
+          errorCount++;
+          continue;
+        }
+
+        successCount++;
+      } catch (error) {
+        console.error(`Error deleting expense ${id}:`, error);
+        errors.push(`Expense ID ${id}: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return successResponse(res, {
+      message: `Bulk delete completed. ${successCount} expenses deleted successfully.`,
+      successCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : null,
+      totalProcessed: ids.length
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Bulk delete expenses error:", error);
+    return errorResponse(res, "Failed to bulk delete expenses", 500);
   } finally {
     client.release();
   }

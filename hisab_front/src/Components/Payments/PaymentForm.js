@@ -34,71 +34,82 @@ const PaymentForm = ({
     const formatAmount = useCallback((amount) => parseAmount(amount).toFixed(2), [parseAmount]);
 
     const getTransactionTypeDisplay = useCallback((transaction) => {
-        const type = transaction.type || 'purchase'; // Default to purchase for backward compatibility
-        
+        const type = transaction.type || transaction.allocationType || "purchase"; // Handle both transaction and allocation objects
+
         switch (type) {
-            case 'current-balance':
+            case "current-balance":
                 return {
                     icon: <RiWalletLine className="me-1" size={14} />,
-                    label: 'Current Balance',
-                    color: 'info'
+                    label: "Current Balance",
+                    color: "info"
                 };
-            case 'purchase':
+            case "opening-balance":
+                return {
+                    icon: <RiWalletLine className="me-1" size={14} />,
+                    label: "Opening Balance",
+                    color: "primary"
+                };
+            case "purchase":
                 return {
                     icon: <RiShoppingCartLine className="me-1" size={14} />,
-                    label: 'Purchase',
-                    color: 'warning'
+                    label: "Purchase",
+                    color: "warning"
                 };
-            case 'sale':
+            case "sale":
                 return {
                     icon: <RiStoreLine className="me-1" size={14} />,
-                    label: 'Sale',
-                    color: 'success'
+                    label: "Sale",
+                    color: "success"
                 };
-            case 'expense':
+            case "expense":
                 return {
                     icon: <RiBankLine className="me-1" size={14} />,
-                    label: 'Expense',
-                    color: 'danger'
+                    label: "Expense",
+                    color: "danger"
                 };
-            case 'income':
+            case "income":
                 return {
                     icon: <RiBankLine className="me-1" size={14} />,
-                    label: 'Income',
-                    color: 'success'
+                    label: "Income",
+                    color: "success"
                 };
             default:
                 return {
                     icon: <RiShoppingCartLine className="me-1" size={14} />,
-                    label: 'Transaction',
-                    color: 'secondary'
+                    label: "Transaction",
+                    color: "secondary"
                 };
         }
     }, []);
 
     const getTransactionDescription = useCallback((transaction) => {
-        const type = transaction.type || 'purchase';
-        
-        if (type === 'current-balance') {
-            return 'Current Balance';
+        const type = transaction.type || transaction.allocationType || "purchase";
+
+        if (type === "current-balance") {
+            return "Current Balance";
         }
-        
+
+        if (type === "opening-balance") {
+            return "Opening Balance Settlement";
+        }
+
+        // Handle both transaction objects and allocation objects
         if (transaction.description) {
             return transaction.description;
         }
-        
-        // Fallback descriptions
+
+            // Fallback descriptions
         switch (type) {
-            case 'purchase':
-                return transaction.invoiceNumber ? `Purchase #${transaction.invoiceNumber}` : 'Purchase';
-            case 'sale':
-                return transaction.invoiceNumber ? `Sale #${transaction.invoiceNumber}` : 'Sale';
-            case 'expense':
-                return transaction.categoryName ? `Expense: ${transaction.categoryName}` : 'Expense';
-            case 'income':
-                return transaction.categoryName ? `Income: ${transaction.categoryName}` : 'Income';
+            case "purchase":
+                return transaction.invoiceNumber ? `Purchase #${transaction.invoiceNumber}` : "Purchase";
+            case "sale":
+                return transaction.invoiceNumber ? `Sale #${transaction.invoiceNumber}` : "Sale";
+            case "expense":
+                return transaction.categoryName ? `Expense: ${transaction.categoryName}` : "Expense";
+            case "income":
+                return transaction.categoryName ? `Income: ${transaction.categoryName}` : "Income";
             default:
-                return 'Transaction';
+                return "Transaction";
         }
     }, []);
 
@@ -116,13 +127,15 @@ const PaymentForm = ({
             
             if (isCurrentBalance) {
                 transactionId = 'current-balance';
+            } else if (allocation.allocationType === 'opening-balance') {
+                transactionId = 'opening-balance';
             } else {
                 const originalId = allocation.transactionId || 
                     allocation.purchaseId || allocation.saleId || 
                     allocation.expenseId || allocation.incomeId || allocation.id;
                 const type = allocation.allocationType || 'purchase';
                 
-                // Create composite ID format
+                // Create composite ID format for regular transactions
                 transactionId = `${type}_${originalId}`;
             }
             
@@ -184,6 +197,15 @@ const PaymentForm = ({
                                                     const originalAllocation = paymentData.find(allocation => {
                                                         const transactionId = transaction.id.toString();
                                                         let originalId;
+                                                        
+                                                        // Special handling for opening-balance and current-balance
+                                                        if (transactionId === 'opening-balance' && allocation.allocationType === 'opening-balance') {
+                                                            return true;
+                                                        }
+                                                        if (transactionId === 'current-balance' && allocation.allocationType === 'current-balance') {
+                                                            return true;
+                                                        }
+                                                        
                                                         if (transactionId.includes('_')) {
                                                             originalId = transactionId.split('_')[1];
                                                         } else {
@@ -405,12 +427,46 @@ const PaymentForm = ({
             const adjustmentAmount = calculations.adjustmentImpact();
             const adjustmentType = validation.values.adjustmentType || 'none';
             let net = receivableTotal - payableTotal;
-            if (adjustmentType === 'discount') net = net + adjustmentAmount;
-            else if (adjustmentType === 'surcharge' || adjustmentType === 'extra_receipt') net = net - adjustmentAmount;
+            
+            // Apply adjustments to the net amount
+            let finalNet = net;
+            if (adjustmentType === 'discount') {
+                // Discount always reduces the net amount (can change direction)
+                finalNet = net - adjustmentAmount;
+            } else if (adjustmentType === 'surcharge' || adjustmentType === 'extra_receipt') {
+                // Surcharge/extra receipt increases the net amount
+                if (net >= 0) {
+                    // Receivable scenario: increase the amount to receive
+                    finalNet = net + adjustmentAmount;
+                } else {
+                    // Payable scenario: increase the amount to pay
+                    finalNet = net - adjustmentAmount;
+                }
+            }
+            
+            // Debug logging for discount calculation
+            if (adjustmentType === 'discount' && adjustmentAmount > 0) {
+                console.log('💰 Discount calculation debug:', {
+                    receivableTotal,
+                    payableTotal,
+                    originalNet: net,
+                    adjustmentAmount,
+                    finalNet,
+                    finalAmount: Math.abs(finalNet),
+                    finalType: finalNet >= 0 ? 'receipt' : 'payment',
+                    finalLabel: finalNet >= 0 ? 'Amount to receive' : 'Amount to pay'
+                });
+            }
+            
+            // Debug for discount calculation
+            if (adjustmentType === 'discount') {
+                console.log('💰 Discount calc:', { net, adjustmentAmount, finalNet, amount: Math.abs(finalNet), type: finalNet >= 0 ? 'receipt' : 'payment' });
+            }
+            
             return {
-                amount: Math.abs(net),
-                type: net >= 0 ? 'receipt' : 'payment',
-                label: net >= 0 ? 'Amount to receive' : 'Amount to pay'
+                amount: Math.abs(finalNet),
+                type: finalNet >= 0 ? 'receipt' : 'payment',
+                label: finalNet >= 0 ? 'Amount to receive' : 'Amount to pay'
             };
         }
     };
@@ -426,6 +482,10 @@ const PaymentForm = ({
                 transactionId = 'current-balance';
                 description = 'Current Balance';
                 type = 'current-balance';
+            } else if (allocation.allocationType === 'opening-balance') {
+                transactionId = 'opening-balance';
+                description = 'Opening Balance';
+                type = 'opening-balance';
             } else if (allocation.allocationType === 'purchase') {
                 transactionId = allocation.transactionId || allocation.purchaseId;
                 description = allocation.description || `Purchase #${allocation.purchaseInvoiceNumber || transactionId}`;
@@ -451,23 +511,11 @@ const PaymentForm = ({
 
             // Create composite ID format to match getPendingTransactions API format
             let compositeId = transactionId;
-            if (!isCurrentBalance && type !== 'current-balance') {
+            if (!isCurrentBalance && type !== 'current-balance' && type !== 'opening-balance') {
                 compositeId = `${type}_${transactionId}`;
             }
 
-            console.log('🔄 Transforming allocation to pending transaction:', {
-                allocationType: allocation.allocationType,
-                transactionId: transactionId,
-                compositeId: compositeId,
-                type: type,
-                isCurrentBalance: isCurrentBalance
-            });
 
-            // For existing allocations in edit mode, we need to set proper amounts
-            // The pendingAmount should be 0 since this transaction is already allocated in this payment
-            // The paidAmount should be the amount that was paid in this payment
-            // The amount should be the total transaction amount
-            const totalAmount = parseAmount(allocation.expenseAmount || allocation.incomeAmount || allocation.amount || 0);
             const paidInThisPayment = parseAmount(allocation.paidAmount || 0);
             
             return {
@@ -498,6 +546,8 @@ const PaymentForm = ({
             
             if (isCurrentBalance) {
                 return 'current-balance';
+            } else if (allocation.allocationType === 'opening-balance') {
+                return 'opening-balance';
             } else {
                 const originalId = allocation.transactionId || 
                     allocation.purchaseId || allocation.saleId || 
@@ -510,142 +560,163 @@ const PaymentForm = ({
         }) : [];
     }, [selectedPayment?.id]);
 
+
     const fetchPendingTransactions = useCallback(async (contactId) => {
         if (!contactId) return;
         setIsLoadingTransactions(true);
         try {
-            let allTransactions = [];
-
-            // Step 1: Get existing transactions from selectedPayment.allocations/transactions (if in edit mode)
-            const paymentData = selectedPayment?.allocations || selectedPayment?.transactions;
-            if (isEditMode && paymentData) {
-                const existingTransactions = transformAllocationsToPendingTransactions(paymentData);
-                allTransactions = [...existingTransactions];
-            }
-
-            // Step 2: Get fresh pending transactions from API
+            // Get fresh pending transactions from API
             const response = await getPendingTransactions(contactId);
             const freshTransactions = response.transactions || [];
-            
-            console.log('📊 API Response for contactId', contactId, ':', {
-                success: response.success,
-                transactionCount: freshTransactions.length,
-                transactions: freshTransactions.map(t => ({
-                    id: t.id,
-                    type: t.type,
-                    invoiceNumber: t.invoiceNumber,
-                    pendingAmount: t.pendingAmount
-                }))
-            });
 
+            if (isEditMode && selectedPayment) {
+                // In edit mode: Show both pending transactions and completed payment transactions
+                const paymentData = selectedPayment?.allocations || selectedPayment?.transactions;
+                const mergedTransactions = [];
+                const processedIds = new Set();
 
-            // Step 3: Get IDs of existing transactions to avoid duplicates
-            const existingIds = isEditMode ? getExistingTransactionIds() : [];
+                console.log("🔍 EDIT MODE: Merging payment data with pending transactions");
 
-            // Step 4: Filter out transactions that already exist in selectedPayment.allocations
-            const newTransactions = freshTransactions.filter(
-                txn => !existingIds.includes(txn.id)
-            );
-
-            // Step 5: Update existing transactions with fresh pending amounts from API
-            if (isEditMode && paymentData) {
-                allTransactions = allTransactions.map(existingTxn => {
-                    // Find matching transaction in fresh data
-                    const freshTxn = freshTransactions.find(ft => ft.id === existingTxn.id);
-                    
-                    console.log('🔄 Matching existing transaction with fresh data:', {
-                        existingId: existingTxn.id,
-                        existingType: existingTxn.type,
-                        freshTransactionIds: freshTransactions.map(ft => ft.id),
-                        matchFound: !!freshTxn,
-                        freshTxnData: freshTxn ? {
-                            id: freshTxn.id,
-                            pendingAmount: freshTxn.pendingAmount,
-                            paidAmount: freshTxn.paidAmount,
-                            amount: freshTxn.amount
-                        } : null
+                // Step 1: Process each pending transaction and merge with payment data
+                freshTransactions.forEach(pendingTxn => {
+                    // Find matching allocation in payment data
+                    const matchingAllocation = paymentData?.find(allocation => {
+                        if (pendingTxn.type === "current-balance" || pendingTxn.id === "current-balance") {
+                            return allocation.allocationType === "current-balance";
+                        }
+                        if (pendingTxn.type === "opening-balance" || pendingTxn.id === "opening-balance") {
+                            return allocation.allocationType === "opening-balance";
+                        }
+                        // Match by transaction ID
+                        return allocation.purchaseId?.toString() === pendingTxn.id?.toString() ||
+                               allocation.saleId?.toString() === pendingTxn.id?.toString() ||
+                               allocation.expenseId?.toString() === pendingTxn.id?.toString() ||
+                               allocation.incomeId?.toString() === pendingTxn.id?.toString() ||
+                               allocation.transactionId?.toString() === pendingTxn.id?.toString();
                     });
-                    
-                    if (freshTxn) {
-                        // Use fresh pending amount from API
-                        return {
-                            ...existingTxn,
-                            pendingAmount: freshTxn.pendingAmount,
-                            paidAmount: freshTxn.paidAmount,
-                            amount: freshTxn.amount
+
+                    // Create composite ID for form handling
+                    const compositeId = pendingTxn.type === "current-balance" || pendingTxn.type === "opening-balance"
+                        ? pendingTxn.id.toString()
+                        : `${pendingTxn.type}_${pendingTxn.id}`;
+
+                    if (matchingAllocation) {
+                        // Merge: Use pending data as base, override paid amount from allocation
+                        const mergedTransaction = {
+                            ...pendingTxn,
+                            id: compositeId,
+                            paidAmount: parseAmount(matchingAllocation.paidAmount || 0), // From payment allocation
+                            isOriginalTransaction: true
                         };
+                        
+                        mergedTransactions.push(mergedTransaction);
+                        processedIds.add(pendingTxn.id.toString());
+                        
+                        console.log(`✅ Merged ${pendingTxn.type}: paid=${matchingAllocation.paidAmount}`);
                     } else {
-                        // Transaction not found in fresh data, keep original amounts but log it
-                        console.warn('⚠️ Transaction not found in fresh data, keeping original amounts:', {
-                            existingTxn: {
-                                id: existingTxn.id,
-                                type: existingTxn.type,
-                                pendingAmount: existingTxn.pendingAmount,
-                                paidAmount: existingTxn.paidAmount,
-                                amount: existingTxn.amount
-                            }
+                        // New pending transaction (not in this payment)
+                        mergedTransactions.push({
+                            ...pendingTxn,
+                            paidAmount: 0,
+                            isOriginalTransaction: false
                         });
                         
-                        return {
-                            ...existingTxn,
-                            // Keep the original amounts instead of setting pendingAmount to 0
-                        };
+                        console.log(`➕ New ${pendingTxn.type}: pending=${pendingTxn.pendingAmount}`);
                     }
                 });
-            }
 
-            // Step 6: Combine existing (updated) and new transactions
-            allTransactions = [...allTransactions, ...newTransactions];
-            
-            setPendingTransactions(allTransactions);
-            
-            // Step 7: In edit mode, ensure transaction allocations are preserved
-            if (isEditMode && paymentData) {
-                const preservedAllocations = {};
-                paymentData.forEach(allocation => {
-                    // Create consistent transaction ID format matching transformAllocationsToPendingTransactions
-                    let transactionId;
-                    const isCurrentBalance = allocation.allocationType === 'current-balance';
-                    
-                    if (isCurrentBalance) {
-                        transactionId = 'current-balance';
+                // Step 2: Add payment transactions that are NOT in pending transactions (fully paid)
+                paymentData?.forEach(allocation => {
+                    let transactionId, type;
+
+                    // Determine transaction ID and type
+                    if (allocation.allocationType === "current-balance") {
+                        transactionId = "current-balance";
+                        type = "current-balance";
+                    } else if (allocation.allocationType === "opening-balance") {
+                        transactionId = "opening-balance";
+                        type = "opening-balance";
                     } else {
-                        const originalId = allocation.transactionId || 
-                            allocation.purchaseId || allocation.saleId || 
+                        transactionId = allocation.transactionId ||
+                            allocation.purchaseId || allocation.saleId ||
                             allocation.expenseId || allocation.incomeId || allocation.id;
-                        const type = allocation.allocationType || 'purchase';
-                        
-                        // Create composite ID format
-                        transactionId = `${type}_${originalId}`;
+                        type = allocation.allocationType || "purchase";
+                    }
+
+                    // Check if this payment transaction is already in mergedTransactions
+                    const alreadyProcessed = Array.from(processedIds).some(id => {
+                        if (type === "current-balance" || type === "opening-balance") {
+                            return id === transactionId;
+                        }
+                        return id === transactionId.toString();
+                    });
+
+                    if (!alreadyProcessed) {
+                        // Create composite ID
+                        const compositeId = type === "current-balance" || type === "opening-balance"
+                            ? transactionId.toString()
+                            : `${type}_${transactionId}`;
+
+                        // Find the original transaction details from payment data
+                        const totalAmount = parseAmount(allocation.amount || 0);
+                        const paidAmount = parseAmount(allocation.paidAmount || allocation.amount || 0);
+
+                        // Create transaction object for completed/fully paid transaction
+                        const completedTransaction = {
+                            id: compositeId,
+                            type: type,
+                            description: getTransactionDescription({ type, description: allocation.description }),
+                            amount: totalAmount,
+                            paidAmount: paidAmount,
+                            pendingAmount: 0, // Fully paid, so pending is 0
+                            balanceType: allocation.balanceType,
+                            date: allocation.date || allocation.createdAt,
+                            isOriginalTransaction: true,
+                            isCompletedTransaction: true // Flag to indicate this is from payment data only
+                        };
+
+                        mergedTransactions.push(completedTransaction);
+                        console.log(`🔄 Added completed ${type}: paid=${paidAmount}, pending=0`);
+                    }
+                });
+
+                setPendingTransactions(mergedTransactions);
+                
+                // Set form state from payment data
+                const initialAllocations = {};
+                const transactionIds = [];
+                
+                paymentData?.forEach(allocation => {
+                    let compositeId;
+                    
+                    if (allocation.allocationType === "current-balance") {
+                        compositeId = "current-balance";
+                    } else if (allocation.allocationType === "opening-balance") {
+                        compositeId = "opening-balance";
+                    } else {
+                        const txnId = allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId || allocation.transactionId;
+                        compositeId = `${allocation.allocationType}_${txnId}`;
                     }
                     
-                    preservedAllocations[transactionId] = parseAmount(allocation.paidAmount || allocation.amount);
-                    
-                    console.log('💾 Preserving allocation:', {
-                        allocationType: allocation.allocationType,
-                        originalId: allocation.transactionId || allocation.purchaseId || allocation.saleId || allocation.expenseId || allocation.incomeId,
-                        compositeId: transactionId,
-                        amount: parseAmount(allocation.paidAmount || allocation.amount)
-                    });
+                    initialAllocations[compositeId] = parseAmount(allocation.paidAmount || allocation.amount);
+                    transactionIds.push(compositeId);
                 });
                 
-                // Merge with any existing allocations to avoid overwriting user changes
-                setTransactionAllocations(prev => ({
-                    ...prev,
-                    ...preservedAllocations
-                }));
+                setTransactionAllocations(initialAllocations);
+                validation.setFieldValue("transactionIds", transactionIds);
                 
-                console.log('💾 Preserved existing allocations:', preservedAllocations);
+                console.log(`💾 Form initialized with ${transactionIds.length} transactions`);
+            } else {
+                // Not in edit mode - use fresh transactions
+                setPendingTransactions(freshTransactions);
             }
         } catch (error) {
-            console.error('Error fetching pending transactions:', error);
+            console.error("Error fetching pending transactions:", error);
             setPendingTransactions([]);
-            // Optionally show user-friendly error message
-            // You could add a toast notification here if needed
         } finally {
             setIsLoadingTransactions(false);
         }
-    }, [isEditMode, selectedPayment?.id]);
+    }, [isEditMode, selectedPayment?.id, parseAmount]);
 
     const initializeEditMode = useCallback(() => {
         const paymentData = selectedPayment?.allocations || selectedPayment?.transactions;
@@ -842,8 +913,8 @@ const PaymentForm = ({
                 
                 // Override the default amount with the specific remaining amount from the invoice  
                 const remainingAmount = parseFloat(selectedInvoice.remainingAmount || 0);
-                setTransactionAllocations(prev => ({
-                    ...prev,
+                    setTransactionAllocations(prev => ({
+                        ...prev,
                     [transactionId]: remainingAmount
                 }));
                 
@@ -899,64 +970,45 @@ const PaymentForm = ({
         validation.values.transactionIds.length < pendingTransactions.length;
 
     const toggleTransactionSelection = (transactionId) => {
+        console.log('🔄 Toggle transaction selection called:', transactionId);
         const transactionIdStr = transactionId.toString();
         const currentIds = [...validation.values.transactionIds];
         const index = currentIds.findIndex(id => id === transactionIdStr);
         
-        console.log('🔍 Toggle Transaction Selection Debug:', {
-            clickedTransactionId: transactionId,
+        console.log('🔍 Current state:', {
             transactionIdStr,
-            currentSelectedIds: currentIds,
-            indexFound: index,
-            action: index === -1 ? 'ADD' : 'REMOVE'
+            currentIds,
+            index,
+            isCurrentlySelected: index !== -1
         });
-
-        // Find the actual transaction to debug
-        const transaction = pendingTransactions.find(t => t.id.toString() === transactionIdStr);
-        console.log('📋 Transaction Details:', {
-            id: transaction?.id,
-            type: transaction?.type,
-            description: getTransactionDescription(transaction),
-            pendingAmount: transaction?.pendingAmount
-        });
-
-
         
         if (index === -1) {
+            // Transaction is not selected, select it
             currentIds.push(transactionIdStr);
             const transaction = pendingTransactions.find(t => t.id.toString() === transactionIdStr);
             if (transaction) {
-                // Always use the fresh pending amount from the API
-                const defaultAmount = transaction.pendingAmount;
+                // Use pending amount or paid amount if it's an edit mode transaction
+                const defaultAmount = transaction.pendingAmount || transaction.paidAmount || 0;
                 setTransactionAllocations(prev => ({
                     ...prev,
                     [transactionIdStr]: parseAmount(defaultAmount)
                 }));
-                
-                console.log('✅ Transaction added to selection:', {
-                    transactionId: transactionIdStr,
-                    defaultAmount,
-                    newCurrentIds: currentIds
-                });
+                console.log('✅ Transaction selected:', transactionIdStr, 'with amount:', defaultAmount);
             } else {
-                console.error('❌ Transaction not found in pendingTransactions:', transactionIdStr);
+                console.error('❌ Transaction not found:', transactionIdStr);
             }
         } else {
+            // Transaction is selected, deselect it
             currentIds.splice(index, 1);
             setTransactionAllocations(prev => {
                 const newAllocations = { ...prev };
                 delete newAllocations[transactionIdStr];
                 return newAllocations;
             });
-            
-            console.log('➖ Transaction removed from selection:', transactionIdStr);
+            console.log('➖ Transaction deselected:', transactionIdStr);
         }
         
-        console.log('🎯 Final Selection State:', {
-            newTransactionIds: currentIds,
-            allAllocations: Object.keys(transactionAllocations)
-        });
-        
+        console.log('🔄 Setting new transaction IDs:', currentIds);
         validation.setFieldValue('transactionIds', currentIds);
     };
 
@@ -973,19 +1025,6 @@ const PaymentForm = ({
         validation.values.transactionIds.length > 0 &&
         !hasOverAllocation() &&
         !hasZeroAllocation();
-
-    console.log('PaymentForm Debug:', {
-        isValid: validation.isValid,
-        hasTransactions: validation.values.transactionIds.length > 0,
-        contactId: validation.values.contactId,
-        bankId: validation.values.bankId,
-        selectedTransactions: validation.values.transactionIds,
-        pendingTransactionsCount: pendingTransactions.length,
-        selectedInvoiceId: selectedInvoice?.id,
-        hasAutoSelected,
-        bankAccountsCount: bankAccounts.length,
-        bankAccountsAvailable: bankAccounts.map(b => ({ id: b.id, name: b.accountName }))
-    });
 
     return (
         <Modal isOpen={isOpen} toggle={toggle} size="lg" className="payment-form-modal">
@@ -1007,8 +1046,8 @@ const PaymentForm = ({
             <ModalBody className="py-3">
                 <Form onSubmit={validation.handleSubmit}>
                     {/* Basic Information Section */}
-                    <div className="form-section mb-3">
-                        <h6 className="section-title mb-3">Payment Information</h6>
+                    <div className="form-section mb-2">
+                        <h6 className="section-title mb-2">Payment Information</h6>
                         
                         <Row className="g-2">
                         <Col md={6}>
@@ -1023,13 +1062,14 @@ const PaymentForm = ({
                                     invalid={validation.touched.date && !!validation.errors.date}
                                     disabled={isLoading}
                                         className="form-control-sm"
+                                    style={{ height: '30px', fontSize: '0.8rem' }}
                                 />
                                 <FormFeedback>{validation.errors.date}</FormFeedback>
                             </FormGroup>
                         </Col>
                         <Col md={6}>
                                 <FormGroup className="mb-2">
-                                    <Label className="form-label-sm">Contact <span className="text-danger">*</span></Label>
+                                    <Label className="form-label-sm">Bank/Contact <span className="text-danger">*</span></Label>
                                 <ReactSelect
                                     options={contacts.map(formatOptions.contact)}
                                     value={getCurrentOption('contact', validation.values.contactId, contacts)}
@@ -1043,22 +1083,32 @@ const PaymentForm = ({
                                     onBlur={() => validation.setFieldTouched('contactId', true)}
                                         className={`react-select-container-sm ${validation.touched.contactId && validation.errors.contactId ? 'is-invalid' : ''}`}
                                     classNamePrefix="react-select"
-                                    placeholder="Select Contact"
+                                    placeholder="Select Bank/Contact"
                                     isDisabled={isLoading || isEditMode}
-
-                                    maxMenuHeight={200}
+                                    isClearable={!isEditMode}
+                                    isSearchable={true}
+                                    maxMenuHeight={150}
+                                    menuPlacement="auto"
+                                    menuShouldScrollIntoView={false}
                                         styles={{
-                                            control: (provided) => ({
+                                            control: (provided, state) => ({
                                                 ...provided,
-                                                minHeight: '32px',
-                                                fontSize: '0.875rem'
+                                                minHeight: '30px',
+                                                fontSize: '0.8rem',
+                                                borderColor: state.isFocused ? '#0d6efd' : '#dee2e6'
                                             }),
                                             menu: (provided) => ({
                                                 ...provided,
                                                 zIndex: 9999,
-                                                border: '1px solid var(--vz-border-color)',
-                                                borderRadius: '0.375rem',
-                                                boxShadow: '0 4px 20px rgba(0, 0, 0, 0.1)'
+                                                fontSize: '0.8rem',
+                                                border: '1px solid #dee2e6',
+                                                borderRadius: '0.25rem',
+                                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
+                                            }),
+                                            option: (provided, state) => ({
+                                                ...provided,
+                                                fontSize: '0.8rem',
+                                                padding: '6px 12px'
                                             })
                                         }}
                                 />
@@ -1069,6 +1119,44 @@ const PaymentForm = ({
                                     <div className="text-danger small">{validation.errors.contactId}</div>
                                 )}
                             </FormGroup>
+                            
+                            {/* Contact Summary - Always show when contact selected */}
+                            {validation.values.contactId && (() => {
+                                const selectedContact = contacts.find(c => c.id === validation.values.contactId);
+                                if (!selectedContact) return null;
+                                
+                                // Calculate total pending amounts for this contact
+                                const totalPendingReceivable = pendingTransactions
+                                    .filter(t => t.balanceType === 'receivable')
+                                    .reduce((sum, t) => sum + parseFloat(t.pendingAmount || 0), 0);
+                                const totalPendingPayable = pendingTransactions
+                                    .filter(t => t.balanceType === 'payable')
+                                    .reduce((sum, t) => sum + parseFloat(t.pendingAmount || 0), 0);
+                                const netPending = totalPendingReceivable - totalPendingPayable;
+                                
+                                return (
+                                    <div className="mt-1 p-2 bg-primary-subtle rounded border">
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-primary fw-medium">{selectedContact.name}</small>
+                                            <div className="text-end">
+                                                {netPending > 0 ? (
+                                                    <div className="text-success small fw-bold">
+                                                        ₹{Math.abs(netPending).toFixed(2)} Pending Receivable
+                                                    </div>
+                                                ) : netPending < 0 ? (
+                                                    <div className="text-warning small fw-bold">
+                                                        ₹{Math.abs(netPending).toFixed(2)} Pending Payable
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-muted small">
+                                                        ₹0.00 No Pending
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </Col>
                     </Row>
                     </div>
@@ -1084,42 +1172,25 @@ const PaymentForm = ({
                         
                         if (hasBillingAddress) {
                             return (
-                                <Row className="mb-3">
-                                    <Col md={12}>
-                                        <div className="border rounded p-3 bg-light">
-                                            <h6 className="text-muted mb-2">
-                                                <i className="ri-map-pin-line me-2"></i>
-                                                Contact Billing Address
-                                            </h6>
-                                            <div className="small">
-                                                {selectedContact.billingAddress1 && (
-                                                    <div>{selectedContact.billingAddress1}</div>
-                                                )}
-                                                {selectedContact.billingAddress2 && (
-                                                    <div>{selectedContact.billingAddress2}</div>
-                                                )}
-                                                <div>
-                                                    {[
+                                <div className="mt-2 p-2 bg-light rounded border-start border-3 border-info">
+                                    <div className="small text-muted">
+                                        <i className="ri-map-pin-line me-1"></i>
+                                        {[
+                                            selectedContact.billingAddress1,
                                                         selectedContact.billingCity,
                                                         selectedContact.billingState,
                                                         selectedContact.billingPincode
                                                     ].filter(Boolean).join(', ')}
                                                 </div>
-                                                {selectedContact.billingCountry && (
-                                                    <div>{selectedContact.billingCountry}</div>
-                                                )}
                                             </div>
-                                        </div>
-                                    </Col>
-                                </Row>
                             );
                         }
                         return null;
                     })()}
 
                     {/* Bank Account & Description Section */}
-                    <div className="form-section mb-3">
-                        <h6 className="section-title mb-3">Account & Description</h6>
+                    <div className="form-section mb-2">
+                        <h6 className="section-title mb-2">Account & Description</h6>
                         
                         <Row className="g-2">
                         <Col md={6}>
@@ -1135,21 +1206,36 @@ const PaymentForm = ({
                                     placeholder="Select Bank Account"
                                     formatOptionLabel={(option) => (
                                         <div className="d-flex align-items-center">
-                                            <span className={`text-${option.color} me-2`}>{option.icon}</span>
+                                            <span className={`text-${option.color} me-1`}>{option.icon}</span>
                                             <span>{option.label}</span>
                                         </div>
                                     )}
                                     isDisabled={isLoading}
+                                    isClearable={true}
+                                    isSearchable={true}
+                                    maxMenuHeight={150}
+                                    menuPlacement="auto"
+                                    menuShouldScrollIntoView={false}
                                         styles={{
-                                            control: (provided) => ({
+                                            control: (provided, state) => ({
                                                 ...provided,
-                                                minHeight: '32px',
-                                                fontSize: '0.875rem'
+                                                minHeight: '30px',
+                                                fontSize: '0.8rem',
+                                                borderColor: state.isFocused ? '#0d6efd' : '#dee2e6'
                                             }),
                                             menu: (provided) => ({
                                                 ...provided,
                                                 zIndex: 9999,
-                                                maxHeight: '180px'
+                                                fontSize: '0.8rem',
+                                                maxHeight: '150px',
+                                                border: '1px solid #dee2e6',
+                                                borderRadius: '0.25rem',
+                                                boxShadow: '0 2px 10px rgba(0, 0, 0, 0.1)'
+                                            }),
+                                            option: (provided, state) => ({
+                                                ...provided,
+                                                fontSize: '0.8rem',
+                                                padding: '6px 12px'
                                             })
                                         }}
                                 />
@@ -1175,6 +1261,7 @@ const PaymentForm = ({
                                     invalid={validation.touched.description && !!validation.errors.description}
                                     disabled={isLoading}
                                         className="form-control-sm"
+                                    style={{ fontSize: '0.8rem' }}
                                 />
                                 <FormFeedback>{validation.errors.description}</FormFeedback>
                             </FormGroup>
@@ -1183,8 +1270,8 @@ const PaymentForm = ({
                     </div>
 
                     {/* Adjustment Section */}
-                    <div className="form-section mb-3">
-                        <h6 className="section-title mb-3">Adjustment</h6>
+                    <div className="form-section mb-2">
+                        <h6 className="section-title mb-2">Adjustment</h6>
                         
                         <Row className="g-2">
                         <Col md={6}>
@@ -1202,11 +1289,26 @@ const PaymentForm = ({
                                     classNamePrefix="react-select"
                                     placeholder="Select Adjustment Type"
                                     isDisabled={isLoading}
+                                    maxMenuHeight={120}
+                                    menuPlacement="auto"
                                         styles={{
-                                            control: (provided) => ({
+                                            control: (provided, state) => ({
                                                 ...provided,
-                                                minHeight: '32px',
-                                                fontSize: '0.875rem'
+                                                minHeight: '30px',
+                                                fontSize: '0.8rem',
+                                                borderColor: state.isFocused ? '#0d6efd' : '#dee2e6'
+                                            }),
+                                            menu: (provided) => ({
+                                                ...provided,
+                                                fontSize: '0.8rem',
+                                                border: '1px solid #dee2e6',
+                                                borderRadius: '0.25rem',
+                                                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)'
+                                            }),
+                                            option: (provided, state) => ({
+                                                ...provided,
+                                                fontSize: '0.8rem',
+                                                padding: '5px 10px'
                                             })
                                         }}
                                 />
@@ -1223,8 +1325,7 @@ const PaymentForm = ({
                                     <Label className="form-label-sm">
                                     {validation.values.adjustmentType === 'discount' ? 'Discount Amount' :
                                         validation.values.adjustmentType === 'extra_receipt' ? 'Extra Receipt Amount' :
-                                            validation.values.adjustmentType === 'surcharge' ? 'Surcharge Amount' :
-                                                'Adjustment Value'}
+                                            validation.values.adjustmentType === 'surcharge' ? 'Surcharge Amount' : 'Adjustment Value'}
                                     {validation.values.adjustmentType !== 'none' && <span className="text-danger"> *</span>}
                                 </Label>
                                 <Input
@@ -1238,6 +1339,7 @@ const PaymentForm = ({
                                     disabled={isLoading || validation.values.adjustmentType === 'none'}
                                     invalid={validation.touched.adjustmentValue && !!validation.errors.adjustmentValue}
                                         className="form-control-sm"
+                                    style={{ height: '30px', fontSize: '0.8rem' }}
                                 />
                                 <FormFeedback>{validation.errors.adjustmentValue}</FormFeedback>
                             </FormGroup>
@@ -1246,8 +1348,8 @@ const PaymentForm = ({
                     </div>
 
                     {/* Transaction Allocations Section */}
-                    <div className="form-section mb-3">
-                        <h6 className="section-title mb-3">
+                    <div className="form-section mb-2">
+                        <h6 className="section-title mb-2">
                             {isEditMode ? 'Payment Allocations' : 'Pending Transactions'}
                         </h6>
 
@@ -1289,6 +1391,16 @@ const PaymentForm = ({
                                     <tbody>
                                         {pendingTransactions.map((transaction, index) => {
                                             const isSelected = validation.values.transactionIds.includes(transaction.id.toString());
+                                            
+                                            // Debug logging for selection state
+                                            if (index === 0) { // Only log for first transaction to avoid spam
+                                                console.log('🔍 Transaction selection debug:', {
+                                                    transactionId: transaction.id,
+                                                    formTransactionIds: validation.values.transactionIds,
+                                                    isSelected,
+                                                    pendingTransactionsCount: pendingTransactions.length
+                                                });
+                                            }
                                             const allocatedAmount = parseAmount(transactionAllocations[transaction.id.toString()] || 0);
                                             // Check if this transaction was part of the original payment
                                             const paymentData = selectedPayment?.allocations || selectedPayment?.transactions;
@@ -1370,32 +1482,13 @@ const PaymentForm = ({
                                             const description = getTransactionDescription(transaction);
 
                                             // Render each transaction
-                                            if (index < 5) { // Only log first 5 to avoid spam
-                                                console.log(`🔄 Rendering Transaction ${index}:`, {
-                                                    id: transaction.id,
-                                                    type: transaction.type,
-                                                    description,
-                                                    isSelected,
-                                                    key: transaction.id
-                                                });
-                                            }
-
                                             return (
                                                 <tr key={`transaction-${transaction.id}-${transaction.type}`} className={isSelected ? 'table-active' : ''}>
                                                     <td>
                                                         <Input
                                                             type="checkbox"
                                                             checked={isSelected}
-                                                            onChange={() => {
-                                                                console.log('🖱️ Checkbox clicked for transaction:', {
-                                                                    id: transaction.id,
-                                                                    type: transaction.type,
-                                                                    description,
-                                                                    currentlySelected: isSelected,
-                                                                    uniqueKey: `transaction-${transaction.id}-${transaction.type}`
-                                                                });
-                                                                toggleTransactionSelection(transaction.id);
-                                                            }}
+                                                            onChange={() => toggleTransactionSelection(transaction.id)}
                                                             disabled={isLoading}
                                                         />
                                                     </td>
@@ -1489,7 +1582,7 @@ const PaymentForm = ({
                                                 </Col>
                                                 <Col md={3} className="text-center">
                                                     <div className="text-muted small">{calculations.bankImpact().label}</div>
-                                                <div className={`h6 fw-bold mb-0 ${calculations.bankImpact().type === 'receivable' ? 'text-success' : 'text-danger'}`}>
+                                                <div className={`h6 fw-bold mb-0 ${calculations.bankImpact().type === 'receipt' ? 'text-success' : 'text-danger'}`}>
                                                         ₹{formatAmount(calculations.bankImpact().amount)}
                                                     </div>
                                                 </Col>

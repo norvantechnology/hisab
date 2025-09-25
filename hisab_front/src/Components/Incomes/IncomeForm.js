@@ -1,4 +1,4 @@
-import React, { useMemo, useEffect } from 'react';
+                                                                                            import React, { useMemo, useEffect } from 'react';
 import { Modal, ModalHeader, ModalBody, ModalFooter, Form, FormGroup, Label, Input, FormFeedback, Button, Row, Col } from 'reactstrap';
 import { RiLoader4Line, RiBankLine, RiUser3Line } from 'react-icons/ri';
 import ReactSelect from 'react-select';
@@ -6,10 +6,16 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
+import PaymentAdjustmentModal from '../Common/PaymentAdjustmentModal';
 import { getTodayDate } from '../../utils/dateUtils';
 import CategoryDropdown from '../Common/CategoryDropdown';
 
 const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, onSubmit, isLoading, onAddCategory }) => {
+    const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+        isOpen: false,
+        paymentInfo: null,
+        pendingFormData: null
+    });
 
     const validation = useFormik({
         enableReinitialize: true,
@@ -29,8 +35,8 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
             date: Yup.date().required("Date is required"),
             categoryId: Yup.string().required("Category is required"),
             paymentMethod: Yup.string().required("Payment method is required"),
-            bankAccountId: Yup.string().when(['paymentMethod', 'status'], {
-                is: (paymentMethod, status) => paymentMethod === 'bank' || (paymentMethod === 'contact' && status === 'paid'),
+            bankAccountId: Yup.string().when('paymentMethod', {
+                is: 'bank',
                 then: () => Yup.string().required("Bank account is required"),
                 otherwise: () => Yup.string()
             }),
@@ -55,10 +61,57 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
                 .required("Amount is required")
         }),
         onSubmit: async (values) => {
-            console.log('Form submitted with values:', values);
-            await onSubmit(values);
+            console.log('🚀 IncomeForm onSubmit called with values:', values);
+            console.log('🔍 Form validation state at submission:', {
+                isValid: validation.isValid,
+                errors: validation.errors,
+                touched: validation.touched
+            });
+            
+            try {
+                console.log('📤 Calling parent onSubmit function...');
+                await onSubmit(values);
+                console.log('✅ Parent onSubmit completed successfully');
+            } catch (error) {
+                console.error('❌ Error in IncomeForm onSubmit:', error);
+                if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                    // Payment adjustment required - show adjustment modal
+                    console.log('✅ Income: Payment adjustment modal should open now');
+                    setPaymentAdjustmentModal({
+                        isOpen: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: values
+                    });
+                    return; // Don't close the form yet
+                }
+                // Re-throw other errors to be handled by parent
+                throw error;
+            }
         }
     });
+
+    // Handle payment adjustment choice
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentAdjustmentModal.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+            await onSubmit(formData);
+            
+            // Close the payment adjustment modal
+            setPaymentAdjustmentModal({
+                isOpen: false,
+                paymentInfo: null,
+                pendingFormData: null
+            });
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            // Keep the modal open and let parent handle the error
+            throw error;
+        }
+    };
 
     // Reset form when modal opens or selectedIncome changes
     useEffect(() => {
@@ -114,6 +167,13 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
 
     const handleStatusChange = (selectedOption) => {
         const status = selectedOption?.value;
+        
+        // Prevent status change if bank account is selected (should always be 'paid')
+        if (validation.values.paymentMethod === 'bank') {
+            console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+            return;
+        }
+        
         validation.setFieldValue('status', status);
         
         if (status === 'pending') {
@@ -329,13 +389,37 @@ const IncomeForm = ({ isOpen, toggle, isEditMode, categories, selectedIncome, on
 
                     <ModalFooter>
                         <Button color="light" onClick={handleModalClose}>Cancel</Button>
-                        <Button color="primary" type="submit" disabled={isLoading}>
+                        <Button 
+                            color="primary" 
+                            type="submit" 
+                            disabled={isLoading}
+                            onClick={() => {
+                                console.log('🔍 Update Income button clicked');
+                                console.log('Form validation state:', {
+                                    isValid: validation.isValid,
+                                    errors: validation.errors,
+                                    values: validation.values,
+                                    isLoading
+                                });
+                            }}
+                        >
                             {isEditMode ? 'Update Income' : 'Create Income'}
                             {isLoading && <RiLoader4Line className="ms-1 spin" />}
                         </Button>
                     </ModalFooter>
                 </Form>
             </ModalBody>
+
+            {/* Payment Adjustment Modal */}
+            <PaymentAdjustmentModal
+                isOpen={paymentAdjustmentModal.isOpen}
+                toggle={() => setPaymentAdjustmentModal(prev => ({ ...prev, isOpen: false }))}
+                paymentInfo={paymentAdjustmentModal.paymentInfo}
+                newAmount={paymentAdjustmentModal.pendingFormData?.amount}
+                onConfirm={handlePaymentAdjustmentChoice}
+                isLoading={isLoading}
+                transactionType="income"
+            />
         </Modal>
     );
 };

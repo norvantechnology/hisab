@@ -77,3 +77,10 @@ export const getPaymentForPrint = async (paymentId) => {
         endpoint: `/payment/getPaymentForPrint/${paymentId}`
     });
 };
+
+export const getPaymentsForTransaction = async (transactionType, transactionId) => {
+    return apiCall({
+        method: 'get',
+        endpoint: `/payment/getPaymentsForTransaction/${transactionType}/${transactionId}`
+    });
+};

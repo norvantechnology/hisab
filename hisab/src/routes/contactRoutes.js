@@ -12,11 +12,11 @@ router.get('/getContactDetails', authenticateUser, checkCompanyModulePermission(
 router.get('/getContacts', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContacts);
 router.put('/updateContact', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.updateContact);
 
-// New balance calculation routes
+// Balance calculation routes - UPDATED: Removed routes for functions that no longer exist
 router.get('/:contactId/currentBalance', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContactCurrentBalance);
 router.get('/:contactId/pendingBalanceSummary', authenticateUser, checkCompanyModulePermission('contact', 'VIEW'), contactController.getContactPendingBalanceSummary);
-router.put('/:contactId/updateBalance', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateContactCurrentBalance);
-router.put('/updateAllBalances', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.updateAllContactsCurrentBalance);
+// REMOVED: router.put('/:contactId/updateBalance', ...) - Function no longer exists since we don't store balance
+// REMOVED: router.put('/updateAllBalances', ...) - Function no longer exists since we don't store balance
 
 // Portal access routes
 router.post('/:contactId/generate-portal-access', authenticateUser, checkCompanyModulePermission('contact', 'EDIT'), contactController.generateContactPortalAccess);

@@ -11,6 +11,7 @@
     "pm2:restart": "pm2 restart hisab-backend",
     "pm2:delete": "pm2 delete hisab-backend",
     "migrate": "node src/config/migrate.js",
+    "fix-dashboard": "node fix-dashboard-data.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",

@@ -45,7 +45,6 @@ const AccountModal = ({ isOpen, toggle, isEdit, validation }) => {
                                     name="openingBalance"
                                     type="number"
                                     step="0.01"
-                                    min="0"
                                     placeholder={`Enter ${isEdit ? 'current' : 'opening'} balance`}
                                     validation={validation}
                                     icon={<RiBankLine />}

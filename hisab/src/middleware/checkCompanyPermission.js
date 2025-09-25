@@ -5,8 +5,7 @@ const checkCompanyModulePermission = (moduleName, requiredPermission) => {
   return async (req, res, next) => {
     const userId = req.currentUser?.id;
     const companyId = req.currentUser?.companyId;
-    console.log("userId>>", userId)
-    console.log("companyId>>", companyId)
+    
 
     if (!userId || !companyId) {
       return errorResponse(res, "Unauthorized access", 401);

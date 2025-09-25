@@ -1,11 +1,71 @@
 import React, { useMemo } from 'react';
-import { Card, CardBody, Badge } from 'reactstrap';
-import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiBankLine, RiUser3Line, RiArrowRightLine } from 'react-icons/ri';
+import { Card, CardBody, Badge, Button } from 'reactstrap';
+import { RiMoreFill, RiEyeLine, RiPencilLine, RiDeleteBinLine, RiBankLine, RiUser3Line, RiArrowRightLine, RiWalletLine } from 'react-icons/ri';
 import TableContainer from '../Common/TableContainer';
 import { UncontrolledDropdown, DropdownToggle, DropdownMenu, DropdownItem } from 'reactstrap';
 
-const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdit, onDelete }) => {
+const IncomeTable = ({ 
+    incomes, 
+    loading, 
+    pagination, 
+    onPageChange, 
+    onView, 
+    onEdit, 
+    onDelete,
+    onCreatePayment,
+    selectedItems = [],
+    onSelectionChange 
+}) => {
+    // Bulk selection handlers
+    const isAllSelected = selectedItems.length === incomes.length && incomes.length > 0;
+    const isPartiallySelected = selectedItems.length > 0 && selectedItems.length < incomes.length;
+
+    const handleSelectAll = () => {
+        if (isAllSelected) {
+            onSelectionChange([]);
+        } else {
+            onSelectionChange(incomes.map(income => income.id));
+        }
+    };
+
+    const handleSelectItem = (id) => {
+        if (selectedItems.includes(id)) {
+            onSelectionChange(selectedItems.filter(item => item !== id));
+        } else {
+            onSelectionChange([...selectedItems, id]);
+        }
+    };
+
     const columns = useMemo(() => [
+        {
+            header: ({ table }) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={isAllSelected}
+                        ref={(input) => {
+                            if (input) input.indeterminate = isPartiallySelected;
+                        }}
+                        onChange={handleSelectAll}
+                    />
+                </div>
+            ),
+            accessorKey: "select",
+            cell: (cell) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={selectedItems.includes(cell.row.original.id)}
+                        onChange={() => handleSelectItem(cell.row.original.id)}
+                    />
+                </div>
+            ),
+            enableColumnFilter: false,
+            enableSorting: false,
+            size: 50
+        },
         {
             header: "Date",
             accessorKey: "date",
@@ -200,27 +260,49 @@ const IncomeTable = ({ incomes, loading, pagination, onPageChange, onView, onEdi
         {
             header: "Action",
             accessorKey: "action",
-            cell: (cell) => (
-                <UncontrolledDropdown direction="start">
-                    <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
-                        <RiMoreFill />
-                    </DropdownToggle>
-                    <DropdownMenu className="dropdown-menu-end">
-                        <DropdownItem onClick={() => onView(cell.row.original)} className="py-2">
-                            <RiEyeLine className="me-2 align-middle text-muted" /> View
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onEdit(cell.row.original)} className="py-2">
-                            <RiPencilLine className="me-2 align-middle text-muted" /> Edit
-                        </DropdownItem>
-                        <DropdownItem onClick={() => onDelete(cell.row.original)} className="py-2">
-                            <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
-                        </DropdownItem>
-                    </DropdownMenu>
-                </UncontrolledDropdown>
-            ),
+            cell: (cell) => {
+                const income = cell.row.original;
+                const isPending = income.status === 'pending';
+                const hasRemainingAmount = parseFloat(income.remaining_amount || 0) > 0;
+
+                return (
+                    <div className="d-flex gap-1 align-items-center">
+                        {/* Payment Button - Only for pending incomes with remaining amount */}
+                        {isPending && hasRemainingAmount && onCreatePayment && (
+                            <Button
+                                color="outline-success"
+                                size="sm"
+                                onClick={() => onCreatePayment(income)}
+                                title={`Make Payment (${new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(income.remaining_amount)})`}
+                                className="btn-icon btn-soft-success"
+                                style={{ width: '34px', height: '34px', borderRadius: '6px' }}
+                            >
+                                <RiWalletLine size={15} />
+                            </Button>
+                        )}
+
+                        <UncontrolledDropdown direction="start">
+                            <DropdownToggle tag="button" className="btn btn-soft-secondary btn-sm">
+                                <RiMoreFill />
+                            </DropdownToggle>
+                            <DropdownMenu className="dropdown-menu-end">
+                                <DropdownItem onClick={() => onView(income)} className="py-2">
+                                    <RiEyeLine className="me-2 align-middle text-muted" /> View
+                                </DropdownItem>
+                                <DropdownItem onClick={() => onEdit(income)} className="py-2">
+                                    <RiPencilLine className="me-2 align-middle text-muted" /> Edit
+                                </DropdownItem>
+                                <DropdownItem onClick={() => onDelete(income)} className="py-2">
+                                    <RiDeleteBinLine className="me-2 align-middle text-muted" /> Delete
+                                </DropdownItem>
+                            </DropdownMenu>
+                        </UncontrolledDropdown>
+                    </div>
+                );
+            },
             enableColumnFilter: false
         }
-    ], [onView, onEdit, onDelete]);
+    ], [onView, onEdit, onDelete, onCreatePayment, selectedItems, incomes, isAllSelected, isPartiallySelected, handleSelectAll, handleSelectItem]);
 
     return (
         <Card className="shadow-sm">

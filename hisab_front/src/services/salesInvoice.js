@@ -85,6 +85,17 @@ export const shareSalesInvoice = async (invoiceId, shareData) => {
   return apiCall({
     method: 'post',
     endpoint: `/sales/share/${invoiceId}`,
-    data: shareData
+    data: {
+      ...shareData,
+      copies: 1 // Always use 1 copy for email sharing
+    }
   });
+}; 
+
+export const bulkDeleteSales = async (ids) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/sales/bulkDeleteSales',
+        data: { ids },
+    });
 }; 

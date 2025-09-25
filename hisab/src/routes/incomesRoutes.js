@@ -9,6 +9,7 @@ router.delete('/deleteIncomeCategory', authenticateUser, checkCompanyModulePermi
 router.get('/getIncomeCategories', authenticateUser, checkCompanyModulePermission('income', 'VIEW'), incomesController.getIncomeCategories);
 router.post('/createIncome', authenticateUser, checkCompanyModulePermission('income', 'CREATE'), incomesController.createIncome);
 router.delete('/deleteIncome', authenticateUser, checkCompanyModulePermission('income', 'DELETE'), incomesController.deleteIncome);
+router.post('/bulkDeleteIncomes', authenticateUser, checkCompanyModulePermission('income', 'DELETE'), incomesController.bulkDeleteIncomes);
 router.get('/getIncomes', authenticateUser, checkCompanyModulePermission('income', 'VIEW'), incomesController.getIncomes);
 router.put('/updateIncome', authenticateUser, checkCompanyModulePermission('income', 'EDIT'), incomesController.updateIncome);
 

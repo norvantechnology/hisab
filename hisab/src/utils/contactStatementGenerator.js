@@ -393,7 +393,6 @@ const createContactStatementHTML = (contact, transactions, summary, filters = {}
 // Generate Excel file for contact statement
 export const generateContactStatementExcel = async (contact, transactions, summary, filters = {}) => {
     try {
-        console.log('Starting Excel generation for contact:', contact?.name);
 
         const safeTransactions = Array.isArray(transactions) ? transactions : [];
         const safeSummary = {
@@ -485,7 +484,6 @@ export const generateContactStatementExcel = async (contact, transactions, summa
         worksheet.getCell(`B${summaryRow + 3}`).value = formatCurrency(safeSummary.netBalance);
         
         const buffer = await workbook.xlsx.writeBuffer();
-        console.log('Excel generated successfully');
         return buffer;
         
     } catch (error) {

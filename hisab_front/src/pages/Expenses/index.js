@@ -1,18 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast, ToastContainer } from 'react-toastify';
-import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
+import { RiDownload2Line, RiAddLine, RiDeleteBin6Line } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import ExpenseFilters from '../../Components/Expenses/ExpenseFilters';
 import ExpenseTable from '../../Components/Expenses/ExpenseTable';
 import ExpenseForm from '../../Components/Expenses/ExpenseForm';
 import ExpenseViewModal from '../../Components/Expenses/ExpenseViewModal';
 import AddCategoryModal from '../../Components/Expenses/AddCategoryModal';
+import PaymentForm from '../../Components/Payments/PaymentForm';
 import DeleteModal from "../../Components/Common/DeleteModal";
+import BulkDeleteModal from "../../Components/Common/BulkDeleteModal";
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import Loader from '../../Components/Common/Loader';
 import { getExpenseCategories, createExpenseCategory } from '../../services/categories';
-import { createExpense, getExpenses, updateExpense, deleteExpense } from '../../services/expenses';
+import { createExpense, getExpenses, updateExpense, deleteExpense, bulkDeleteExpenses } from '../../services/expenses';
+import { createPayment } from '../../services/payment';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
@@ -47,9 +50,14 @@ const ExpensesPage = () => {
             main: false,
             category: false,
             view: false,
-            export: false
+            export: false,
+            bulkDelete: false,
+            payment: false
         },
         selectedExpense: null,
+        selectedExpenseForPayment: null,
+        selectedItems: [],
+        bulkDeleteLoading: false,
         isEditMode: false,
         newCategoryName: '',
         apiLoading: false
@@ -57,8 +65,8 @@ const ExpensesPage = () => {
 
     const {
         expenses, categories, bankAccounts, contacts, loading, searchTerm,
-        pagination, filters, modals, selectedExpense, isEditMode,
-        newCategoryName, apiLoading
+        pagination, filters, modals, selectedExpense, selectedExpenseForPayment, isEditMode,
+        selectedItems, bulkDeleteLoading, newCategoryName, apiLoading
     } = state;
 
     // Use the modern company selection hook
@@ -205,6 +213,82 @@ const ExpensesPage = () => {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (selectedItems.length === 0) {
+            toast.warning("Please select items to delete");
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, bulkDeleteLoading: true }));
+            const response = await bulkDeleteExpenses(selectedItems);
+            
+            if (response.success) {
+                toast.success(`${response.successCount} expenses deleted successfully`);
+                if (response.errorCount > 0) {
+                    toast.warning(`${response.errorCount} expenses could not be deleted`);
+                }
+                setState(prev => ({ 
+                    ...prev, 
+                    selectedItems: [],
+                    modals: { ...prev.modals, bulkDelete: false }
+                }));
+                fetchData();
+            } else {
+                toast.error(response.message || "Failed to delete expenses");
+            }
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            toast.error("Failed to delete expenses");
+        } finally {
+            setState(prev => ({ ...prev, bulkDeleteLoading: false }));
+        }
+    };
+
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
+    const handleCreatePayment = (expense) => {
+        // Only allow payment for pending expenses with remaining amount
+        if (expense.status !== 'pending' || parseFloat(expense.remaining_amount || 0) <= 0) {
+            toast.error("Payment can only be created for pending expenses with remaining amount");
+            return;
+        }
+
+        setState(prev => ({
+            ...prev,
+            selectedExpenseForPayment: expense,
+            modals: { ...prev.modals, payment: true }
+        }));
+    };
+
+    const handleSubmitPayment = async (paymentData) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+
+            const response = await createPayment(paymentData);
+
+            if (response.success) {
+                toast.success("Payment created successfully");
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, payment: false },
+                    selectedExpenseForPayment: null,
+                    apiLoading: false
+                }));
+                
+                // Refresh the data to show updated amounts
+                fetchData();
+            } else {
+                throw new Error(response.message || "Failed to create payment");
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(error.message || "Failed to create payment");
+        }
+    };
+
     const handleAddCategory = async () => {
         if (!newCategoryName.trim()) {
             toast.error("Category name cannot be empty");
@@ -239,7 +323,8 @@ const ExpensesPage = () => {
                 date: values.date,
                 categoryId: values.categoryId,
                 amount: values.amount.toString(),
-                notes: values.notes || ''
+                notes: values.notes || '',
+                paymentAdjustmentChoice: values.paymentAdjustmentChoice // Include payment adjustment choice
             };
 
             // Always include all payment-related fields to ensure proper clearing
@@ -283,7 +368,14 @@ const ExpensesPage = () => {
         } catch (error) {
             console.error('Error in handleSubmitExpense:', error);
             setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} expense`);
+            
+            // If it's a payment conflict (409), let the form component handle it
+            if (error.status === 409 && error.data?.paymentConflict) {
+                throw error; // Re-throw to let ExpenseForm handle the payment adjustment modal
+            }
+            
+            // Handle other errors with toast
+            toast.error(error.data?.message || error.message || `Failed to ${isEditMode ? 'update' : 'create'} expense`);
         }
     };
 
@@ -308,12 +400,26 @@ const ExpensesPage = () => {
     };
 
     const prepareExportData = () => {
-        return expenses.map(expense => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? expenses.filter(expense => selectedItems.includes(expense.id))
+            : expenses;
+
+        console.log('📊 Expenses CSV Export:', {
+            totalExpenses: expenses.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(expense => ({
             'Date': new Date(expense.date).toLocaleDateString(),
             'Category': expense.categoryName || 'N/A',
             'Amount': parseFloat(expense.amount || 0).toFixed(2),
+            'Contact': expense.contactName || 'N/A',
             'Bank Account': expense.bankAccountName || 'N/A',
             'Notes': expense.notes || '',
+            'Status': expense.status ? expense.status.charAt(0).toUpperCase() + expense.status.slice(1) : '',
             'Created At': new Date(expense.createdAt).toLocaleString()
         }));
     };
@@ -347,6 +453,11 @@ const ExpensesPage = () => {
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
                                 <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
+                            {selectedItems.length > 0 && (
+                                <Button color="danger" onClick={() => toggleModal('bulkDelete', true)}>
+                                    <RiDeleteBin6Line className="align-middle me-1" /> Delete ({selectedItems.length})
+                                </Button>
+                            )}
                             <Button color="success" onClick={handleAddClick}>
                                 <RiAddLine className="align-middle me-1" /> Add Expense
                             </Button>
@@ -365,6 +476,9 @@ const ExpensesPage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onCreatePayment={handleCreatePayment}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 
@@ -404,11 +518,41 @@ const ExpensesPage = () => {
                     isLoading={apiLoading}
                 />
 
+                <BulkDeleteModal
+                    isOpen={modals.bulkDelete}
+                    toggle={() => toggleModal('bulkDelete', false)}
+                    selectedCount={selectedItems.length}
+                    onConfirm={handleBulkDelete}
+                    isLoading={bulkDeleteLoading}
+                />
+
                 <ExportCSVModal
                     show={modals.export}
                     onCloseClick={() => toggleModal('export', false)}
                     data={prepareExportData()}
                     filename="expenses"
+                />
+
+                <PaymentForm
+                    isOpen={modals.payment}
+                    toggle={() => toggleModal('payment', false)}
+                    bankAccounts={bankAccounts}
+                    contacts={contacts}
+                    onSubmit={handleSubmitPayment}
+                    isLoading={apiLoading}
+                    selectedInvoice={selectedExpenseForPayment}
+                    invoiceType="expense"
+                />
+
+                <PaymentForm
+                    isOpen={modals.payment}
+                    toggle={() => toggleModal('payment', false)}
+                    bankAccounts={bankAccounts}
+                    contacts={contacts}
+                    onSubmit={handleSubmitPayment}
+                    isLoading={apiLoading}
+                    selectedInvoice={selectedExpenseForPayment}
+                    invoiceType="expense"
                 />
             </Container>
             <ToastContainer closeButton={false} position="top-right" />

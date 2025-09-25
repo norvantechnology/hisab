@@ -96,7 +96,13 @@ const BusinessDashboard = () => {
 
     const calculatePercentage = useCallback((part, total) => {
         if (!total || total === 0) return 0;
-        return Math.round((part / total) * 100);
+        const percentage = (part / total) * 100;
+        // FIXED: Show more precise percentage for better accuracy
+        // If there's any pending amount, don't show 100%
+        if (percentage >= 99.5 && part < total) {
+            return Math.floor(percentage); // Show 99% instead of 100% if there's pending amount
+        }
+        return Math.round(percentage);
     }, []);
 
     // Optimized data fetching without page reload
@@ -129,6 +135,25 @@ const BusinessDashboard = () => {
                 getDashboardInsights().catch(err => ({ success: false, error: err.message })),
                 getRecentActivities().catch(err => ({ success: false, error: err.message }))
             ]);
+
+            // DEBUG: Log dashboard data to check calculations
+            console.log('=== DASHBOARD DATA DEBUG ===');
+            console.log('Analytics response:', analyticsResponse);
+            if (analyticsResponse?.financialSummary) {
+                console.log('Purchase data:', {
+                    total_purchases: analyticsResponse.financialSummary.total_purchases,
+                    purchases_paid: analyticsResponse.financialSummary.purchases_paid,
+                    purchases_pending: analyticsResponse.financialSummary.purchases_pending,
+                    calculated_percentage: calculatePercentage(analyticsResponse.financialSummary.purchases_paid, analyticsResponse.financialSummary.total_purchases)
+                });
+                console.log('Sales data:', {
+                    total_sales: analyticsResponse.financialSummary.total_sales,
+                    sales_received: analyticsResponse.financialSummary.sales_received,
+                    sales_pending: analyticsResponse.financialSummary.sales_pending,
+                    calculated_percentage: calculatePercentage(analyticsResponse.financialSummary.sales_received, analyticsResponse.financialSummary.total_sales)
+                });
+            }
+            console.log('=== END DASHBOARD DEBUG ===');
 
             // Check for critical failures
             if (!analyticsResponse.success && !quickStatsResponse.success) {
@@ -210,7 +235,8 @@ const BusinessDashboard = () => {
             products: '/products',
             contacts: '/contacts',
             expenses: '/expenses',
-            income: '/income',
+            incomes: '/incomes', // FIXED: Updated to match card usage
+            income: '/incomes',  // Keep both for compatibility
             payments: '/payments',
             'bank-accounts': '/bank-accounts'
         };
@@ -504,10 +530,10 @@ const BusinessDashboard = () => {
 
 
 
-                {/* Financial Summary - Optimized Layout */}
+                {/* Financial Summary - Complete Layout with All Transaction Types */}
                 {preferences.showFinancialSummary && (
                 <Row className="mb-4">
-                    <Col xl={3} lg={6} className="mb-3">
+                    <Col xl={2} lg={4} md={6} className="mb-3">
                         <Card className="metric-card h-100" onClick={() => navigateToSection('sales')}>
                             <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
@@ -521,12 +547,21 @@ const BusinessDashboard = () => {
                                         <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_sales)}</h4>
                                         <div className="d-flex justify-content-between align-items-center">
                                             <small className="text-muted">{formatNumber(analytics.financialSummary.total_sales_count)} invoices</small>
-                                        {analytics.financialSummary.total_sales > 0 && (
+                                            {analytics.financialSummary.total_sales > 0 && (
+                                                <div className="text-end">
                                                     <small className="text-success fw-medium">
-                                                    {calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)}% collected
+                                                        {calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)}% collected
                                                     </small>
-                                            )}
+                                                    {analytics.financialSummary.sales_pending > 0 && (
+                                                        <div>
+                                                            <small className="text-warning">
+                                                                ₹{formatNumber(analytics.financialSummary.sales_pending)} pending
+                                                            </small>
+                                                        </div>
+                                                    )}
                                                 </div>
+                                            )}
+                                        </div>
                                         {analytics.financialSummary.total_sales > 0 && (
                                                 <Progress 
                                                     value={calculatePercentage(analytics.financialSummary.sales_received, analytics.financialSummary.total_sales)} 
@@ -540,7 +575,7 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={3} lg={6} className="mb-3">
+                    <Col xl={2} lg={4} md={6} className="mb-3">
                         <Card className="metric-card h-100" onClick={() => navigateToSection('purchases')}>
                             <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
@@ -554,12 +589,21 @@ const BusinessDashboard = () => {
                                         <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_purchases)}</h4>
                                         <div className="d-flex justify-content-between align-items-center">
                                             <small className="text-muted">{formatNumber(analytics.financialSummary.total_purchase_count)} invoices</small>
-                                        {analytics.financialSummary.total_purchases > 0 && (
+                                            {analytics.financialSummary.total_purchases > 0 && (
+                                                <div className="text-end">
                                                     <small className="text-primary fw-medium">
-                                                    {calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)}% paid
+                                                        {calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)}% paid
                                                     </small>
-                                            )}
+                                                    {analytics.financialSummary.purchases_pending > 0 && (
+                                                        <div>
+                                                            <small className="text-warning">
+                                                                ₹{formatNumber(analytics.financialSummary.purchases_pending)} pending
+                                                            </small>
+                                                        </div>
+                                                    )}
                                                 </div>
+                                            )}
+                                        </div>
                                         {analytics.financialSummary.total_purchases > 0 && (
                                                 <Progress 
                                                     value={calculatePercentage(analytics.financialSummary.purchases_paid, analytics.financialSummary.total_purchases)} 
@@ -573,7 +617,93 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={3} lg={6} className="mb-3">
+                    {/* ADDED: Income Card */}
+                    <Col xl={2} lg={4} md={6} className="mb-3">
+                        <Card className="metric-card h-100" onClick={() => navigateToSection('incomes')}>
+                            <CardBody className="p-3">
+                                <div className="d-flex align-items-center">
+                                    <div className="flex-shrink-0">
+                                        <div className="metric-icon bg-success-subtle text-success">
+                                            <i className="ri-money-dollar-circle-line"></i>
+                                        </div>
+                                    </div>
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Total Incomes</p>
+                                        <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_incomes)}</h4>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">{formatNumber(analytics.financialSummary.total_income_count)} entries</small>
+                                            {analytics.financialSummary.total_incomes > 0 && (
+                                                <div className="text-end">
+                                                    <small className="text-success fw-medium">
+                                                        {calculatePercentage(analytics.financialSummary.incomes_received, analytics.financialSummary.total_incomes)}% received
+                                                    </small>
+                                                    {analytics.financialSummary.incomes_pending > 0 && (
+                                                        <div>
+                                                            <small className="text-warning">
+                                                                ₹{formatNumber(analytics.financialSummary.incomes_pending)} pending
+                                                            </small>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {analytics.financialSummary.total_incomes > 0 && (
+                                            <Progress 
+                                                value={calculatePercentage(analytics.financialSummary.incomes_received, analytics.financialSummary.total_incomes)} 
+                                                color="success" 
+                                                className="progress-sm mt-2"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </CardBody>
+                        </Card>
+                    </Col>
+
+                    {/* ADDED: Expense Card */}
+                    <Col xl={2} lg={4} md={6} className="mb-3">
+                        <Card className="metric-card h-100" onClick={() => navigateToSection('expenses')}>
+                            <CardBody className="p-3">
+                                <div className="d-flex align-items-center">
+                                    <div className="flex-shrink-0">
+                                        <div className="metric-icon bg-danger-subtle text-danger">
+                                            <i className="ri-money-dollar-circle-line"></i>
+                                        </div>
+                                    </div>
+                                    <div className="flex-grow-1 ms-3 overflow-hidden">
+                                        <p className="text-muted mb-1 fs-13">Total Expenses</p>
+                                        <h4 className="mb-1 fw-bold">{formatCurrency(analytics.financialSummary.total_expenses)}</h4>
+                                        <div className="d-flex justify-content-between align-items-center">
+                                            <small className="text-muted">{formatNumber(analytics.financialSummary.total_expense_count)} entries</small>
+                                            {analytics.financialSummary.total_expenses > 0 && (
+                                                <div className="text-end">
+                                                    <small className="text-danger fw-medium">
+                                                        {calculatePercentage(analytics.financialSummary.expenses_paid, analytics.financialSummary.total_expenses)}% paid
+                                                    </small>
+                                                    {analytics.financialSummary.expenses_pending > 0 && (
+                                                        <div>
+                                                            <small className="text-warning">
+                                                                ₹{formatNumber(analytics.financialSummary.expenses_pending)} pending
+                                                            </small>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        {analytics.financialSummary.total_expenses > 0 && (
+                                            <Progress 
+                                                value={calculatePercentage(analytics.financialSummary.expenses_paid, analytics.financialSummary.total_expenses)} 
+                                                color="danger" 
+                                                className="progress-sm mt-2"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </CardBody>
+                        </Card>
+                    </Col>
+
+                    <Col xl={2} lg={4} md={6} className="mb-3">
                         <Card className="metric-card h-100" onClick={() => navigateToSection('bank-accounts')}>
                             <CardBody className="p-3">
                                 <div className="d-flex align-items-center">
@@ -597,7 +727,7 @@ const BusinessDashboard = () => {
                         </Card>
                     </Col>
 
-                    <Col xl={3} lg={6} className="mb-3">
+                    <Col xl={2} lg={4} md={6} className="mb-3">
                         <Card className="metric-card h-100">
                             <CardBody className="p-3">
                                 <div className="d-flex align-items-center">

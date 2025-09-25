@@ -1,6 +1,11 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, uploadFileToS3 } from "../utils/index.js";
-import { handlePaymentAllocationsOnTransactionDelete } from "../utils/paymentAllocationUtils.js";
+import { 
+  handlePaymentAllocationsOnTransactionDelete, 
+  checkPaymentAllocationConflict,
+  updatePaymentAllocations,
+  calculateAmountsAfterAdjustment 
+} from "../utils/paymentAllocationUtils.js";
 import { sendEmail } from "../utils/emailUtils.js";
 import { sendWhatsAppDocument, sendWhatsAppTextMessage, isValidWhatsAppNumber } from "../utils/whatsappService.js";
 import { generatePDFFromTemplate, generateInvoicePDFFileName, createSalesInvoiceTemplateData } from "../utils/templatePDFGenerator.js";
@@ -243,7 +248,8 @@ export async function updateSale(req, res) {
     totalDiscount,
     taxAmount,
     netReceivable,
-    items
+    items,
+    paymentAdjustmentChoice // New parameter to handle payment adjustments
   } = req.body;
 
   const userId = req.currentUser?.id;
@@ -271,6 +277,8 @@ export async function updateSale(req, res) {
 
   try {
     await client.query("BEGIN");
+    
+    // Flag to track if payment adjustments were made (will be set by conflict check)
 
     // Validate products and serial numbers
     for (const item of items) {
@@ -287,6 +295,37 @@ export async function updateSale(req, res) {
       }
 
       const product = productRes.rows[0];
+
+      // For sales, validate stock availability (considering this is an update)
+      if (product.isInventoryTracked && !product.isSerialized) {
+        // Get the existing quantity for this product in this sale (will be restored to stock)
+        const existingSaleItems = await client.query(
+          `SELECT SUM(quantity) as total_qty FROM hisab."sale_items" 
+           WHERE "saleId" = $1 AND "productId" = $2`,
+          [id, productId]
+        );
+        
+        const existingQty = parseFloat(existingSaleItems.rows[0]?.total_qty || 0);
+        const effectiveStock = parseFloat(product.currentStock || 0) + existingQty;
+        
+        if (quantity > effectiveStock) {
+          await client.query("ROLLBACK");
+          return errorResponse(res, 
+            `Insufficient stock for ${product.name}. Available: ${effectiveStock} (Current: ${product.currentStock}, Allocated: ${existingQty})`, 
+            400
+          );
+        }
+        
+        console.log('📦 Backend stock validation:', {
+          productId,
+          productName: product.name,
+          currentStock: product.currentStock,
+          existingQty,
+          effectiveStock,
+          requestedQty: quantity,
+          isValid: quantity <= effectiveStock
+        });
+      }
 
       // Validate serial numbers for serialized products
       if (product.isSerialized && product.isInventoryTracked) {
@@ -317,34 +356,90 @@ export async function updateSale(req, res) {
       }
     }
 
-    // Get current payment status before updating
-    const currentSaleQuery = await client.query(
-      `SELECT "paid_amount", "remaining_amount", "netReceivable" FROM hisab."sales" 
-       WHERE "id" = $1 AND "companyId" = $2`,
+    // Get sale details for payment conflict checking
+    const saleQuery = await client.query(
+      `SELECT * FROM hisab."sales" WHERE "id" = $1 AND "companyId" = $2 FOR UPDATE`,
       [id, companyId]
     );
     
-    const currentSale = currentSaleQuery.rows[0];
-    const currentPaidAmount = parseFloat(currentSale.paid_amount || 0);
-    const oldNetReceivable = parseFloat(currentSale.netReceivable || 0);
-    
-    // Calculate new remaining amount based on the new total and existing payments
-    let remainingAmount, paidAmount;
-    
-    if (currentPaidAmount > 0) {
-      // Keep existing paid amount, calculate new remaining
-      paidAmount = Math.min(currentPaidAmount, netReceivable);
-      remainingAmount = Math.max(0, netReceivable - paidAmount);
-    } else {
-      // No payments made yet
-      if (status === 'paid') {
-        remainingAmount = 0;
-        paidAmount = netReceivable;
-      } else {
-        remainingAmount = netReceivable;
-        paidAmount = 0;
-      }
+    if (saleQuery.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return errorResponse(res, "Sale not found", 404);
     }
+
+    const sale = saleQuery.rows[0];
+    
+    // Initialize final status (will be updated by payment adjustment if needed)
+    let finalStatus = status;
+
+    // Check for payment allocation conflicts using utility function
+    const currentPaidAmount = parseFloat(sale.paid_amount || 0);
+    const oldNetReceivable = parseFloat(sale.netReceivable || 0);
+    const newNetReceivable = parseFloat(netReceivable || 0);
+
+    const conflictResult = await checkPaymentAllocationConflict(
+      client, 
+      'sale', 
+      id, 
+      companyId, 
+      oldNetReceivable, 
+      newNetReceivable, 
+      paymentAdjustmentChoice
+    );
+
+    // If payment adjustment is needed but no choice provided, return conflict info
+    if (conflictResult.requiresPaymentAdjustment) {
+      await client.query("ROLLBACK");
+      
+      return res.status(409).json({
+        success: false,
+        message: "Payment adjustment required",
+        requiresPaymentAdjustment: true,
+        paymentInfo: conflictResult.paymentInfo
+      });
+    }
+
+    const { hasPaymentAllocations, paymentAdjustmentMade, allocations } = conflictResult;
+
+    // Get current payment status for normal updates
+    const currentSale = sale;
+    // currentPaidAmount and oldNetReceivable already declared above
+    
+    // Check for payment method transitions that require amount recalculation
+    const paymentMethodChanged = (sale.bankAccountId !== bankAccountId) || (sale.contactId !== contactId);
+    const transitionType = sale.bankAccountId && !bankAccountId && contactId ? 'bank_to_contact' :
+                          !sale.bankAccountId && bankAccountId && !contactId ? 'contact_to_bank' :
+                          sale.bankAccountId && bankAccountId && sale.bankAccountId !== bankAccountId ? 'bank_to_bank' :
+                          sale.contactId && contactId && sale.contactId !== contactId ? 'contact_to_contact' :
+                          'no_transition';
+
+
+
+    // Calculate amounts using utility function
+    const amountResult = calculateAmountsAfterAdjustment(
+      newNetReceivable,
+      currentPaidAmount,
+      paymentAdjustmentChoice,
+      paymentAdjustmentMade
+    );
+
+    let { remainingAmount, paidAmount } = amountResult;
+    
+    // Always use the calculated status from utility function
+    // The utility function handles all scenarios correctly
+    let finalStatusToUse = amountResult.status;
+
+    console.log('📊 Sales status calculation debug:', {
+      paymentAdjustmentMade,
+      amountResultStatus: amountResult.status,
+      originalFinalStatus: finalStatus,
+      finalStatusToUse,
+      remainingAmount,
+      paidAmount,
+      newNetReceivable,
+      currentPaidAmount,
+      shouldBePending: remainingAmount > 0
+    });
 
     // Delete existing sale items and serial numbers
     await client.query(
@@ -352,10 +447,7 @@ export async function updateSale(req, res) {
       [id]
     );
 
-    await client.query(
-      `DELETE FROM hisab."sale_items" WHERE "saleId" = $1`,
-      [id]
-    );
+    // Items will be deleted later after inventory reversal
 
     // Update sale record with new schema
     await client.query(
@@ -371,11 +463,63 @@ export async function updateSale(req, res) {
         taxType, rateType, discountScope, discountValueType, discountValue,
         basicAmount, totalItemDiscount, invoiceDiscount, totalDiscount,
         taxAmount, transportationCharge, roundOff, netReceivable,
-        status, remainingAmount, paidAmount, internalNotes, id, companyId
+        finalStatusToUse, remainingAmount, paidAmount, internalNotes, id, companyId
       ]
     );
 
-    // Add new items and update inventory
+    // Handle payment allocation updates if needed
+    if (paymentAdjustmentMade) {
+      await updatePaymentAllocations(
+        client,
+        'sale',
+        allocations,
+        newNetReceivable,
+        paymentAdjustmentChoice
+      );
+    }
+
+    // STEP 1: Get existing sale items before deletion to reverse inventory
+    const existingItemsQuery = await client.query(
+      `SELECT si.*, p."isInventoryTracked", p."isSerialized", p."name" as productName
+       FROM hisab."sale_items" si
+       JOIN hisab."products" p ON si."productId" = p."id"
+       WHERE si."saleId" = $1`,
+      [id]
+    );
+
+    // STEP 2: Reverse inventory changes from existing items
+    for (const existingItem of existingItemsQuery.rows) {
+      if (existingItem.isInventoryTracked) {
+        console.log(`📦 Restoring stock for ${existingItem.productName}: +${existingItem.qty}`);
+        
+        // Restore product stock
+        await client.query(
+          `UPDATE hisab."products" 
+           SET "currentStock" = "currentStock" + $1, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $2 AND "companyId" = $3`,
+          [existingItem.qty, existingItem.productId, companyId]
+        );
+
+        // Restore serial numbers if serialized
+        if (existingItem.isSerialized) {
+          await client.query(
+            `UPDATE hisab."serialNumbers" 
+             SET "status" = 'in_stock', "saleDate" = NULL, "updatedAt" = CURRENT_TIMESTAMP
+             WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" IN (
+               SELECT "serialNumber" FROM hisab."sale_serial_numbers" 
+               WHERE "saleItemId" = $3
+             )`,
+            [companyId, existingItem.productId, existingItem.id]
+          );
+        }
+      }
+    }
+
+    // STEP 3: Delete existing sale items and serial numbers
+    await client.query(`DELETE FROM hisab."sale_serial_numbers" WHERE "saleId" = $1`, [id]);
+    await client.query(`DELETE FROM hisab."sale_items" WHERE "saleId" = $1`, [id]);
+
+    // STEP 4: Add new items and update inventory
     for (const item of items) {
       const {
         productId, quantity, rate, rateType: itemRateType, taxRate = 0, taxAmount = 0,
@@ -395,12 +539,38 @@ export async function updateSale(req, res) {
 
       const saleItemId = itemRes.rows[0].id;
 
+      // Get current stock before update for debugging
+      const stockQuery = await client.query(
+        `SELECT "currentStock", "name" FROM hisab."products" WHERE "id" = $1 AND "companyId" = $2`,
+        [productId, companyId]
+      );
+      const currentStock = stockQuery.rows[0]?.currentStock || 0;
+      const productName = stockQuery.rows[0]?.name || 'Unknown';
+      
+      console.log(`📦 Applying new stock for ${productName}: ${currentStock} - ${quantity} = ${currentStock - quantity}`);
+
       await client.query(
         `UPDATE hisab."products"
          SET "currentStock" = "currentStock" - $1, "updatedAt" = CURRENT_TIMESTAMP
          WHERE "id" = $2 AND "companyId" = $3`,
         [quantity, productId, companyId]
       );
+
+      // Verify final stock is not negative
+      const finalStockQuery = await client.query(
+        `SELECT "currentStock" FROM hisab."products" WHERE "id" = $1 AND "companyId" = $2`,
+        [productId, companyId]
+      );
+      const finalStock = finalStockQuery.rows[0]?.currentStock || 0;
+      
+      if (finalStock < 0) {
+        console.error(`❌ NEGATIVE STOCK DETECTED for ${productName}: ${finalStock}`);
+        await client.query("ROLLBACK");
+        return errorResponse(res, 
+          `Stock update resulted in negative inventory for ${productName}. Final stock: ${finalStock}`, 
+          400
+        );
+      }
 
       // Handle serial numbers for serialized products
       if (serialNumbers && serialNumbers.length > 0) {
@@ -426,13 +596,14 @@ export async function updateSale(req, res) {
       }
     }
 
-    // Update bank balance if it's a bank-based sale and status is paid
-    if (bankAccountId && status === 'paid') {
+    // Update bank balance if status is 'paid' and bank account is provided
+    // Skip if payment adjustment was made (bank balance already updated above)
+    if (bankAccountId && finalStatusToUse === 'paid' && !paymentAdjustmentMade) {
       await client.query(
-        `UPDATE hisab."bankAccounts" 
-         SET "currentBalance" = "currentBalance" + $1, "updatedAt" = CURRENT_TIMESTAMP
+        `UPDATE hisab."bankAccounts"
+         SET "currentBalance" = "currentBalance" + $1
          WHERE "id" = $2 AND "companyId" = $3`,
-        [netReceivable, bankAccountId, companyId]
+        [newNetReceivable, bankAccountId, companyId]
       );
     }
 
@@ -440,7 +611,9 @@ export async function updateSale(req, res) {
 
     return successResponse(res, {
       message: "Sale invoice updated successfully",
-      saleId: id
+      saleId: id,
+      status: finalStatusToUse,
+      paymentAdjustmentMade: paymentAdjustmentMade || false
     });
 
   } catch (error) {
@@ -470,18 +643,47 @@ export async function deleteSale(req, res) {
   try {
     await client.query("BEGIN");
 
-    // Get sale details
-    const saleQuery = await client.query(
-      `SELECT * FROM hisab."sales" WHERE "id" = $1 AND "companyId" = $2 FOR UPDATE`,
+    // Get sale details to check bank and payment status
+    const saleResult = await client.query(
+      `SELECT "invoiceNumber", "contactId", "netReceivable", "bankAccountId", "status"
+       FROM hisab."sales" 
+       WHERE "id" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL`,
       [id, companyId]
     );
 
-    if (saleQuery.rows.length === 0) {
+    if (saleResult.rows.length === 0) {
       await client.query("ROLLBACK");
       return errorResponse(res, "Sale not found", 404);
     }
 
-    const sale = saleQuery.rows[0];
+    const sale = saleResult.rows[0];
+    
+    // Check if this sale has payment allocations (payment module transaction)
+    const hasPaymentAllocations = await client.query(
+      `SELECT COUNT(*) as count FROM hisab."payment_allocations" pa
+       JOIN hisab."payments" p ON pa."paymentId" = p.id
+       WHERE pa."saleId" = $1 AND p."companyId" = $2 AND p."deletedAt" IS NULL`,
+      [id, companyId]
+    );
+    
+    const isPaymentModuleTransaction = parseInt(hasPaymentAllocations.rows[0].count) > 0;
+    
+    if (isPaymentModuleTransaction) {
+      // This sale has payment allocations, so we need to delete them first
+      // The payment allocation deletion will handle bank balance adjustments
+      await handlePaymentAllocationsOnTransactionDelete(client, 'sale', id, companyId, userId);
+    } else {
+      // This is a direct bank transaction, handle bank balance manually
+    if (sale.bankAccountId && sale.status === 'paid') {
+        await client.query(
+          `UPDATE hisab."bankAccounts" 
+           SET "currentBalance" = "currentBalance" - $1,
+               "updatedAt" = CURRENT_TIMESTAMP
+           WHERE id = $2`,
+          [sale.netReceivable, sale.bankAccountId]
+        );
+    }
+    }
 
     // Get sale items
     const itemsQuery = await client.query(
@@ -527,8 +729,9 @@ export async function deleteSale(req, res) {
       [userId, id]
     );
 
-    // CRITICAL: Handle payment allocations before deleting
-    await handlePaymentAllocationsOnTransactionDelete(client, 'sale', id, companyId, userId);
+    // Handle payment allocations if they exist, otherwise handle direct bank adjustment
+    
+
 
     await client.query("COMMIT");
 
@@ -1303,7 +1506,8 @@ export async function shareSalesInvoice(req, res) {
       userId: req.currentUser?.id,
       companyId: req.currentUser?.companyId,
       moduleType: 'sales',
-      templateId: null
+      templateId: null,
+      copies: req.body.copies || 1 // Always use 1 copy for email sharing
     });
     const pdfFileName = generateInvoicePDFFileName(templateData, 'sales');
 
@@ -1314,7 +1518,9 @@ Date: ${new Date(sale.invoiceDate).toLocaleDateString('en-IN')}.
 Thank you for your business!`;
 
     if (shareType === 'email') {
-      // Send via email
+      // Send via email asynchronously (don't wait for email delivery)
+      setImmediate(async () => {
+        try {
       await sendEmail({
         to: recipient,
         subject: `Sales Invoice #${sale.invoiceNumber} - ${sale.companyName}`,
@@ -1361,10 +1567,16 @@ Thank you for your business!`;
           content: pdfBuffer,
           contentType: 'application/pdf'
         }]
+          });
+          console.log(`✅ Sales invoice ${sale.invoiceNumber} sent successfully to ${recipient}`);
+        } catch (emailError) {
+          console.error(`❌ Failed to send sales invoice ${sale.invoiceNumber} to ${recipient}:`, emailError);
+        }
       });
 
+      // Return success immediately without waiting for email delivery
       return successResponse(res, {
-        message: "Sales invoice shared successfully via email",
+        message: "Sales invoice is being sent via email",
         shareType: 'email',
         recipient: recipient
       });
@@ -1560,6 +1772,120 @@ export async function getSalesInvoiceForPrint(req, res) {
   } catch (error) {
     console.error('Error fetching sales invoice for print:', error);
     return errorResponse(res, "Failed to fetch sales invoice data", 500);
+  } finally {
+    client.release();
+  }
+}
+
+// Bulk delete sales
+export async function bulkDeleteSales(req, res) {
+  const { ids } = req.body;
+  const companyId = req.currentUser?.companyId;
+  const userId = req.currentUser?.id;
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return errorResponse(res, "Sale IDs array is required", 400);
+  }
+
+  if (!companyId || !userId) {
+    return errorResponse(res, "Unauthorized access", 401);
+  }
+
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+
+    // Process each sale deletion
+    for (const id of ids) {
+      try {
+        // Get sale details with FOR UPDATE lock
+        const saleQuery = await client.query(
+          `SELECT * FROM hisab."sales" WHERE "id" = $1 AND "companyId" = $2 AND "deletedAt" IS NULL FOR UPDATE`,
+          [id, companyId]
+        );
+
+        if (saleQuery.rows.length === 0) {
+          errors.push(`Sale ID ${id} not found`);
+          errorCount++;
+          continue;
+        }
+
+        const sale = saleQuery.rows[0];
+
+        // Get sale items
+        const itemsQuery = await client.query(
+          `SELECT * FROM hisab."sale_items" WHERE "saleId" = $1`,
+          [id]
+        );
+
+        const items = itemsQuery.rows;
+
+        // Reverse inventory changes
+        for (const item of items) {
+          // Restore product stock
+          await client.query(
+            `UPDATE hisab."products" 
+             SET "currentStock" = "currentStock" + $1, "updatedAt" = CURRENT_TIMESTAMP
+             WHERE "id" = $2 AND "companyId" = $3`,
+            [item.quantity, item.productId, companyId]
+          );
+
+          // Restore serial numbers
+          await client.query(
+            `UPDATE hisab."serialNumbers" 
+             SET "status" = 'in_stock', "saleDate" = NULL
+             WHERE "companyId" = $1 AND "productId" = $2 AND "serialNumber" IN (
+               SELECT "serialNumber" FROM hisab."sale_serial_numbers" 
+               WHERE "saleItemId" = $3
+             )`,
+            [companyId, item.productId, item.id]
+          );
+        }
+
+        // Delete sale serial numbers
+        await client.query(`DELETE FROM hisab."sale_serial_numbers" WHERE "saleId" = $1`, [id]);
+
+        // Delete sale items
+        await client.query(`DELETE FROM hisab."sale_items" WHERE "saleId" = $1`, [id]);
+
+        // Handle payment allocations before deleting
+        await handlePaymentAllocationsOnTransactionDelete(client, 'sale', id, companyId, userId);
+
+        // Soft delete sale
+        await client.query(
+          `UPDATE hisab."sales" 
+           SET "deletedAt" = CURRENT_TIMESTAMP, "deletedBy" = $1, "updatedAt" = CURRENT_TIMESTAMP
+           WHERE "id" = $2 AND "companyId" = $3`,
+          [userId, id, companyId]
+        );
+
+        successCount++;
+      } catch (error) {
+        console.error(`Error deleting sale ${id}:`, error);
+        errors.push(`Sale ID ${id}: ${error.message}`);
+        errorCount++;
+      }
+    }
+
+    await client.query("COMMIT");
+
+    return successResponse(res, {
+      message: `Bulk delete completed. ${successCount} sales deleted successfully.`,
+      successCount,
+      errorCount,
+      errors: errors.length > 0 ? errors : null,
+      totalProcessed: ids.length
+    });
+
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("Bulk delete sales error:", error);
+    return errorResponse(res, "Failed to bulk delete sales", 500);
   } finally {
     client.release();
   }

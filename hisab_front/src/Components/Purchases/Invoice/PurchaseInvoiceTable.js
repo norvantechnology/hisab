@@ -63,13 +63,65 @@ const PurchaseInvoiceTable = ({
     onView,
     onEdit,
     onDelete,
+    onBulkDelete,
     onGeneratePDF,
     onCreatePayment,
     onPrint,
     pdfLoading = null,
-    onShare
+    onShare,
+    selectedItems = [],
+    onSelectionChange
 }) => {
+    // Bulk selection handlers
+    const isAllSelected = selectedItems.length === invoices.length && invoices.length > 0;
+    const isPartiallySelected = selectedItems.length > 0 && selectedItems.length < invoices.length;
+
+    const handleSelectAll = () => {
+        if (isAllSelected) {
+            onSelectionChange([]);
+        } else {
+            onSelectionChange(invoices.map(invoice => invoice.id));
+        }
+    };
+
+    const handleSelectItem = (id) => {
+        if (selectedItems.includes(id)) {
+            onSelectionChange(selectedItems.filter(item => item !== id));
+        } else {
+            onSelectionChange([...selectedItems, id]);
+        }
+    };
+
     const columns = useMemo(() => [
+        {
+            header: ({ table }) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={isAllSelected}
+                        ref={(input) => {
+                            if (input) input.indeterminate = isPartiallySelected;
+                        }}
+                        onChange={handleSelectAll}
+                    />
+                </div>
+            ),
+            accessorKey: "select",
+            cell: (cell) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={selectedItems.includes(cell.row.original.id)}
+                        onChange={() => handleSelectItem(cell.row.original.id)}
+                    />
+                </div>
+            ),
+            enableColumnFilter: false,
+            enableSorting: false,
+            size: 50
+        },
         {
             header: "Invoice",
             accessorKey: "invoiceNumber",

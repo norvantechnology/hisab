@@ -31,6 +31,7 @@ import {
     RiArrowDownSLine,
     RiArrowUpSLine
 } from 'react-icons/ri';
+import PaymentAdjustmentModal from '../../Common/PaymentAdjustmentModal';
 import * as Yup from "yup";
 import { useFormik } from "formik";
 import { toast } from 'react-toastify';
@@ -50,6 +51,13 @@ const FastSalesInvoiceForm = ({
     isLoading = false,
     apiError = null
 }) => {
+    // Payment adjustment modal state
+    const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+        isOpen: false,
+        paymentInfo: null,
+        pendingFormData: null
+    });
+
     // All state declarations first
     const [items, setItems] = useState([]);
     const [newItem, setNewItem] = useState({
@@ -98,11 +106,7 @@ const FastSalesInvoiceForm = ({
         invoiceNumber: Yup.string().required('Invoice number is required'),
         date: Yup.date().required('Date is required'),
         billTo: Yup.string().required('Bill to is required'),
-        billToBank: Yup.string().when(['status', 'billTo'], {
-            is: (status, billTo) => status === 'paid' && billTo && billTo.startsWith('contact_'),
-            then: (schema) => schema.required('Bank account is required when status is paid and customer is a contact'),
-            otherwise: (schema) => schema
-        }),
+        billToBank: Yup.string(),
         taxType: Yup.string().required('Tax type is required'),
         rateType: Yup.string().when('taxType', {
             is: (taxType) => {
@@ -166,13 +170,47 @@ const FastSalesInvoiceForm = ({
                 await onSubmit(calculatedValues);
             } catch (error) {
                 console.error('Error submitting form:', error);
+                
+                if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                    // Payment adjustment required - show adjustment modal
+                    console.log('✅ Sales: Payment adjustment modal should open now');
+                    setPaymentAdjustmentModal({
+                        isOpen: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: calculatedValues
+                    });
+                    return; // Don't close the form yet
+                }
+                // Re-throw other errors to be handled by parent
+                throw error;
             } finally {
                 setIsSubmitting(false);
             }
         }
     });
 
-
+    // Handle payment adjustment choice
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentAdjustmentModal.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+            await onSubmit(formData);
+            
+            // Close the payment adjustment modal
+            setPaymentAdjustmentModal({
+                isOpen: false,
+                paymentInfo: null,
+                pendingFormData: null
+            });
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            // Keep the modal open and let parent handle the error
+            throw error;
+        }
+    };
 
     // Update new item calculations in real-time
     const updateNewItemCalculations = useCallback((updatedItem) => {
@@ -275,7 +313,7 @@ const FastSalesInvoiceForm = ({
             isSerialized: item.isSerialized || false,
             serialNumbers: item.serialNumbers || [],
             availableSerialNumbers: [],
-            currentStock: item.currentStock || 0,
+            currentStock: (item.currentStock || 0) + (parseFloat(item.quantity) || 0), // Add back the quantity being edited
             calculatedTotal: item.lineTotal || item.total || 0,
             calculatedTaxAmount: item.taxAmount || 0,
             calculatedDiscount: item.discount || 0
@@ -769,12 +807,26 @@ const FastSalesInvoiceForm = ({
 
     // Event handlers
     const handleBillToChange = useCallback((selectedOption) => {
-        validation.setFieldValue('billTo', selectedOption?.value || '');
-        if (!selectedOption?.value?.startsWith('contact_')) {
+        const value = selectedOption?.value || '';
+        validation.setFieldValue('billTo', value);
+        
+        if (value.startsWith('bank_')) {
+            // Bank account selected = Direct payment = Status: 'paid'
+            validation.setFieldValue('status', 'paid');
             validation.setFieldValue('billToBank', '');
             setSelectedContact(null);
-        } else {
+            console.log(`🏦 Bank account selected: Direct sales payment, status set to 'paid'`);
+        } else if (value.startsWith('contact_')) {
+            // Contact selected = Credit transaction = Status: 'pending' (can be changed)
+            validation.setFieldValue('status', 'pending');
+            validation.setFieldValue('billToBank', '');
             setSelectedContact(selectedOption?.contact || null);
+            console.log(`👥 Contact selected: Credit sales, status set to 'pending'`);
+        } else {
+            // No selection
+            validation.setFieldValue('status', 'pending');
+            validation.setFieldValue('billToBank', '');
+            setSelectedContact(null);
         }
     }, []);
 
@@ -849,6 +901,13 @@ const FastSalesInvoiceForm = ({
 
     const handleStatusChange = useCallback((e) => {
         const newStatus = e.target.value;
+        
+        // Prevent status change if bank account is selected (should always be 'paid')
+        if (validation.values.billTo && validation.values.billTo.startsWith('bank_')) {
+            console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+            return;
+        }
+        
         validation.setFieldValue('status', newStatus);
         
         if (newStatus === 'pending' && validation.values.billToBank) {
@@ -858,14 +917,19 @@ const FastSalesInvoiceForm = ({
 
     // Conditional display logic
     const shouldShowStatusDropdown = useMemo(() => {
+        // Only show status dropdown for contact selections (hide for bank accounts and empty selections)
         return validation.values.billTo && validation.values.billTo.startsWith('contact_');
     }, [validation.values.billTo]);
 
     const shouldShowBankAccountDropdown = useMemo(() => {
+        // Hide Payment Bank dropdown in edit mode
+        if (isEditMode) {
+            return false;
+        }
         return validation.values.status === 'paid' && 
                validation.values.billTo && 
                validation.values.billTo.startsWith('contact_');
-    }, [validation.values.status, validation.values.billTo]);
+    }, [validation.values.status, validation.values.billTo, isEditMode]);
 
     const shouldShowTaxRate = useMemo(() => {
         const selectedTax = TAX_TYPES.find(tax => tax.value === validation.values.taxType);
@@ -873,9 +937,17 @@ const FastSalesInvoiceForm = ({
     }, [validation.values.taxType]);
 
     const shouldShowDiscountValueType = useMemo(() => {
-        return validation.values.discountType && 
+        const shouldShow = validation.values.discountType && 
                validation.values.discountType !== 'none' && 
                (validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice');
+        
+        console.log('🔍 Discount value field visibility:', {
+            discountType: validation.values.discountType,
+            shouldShow,
+            hasInvoiceDiscount: validation.values.discountType === 'on_invoice' || validation.values.discountType === 'per_item_and_invoice'
+        });
+        
+        return shouldShow;
     }, [validation.values.discountType]);
 
     const shouldShowItemDiscountField = useMemo(() => {
@@ -945,6 +1017,7 @@ const FastSalesInvoiceForm = ({
     }, [validation.values.rateType, updateNewItemCalculations]);
 
     return (
+        <>
         <Modal isOpen={isOpen} toggle={toggle} size="xl" centered className="fast-invoice-modal" style={{ maxWidth: '70vw' }}>
             <ModalHeader toggle={toggle}>
                 <h5 className="mb-0">
@@ -1033,27 +1106,30 @@ const FastSalesInvoiceForm = ({
                                 <FormFeedback>{validation.errors.billTo}</FormFeedback>
                             </FormGroup>
                         </Col>
-                        <Col md={1}>
-                            <FormGroup className="mb-0">
-                                <Label className="form-label small fw-bold">Status</Label>
-                            <Input
-                                type="select"
-                                size="sm"
-                                    name="status"
-                                    value={validation.values.status}
-                                    onChange={handleStatusChange}
-                                    onBlur={validation.handleBlur}
-                                    invalid={validation.touched.status && !!validation.errors.status}
-                                    disabled={isProcessing}
-                                    style={{ height: '35px' }}
-                                >
-                                    {STATUS_OPTIONS.map(status => (
-                                        <option key={status.value} value={status.value}>{status.label}</option>
-                                ))}
-                            </Input>
-                                <FormFeedback>{validation.errors.status}</FormFeedback>
-                            </FormGroup>
-                        </Col>
+                        {/* Status field - only show for contact selections */}
+                        {!isEditMode && shouldShowStatusDropdown && (
+                            <Col md={1}>
+                                <FormGroup className="mb-0">
+                                    <Label className="form-label small fw-bold">Status</Label>
+                                <Input
+                                    type="select"
+                                    size="sm"
+                                        name="status"
+                                        value={validation.values.status}
+                                        onChange={handleStatusChange}
+                                        onBlur={validation.handleBlur}
+                                        invalid={validation.touched.status && !!validation.errors.status}
+                                        disabled={isProcessing}
+                                        style={{ height: '35px' }}
+                                    >
+                                        {STATUS_OPTIONS.map(status => (
+                                            <option key={status.value} value={status.value}>{status.label}</option>
+                                    ))}
+                                </Input>
+                                    <FormFeedback>{validation.errors.status}</FormFeedback>
+                                </FormGroup>
+                            </Col>
+                        )}
                         <Col md={2}>
                             <FormGroup className="mb-0">
                                 <Label className="form-label small fw-bold">Tax Type *</Label>
@@ -1099,9 +1175,10 @@ const FastSalesInvoiceForm = ({
                         </Col>
                     </Row>
 
-                    {/* Rate Type Selection */}
-                    {shouldShowTaxRate && (
+                    {/* Secondary Options Row - Show when any secondary option is needed */}
+                    {(shouldShowTaxRate || shouldShowDiscountValueType) && (
                         <Row className="g-3 mb-4">
+                            {shouldShowTaxRate && (
                             <Col md={4}>
                                 <FormGroup className="mb-0">
                                     <Label className="form-label small fw-bold">Item Rate Type *</Label>
@@ -1127,6 +1204,7 @@ const FastSalesInvoiceForm = ({
                                     <small className="form-text text-muted">Rate type affects tax calculations.</small>
                                 </FormGroup>
                             </Col>
+                            )}
                             {shouldShowDiscountValueType && (
                                 <Col md={4}>
                                     <FormGroup className="mb-0">
@@ -1398,15 +1476,70 @@ const FastSalesInvoiceForm = ({
                                         color="success"
                                         size="sm"
                                         onClick={addItem}
-                                    disabled={
-                                        !newItem.productName || 
-                                        !newItem.productId ||
-                                        parseFloat(newItem.rate) <= 0 || 
-                                        (newItem.isSerialized ? 
-                                            newItem.serialNumbers.length === 0 : 
-                                            (parseFloat(newItem.quantity) <= 0 || parseFloat(newItem.quantity) > parseFloat(newItem.currentStock))
-                                        )
-                                    }
+                                    disabled={(() => {
+                                        const hasProductName = !!newItem.productName;
+                                        const hasProductId = !!newItem.productId;
+                                        const hasValidRate = parseFloat(newItem.rate) > 0;
+                                        const hasValidQuantity = newItem.isSerialized ? 
+                                            newItem.serialNumbers.length > 0 : 
+                                            parseFloat(newItem.quantity) > 0;
+                                        const hasEnoughStock = newItem.isSerialized ? 
+                                            true : // For serialized items, stock check is done via serial numbers
+                                            (() => {
+                                                const currentStock = parseFloat(newItem.currentStock) || 0;
+                                                const requestedQty = parseFloat(newItem.quantity) || 0;
+                                                
+                                                if (isEditMode && selectedInvoice && newItem.productId) {
+                                                    // In edit mode, calculate effective available stock
+                                                    // This includes current stock + stock that will be restored from existing items
+                                                    const existingItems = items.filter(item => item.productId === newItem.productId);
+                                                    const totalAlreadyAllocated = existingItems.reduce((sum, item) => 
+                                                        sum + (parseFloat(item.quantity) || 0), 0
+                                                    );
+                                                    const effectiveAvailableStock = currentStock + totalAlreadyAllocated;
+                                                    
+                                                    console.log('📦 Edit mode stock validation:', {
+                                                        productId: newItem.productId,
+                                                        productName: newItem.productName,
+                                                        currentStock,
+                                                        existingItemsCount: existingItems.length,
+                                                        totalAlreadyAllocated,
+                                                        effectiveAvailableStock,
+                                                        requestedQty,
+                                                        hasEnoughStock: requestedQty <= effectiveAvailableStock
+                                                    });
+                                                    
+                                                    return requestedQty <= effectiveAvailableStock;
+                                                } else {
+                                                    // In create mode, use normal stock validation
+                                                    return requestedQty <= currentStock;
+                                                }
+                                            })();
+                                        
+                                        const isDisabled = !hasProductName || !hasProductId || !hasValidRate || !hasValidQuantity || !hasEnoughStock;
+                                        
+                                        // Debug logging
+                                        if (isDisabled) {
+                                            console.log('🚫 ADD button disabled - Debug info:', {
+                                                hasProductName,
+                                                hasProductId,
+                                                hasValidRate,
+                                                hasValidQuantity,
+                                                hasEnoughStock,
+                                                newItem: {
+                                                    productName: newItem.productName,
+                                                    productId: newItem.productId,
+                                                    rate: newItem.rate,
+                                                    quantity: newItem.quantity,
+                                                    currentStock: newItem.currentStock,
+                                                    isSerialized: newItem.isSerialized,
+                                                    serialNumbers: newItem.serialNumbers
+                                                }
+                                            });
+                                        }
+                                        
+                                        return isDisabled;
+                                    })()}
                                     title="Add Item (Ctrl+Enter)"
                                     className="w-100 fw-bold"
                                     type="button"
@@ -1763,6 +1896,18 @@ const FastSalesInvoiceForm = ({
                 </ModalFooter>
             </Form>
         </Modal>
+
+        {/* Payment Adjustment Modal */}
+        <PaymentAdjustmentModal
+            isOpen={paymentAdjustmentModal.isOpen}
+            toggle={() => setPaymentAdjustmentModal(prev => ({ ...prev, isOpen: false }))}
+            paymentInfo={paymentAdjustmentModal.paymentInfo}
+            newAmount={paymentAdjustmentModal.pendingFormData?.netReceivable}
+            onConfirm={handlePaymentAdjustmentChoice}
+            isLoading={isLoading}
+            transactionType="sale"
+        />
+        </>
     );
 };
 

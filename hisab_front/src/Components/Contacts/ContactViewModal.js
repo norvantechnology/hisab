@@ -12,6 +12,18 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
     const [loadingTransactions, setLoadingTransactions] = useState(false);
     const [transactionsSummary, setTransactionsSummary] = useState(null);
     
+    // DEBUG: Log contact data when modal opens
+    useEffect(() => {
+        if (isOpen && contact) {
+            console.log('=== CONTACT VIEW MODAL DEBUG ===');
+            console.log('Contact prop data:', contact);
+            console.log('Contact calculatedBalance:', contact.calculatedBalance);
+            console.log('Contact openingBalance:', contact.openingBalance);
+            console.log('Contact openingBalanceType:', contact.openingBalanceType);
+            console.log('=== END CONTACT DEBUG ===');
+        }
+    }, [isOpen, contact]);
+    
     // Payment state
     const [showPaymentForm, setShowPaymentForm] = useState(false);
     const [selectedTransactions, setSelectedTransactions] = useState([]);
@@ -32,6 +44,15 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
         setLoadingTransactions(true);
         try {
             const response = await getPendingTransactions(contact.id);
+            
+            // DEBUG: Log the API response to see what data we're getting
+            console.log('=== PENDING TRANSACTIONS API RESPONSE ===');
+            console.log('Full response:', response);
+            console.log('Contact data:', response.contact);
+            console.log('Summary data:', response.summary);
+            console.log('Transactions:', response.transactions);
+            console.log('=== END DEBUG ===');
+            
             setPendingTransactions(response.transactions || []);
             setTransactionsSummary(response.summary || null);
         } catch (error) {
@@ -456,8 +477,8 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                 <Col md={6}>
                                                     <div className="text-center">
                                                         <h6 className="text-muted mb-2">Net Balance</h6>
-                                                        <h4 className="mb-0 text-warning">
-                                                            ₹{transactionsSummary?.totalPending?.toFixed(2) || '0.00'}
+                                                        <h4 className={`mb-0 ${transactionsSummary?.currentBalanceType === 'receivable' ? 'text-success' : 'text-danger'}`}>
+                                                            {transactionsSummary?.currentBalanceType === 'receivable' ? '+' : '-'}₹{transactionsSummary?.currentBalance?.toFixed(2) || '0.00'}
                                                         </h4>
                                                         <small className="text-muted">Including current balance & pending transactions</small>
                                                     </div>
@@ -466,10 +487,10 @@ const ContactViewModal = ({ isOpen, toggle, contact, bankAccounts = [], onPaymen
                                                     <div className="text-center">
                                                         <h6 className="text-muted mb-2">Balance Status</h6>
                                                         <Badge 
-                                                            color={transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'warning'}
-                                                            className={`badge-soft-${transactionsSummary?.payableStatus === 'receivable' ? 'success' : 'warning'}`}
+                                                            color={transactionsSummary?.currentBalanceType === 'receivable' ? 'success' : 'warning'}
+                                                            className={`badge-soft-${transactionsSummary?.currentBalanceType === 'receivable' ? 'success' : 'warning'}`}
                                                         >
-                                                            {transactionsSummary?.payableStatus === 'receivable' ? 'Receivable' : 'Payable'}
+                                                            {transactionsSummary?.currentBalanceType === 'receivable' ? 'Receivable' : 'Payable'}
                                                         </Badge>
                                                     </div>
                                                 </Col>

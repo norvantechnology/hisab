@@ -4,7 +4,7 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     
     // Get contact details
     const contactQuery = await client.query(
-      `SELECT "id", "name", "openingBalance", "openingBalanceType", "currentBalance", "currentBalanceType"
+      `SELECT "id", "name", "openingBalance", "openingBalanceType"
        FROM hisab."contacts" 
        WHERE "id" = $1 AND "companyId" = $2`,
       [contactId, companyId]
@@ -16,9 +16,9 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
 
     const contact = contactQuery.rows[0];
     
-    const { openingBalance, openingBalanceType, currentBalance, currentBalanceType } = contact;
+    // Get opening balance details
+    const { openingBalance, openingBalanceType } = contact;
     const openingBalanceAmount = parseFloat(openingBalance || 0);
-    const currentBalanceAmount = parseFloat(currentBalance || 0);
     
 
     // Calculate total pending purchases (amounts we owe to this contact) - ONLY pending purchases
@@ -121,23 +121,15 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
     }
 
     // PENDING TRANSACTIONS BALANCE CALCULATION
-    // Balance = Current Balance + Opening Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes
+    // Balance = Opening Balance + Pending Purchases + Pending Expenses - Pending Sales - Pending Incomes
     let calculatedBalance = 0;
     let calculatedBalanceType = 'payable';
 
-    // Start with current balance from database
-    if (currentBalanceType === 'payable') {
-      calculatedBalance = currentBalanceAmount; // We owe them
-    } else {
-      calculatedBalance = -currentBalanceAmount; // They owe us  
-    }
-
-    // Add opening balance (this represents the initial balance when contact was created)
-    const beforeOpeningBalance = calculatedBalance;
+    // Start with opening balance (this represents the initial balance when contact was created)
     if (openingBalanceType === 'payable') {
-      calculatedBalance += openingBalanceAmount; // We owe them
+      calculatedBalance = openingBalanceAmount; // We owe them
     } else if (openingBalanceType === 'receivable') {
-      calculatedBalance -= openingBalanceAmount; // They owe us
+      calculatedBalance = -openingBalanceAmount; // They owe us
     }
 
     // Add pending purchases (we owe them for these)
@@ -171,8 +163,6 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
       balance: Number(calculatedBalance),
       balanceType: calculatedBalanceType,
       breakdown: {
-        currentBalance: Number(currentBalanceAmount),
-        currentBalanceType,
         openingBalance: Number(openingBalanceAmount),
         openingBalanceType,
         totalPendingPurchases: Number(totalPendingPurchases),
@@ -189,22 +179,5 @@ export async function calculateContactCurrentBalance(client, contactId, companyI
   }
 }
 
-// Update contact balance after sale operations
-export async function updateContactBalanceAfterSale(client, contactId, companyId, saleAmount, status) {
-  try {
-    if (!contactId) return; // No contact involved (bank sale)
-
-    // Recalculate the complete balance using the comprehensive calculation
-    const { balance, balanceType } = await calculateContactCurrentBalance(client, contactId, companyId);
-    
-    await client.query(
-      `UPDATE hisab."contacts" 
-       SET "currentBalance" = $1, "currentBalanceType" = $2, "updatedAt" = CURRENT_TIMESTAMP
-       WHERE "id" = $3 AND "companyId" = $4`,
-      [balance, balanceType, contactId, companyId]
-    );
-  } catch (error) {
-    console.error('Error updating contact balance after sale:', error);
-    // Don't throw error to avoid rolling back the sale transaction
-  }
-} 
+// REMOVED: updateContactBalanceAfterSale function since currentBalance columns no longer exist
+// Contact balance is now calculated dynamically using calculateContactCurrentBalance() 

@@ -13,13 +13,15 @@ import PurchaseInvoiceViewModal from "../../../Components/Purchases/Invoice/Purc
 import ShareModal from "../../../Components/Common/ShareModal";
 import PaymentForm from "../../../Components/Payments/PaymentForm";
 import DeleteModal from "../../../Components/Common/DeleteModal";
+import BulkDeleteModal from "../../../Components/Common/BulkDeleteModal";
+import PaymentAdjustmentModal from "../../../Components/Common/PaymentAdjustmentModal";
 import ExportCSVModal from "../../../Components/Common/ExportCSVModal";
 import Loader from "../../../Components/Common/Loader";
 import PrintPreferencesManager from "../../../Components/Common/PrintPreferencesManager";
 
 // Services & Utils
 import { getCurrentMonthRange } from "../../../utils/dateUtils";
-import { listPurchases, createPurchase, updatePurchases, deletePurchase, getPurchase, generatePurchaseInvoicePDF, downloadPurchasePDF, sharePurchaseInvoice, getPurchaseInvoiceForPrint } from "../../../services/purchaseInvoice";
+import { listPurchases, createPurchase, updatePurchases, deletePurchase, bulkDeletePurchases, getPurchase, generatePurchaseInvoicePDF, downloadPurchasePDF, sharePurchaseInvoice, getPurchaseInvoiceForPrint } from "../../../services/purchaseInvoice";
 import { getTemplates } from "../../../services/templates";
 import { generatePreviewHTML, adjustTemplateForCopies, generateMultipleCopies } from "../../../utils/templatePreviewUtils";
 import { createPayment } from '../../../services/payment';
@@ -54,17 +56,22 @@ const PurchaseInvoicePage = () => {
         },
         modals: {
             delete: false,
+            bulkDelete: false,
             main: false,
             view: false,
             export: false,
             payment: false,
             share: false,
-            settings: false
+            settings: false,
+            paymentAdjustment: false
         },
         selectedInvoice: null,
         isEditMode: false,
         apiLoading: false,
         apiError: null,
+        selectedItems: [],
+        bulkDeleteLoading: false,
+        paymentConflict: null,
         pdfLoading: null,
         bankAccounts: [],
         contacts: [],
@@ -82,6 +89,9 @@ const PurchaseInvoicePage = () => {
         isEditMode,
         apiLoading,
         apiError,
+        selectedItems,
+        bulkDeleteLoading,
+        paymentConflict,
         pdfLoading,
         bankAccounts,
         contacts,
@@ -155,11 +165,11 @@ const PurchaseInvoicePage = () => {
                 invoices: response?.success ? response.purchases || [] : [],
                 pagination: {
                     ...prev.pagination,
-                    page: response?.pagination?.currentPage || 1,
-                    limit: response?.pagination?.limit || 10,
+                    page: response?.pagination?.currentPage || prev.pagination.page,
+                    limit: response?.pagination?.limit || prev.pagination.limit,
                     total: response?.pagination?.total || 0,
                     totalPages: response?.pagination?.totalPages || 1,
-                    currentPage: response?.pagination?.currentPage || 1
+                    currentPage: response?.pagination?.currentPage || prev.pagination.currentPage
                 },
                 loading: false,
                 apiLoading: false
@@ -177,8 +187,7 @@ const PurchaseInvoicePage = () => {
 
     useEffect(() => {
         if (selectedCompanyId) {
-        fetchData();
-            fetchBankAccountsAndContacts();
+            fetchData();
         }
     }, [
         pagination.page,
@@ -190,6 +199,13 @@ const PurchaseInvoicePage = () => {
         filters.invoiceNumber,
         selectedCompanyId
     ]);
+
+    // Separate useEffect for bank accounts and contacts (only when company changes)
+    useEffect(() => {
+        if (selectedCompanyId) {
+            fetchBankAccountsAndContacts();
+        }
+    }, [selectedCompanyId]);
 
     const toggleModal = (modalName, value) => {
         // Always reset selectedInvoice and isEditMode when closing the main modal
@@ -303,6 +319,79 @@ const PurchaseInvoicePage = () => {
         } catch (error) {
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.message);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedItems.length === 0) {
+            toast.warning("Please select items to delete");
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, bulkDeleteLoading: true }));
+            const response = await bulkDeletePurchases(selectedItems);
+            
+            if (response.success) {
+                toast.success(`${response.successCount} purchases deleted successfully`);
+                if (response.errorCount > 0) {
+                    toast.warning(`${response.errorCount} purchases could not be deleted`);
+                }
+                setState(prev => ({ 
+                    ...prev, 
+                    selectedItems: [],
+                    modals: { ...prev.modals, bulkDelete: false }
+                }));
+                fetchData();
+            } else {
+                toast.error(response.message || "Failed to delete purchases");
+            }
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            toast.error("Failed to delete purchases");
+        } finally {
+            setState(prev => ({ ...prev, bulkDeleteLoading: false }));
+        }
+    };
+
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentConflict.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+
+            
+            const response = isEditMode
+                ? await updatePurchases(formData)
+                : await createPurchase(formData);
+
+            if (response.success) {
+                toast.success(`Invoice ${isEditMode ? 'updated' : 'created'} successfully`);
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, main: false, paymentAdjustment: false },
+                    paymentConflict: null,
+                    apiLoading: false,
+                    apiError: null,
+                    isEditMode: false,
+                    selectedInvoice: null
+                }));
+                fetchData();
+            }
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            setState(prev => ({ 
+                ...prev, 
+                modals: { ...prev.modals, paymentAdjustment: false },
+                paymentConflict: null,
+                apiError: error.data?.message || error.message || 'Failed to process payment adjustment'
+            }));
         }
     };
 
@@ -559,16 +648,36 @@ const PurchaseInvoicePage = () => {
     };
 
     const handleSubmitInvoice = async (values) => {
+        console.log('🚀 STEP A: handleSubmitInvoice called in Purchase page!', {
+            isEditMode,
+            values,
+            selectedInvoice,
+            timestamp: new Date().toISOString(),
+            message: 'This proves the form component called the parent function'
+        });
+        
         try {
+            console.log('🚀 STEP B: Setting apiLoading to true');
             setState(prev => ({ ...prev, apiLoading: true, apiError: null }));
 
             if (isEditMode && !values.id && selectedInvoice) {
                 values.id = selectedInvoice.id;
+                console.log('🚀 STEP C: Added selectedInvoice.id to values');
             }
+
+            console.log('🚀 STEP D: About to call API function...', {
+                apiFunction: isEditMode ? 'updatePurchases' : 'createPurchase',
+                valuesForAPI: values
+            });
 
             const response = isEditMode
                 ? await updatePurchases(values)
                 : await createPurchase(values);
+                
+            console.log('🚀 STEP E: API call completed!', {
+                response,
+                success: response?.success
+            });
 
             if (response.success) {
                 toast.success(`Invoice ${isEditMode ? 'updated' : 'created'} successfully`);
@@ -588,13 +697,37 @@ const PurchaseInvoicePage = () => {
                 throw new Error(response.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
             }
         } catch (error) {
-            // Keep modal open and pass error to form component
+            console.error('❌ Parent handleSubmitInvoice error:', error);
+            console.log('🔍 Parent error details:', {
+                status: error.status,
+                data: error.data,
+                requiresPaymentAdjustment: error.data?.requiresPaymentAdjustment,
+                paymentInfo: error.data?.paymentInfo
+            });
+            
+            setState(prev => ({ ...prev, apiLoading: false }));
+            
+            // If it's a payment adjustment required (409), set a special state to trigger modal
+            if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                console.log('✅ Parent: Payment adjustment modal should open now');
+                // Show payment adjustment modal directly from parent page
             setState(prev => ({ 
                 ...prev, 
-                apiLoading: false,
-                apiError: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
+                    modals: { ...prev.modals, paymentAdjustment: true },
+                    paymentConflict: {
+                        isActive: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: values
+                    }
+                }));
+                return; // Don't throw error, handle it through state
+            }
+            
+            // For other errors, set apiError to display in form
+            setState(prev => ({ 
+                ...prev,
+                apiError: error.data?.message || error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
             }));
-            // Don't show toast error anymore - form will display it
         }
     };
 
@@ -621,10 +754,23 @@ const PurchaseInvoicePage = () => {
     };
 
     const prepareExportData = () => {
-        return invoices.map(invoice => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? invoices.filter(invoice => selectedItems.includes(invoice.id))
+            : invoices;
+
+        console.log('📊 Purchase CSV Export:', {
+            totalInvoices: invoices.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(invoice => ({
             'Invoice Number': invoice.invoiceNumber || 'N/A',
             'Date': new Date(invoice.invoiceDate).toLocaleDateString(),
-            'Vendor': invoice.contact?.name || invoice.bankAccount?.accountName || 'N/A',
+            'Vendor': invoice.contactName || invoice.contact?.name || 'N/A',
+            'Bank Account': invoice.accountName || invoice.bankAccount?.accountName || 'N/A',
             'Amount': parseFloat(invoice.netPayable || 0).toFixed(2),
             'Tax': parseFloat(invoice.taxAmount || 0).toFixed(2),
             'Discount': parseFloat(invoice.totalDiscount || 0).toFixed(2),
@@ -657,6 +803,16 @@ const PurchaseInvoicePage = () => {
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
                                 <RiDownload2Line className="align-bottom" /> Export
                             </Button>
+                            {selectedItems.length > 0 && (
+                                <Button 
+                                    color="danger" 
+                                    onClick={() => toggleModal('bulkDelete', true)}
+                                    className="me-2"
+                                >
+                                    <i className="ri-delete-bin-line me-1"></i>
+                                    Delete Selected ({selectedItems.length})
+                                </Button>
+                            )}
                             <Button color="success" onClick={handleAddClick}>
                                 <RiAddLine className="align-bottom" /> New Invoice
                             </Button>
@@ -675,11 +831,14 @@ const PurchaseInvoicePage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onBulkDelete={handleBulkDelete}
                         onGeneratePDF={handleGeneratePDF}
                         onCreatePayment={handleCreatePayment}
                         onPrint={handlePrint}
                         onShare={handleShare}
                         pdfLoading={pdfLoading}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 
@@ -738,6 +897,28 @@ const PurchaseInvoicePage = () => {
                     isLoading={apiLoading}
                 />
 
+                <BulkDeleteModal
+                    isOpen={modals.bulkDelete}
+                    toggle={() => toggleModal('bulkDelete', false)}
+                    selectedCount={selectedItems.length}
+                    itemType="purchases"
+                    onConfirm={handleBulkDelete}
+                    isLoading={bulkDeleteLoading}
+                />
+
+                <PaymentAdjustmentModal
+                    isOpen={modals.paymentAdjustment}
+                    toggle={() => setState(prev => ({ 
+                        ...prev, 
+                        modals: { ...prev.modals, paymentAdjustment: false },
+                        paymentConflict: null
+                    }))}
+                    paymentInfo={paymentConflict?.paymentInfo}
+                    newAmount={paymentConflict?.pendingFormData?.netPayable}
+                    onConfirm={handlePaymentAdjustmentChoice}
+                    isLoading={apiLoading}
+                    transactionType="purchase"
+                />
 
             </Container>
             <ToastContainer closeButton={false} position="top-right" />

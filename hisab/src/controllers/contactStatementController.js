@@ -1,6 +1,7 @@
 import pool from "../config/dbConnection.js";
 import { errorResponse, successResponse, sendEmail } from "../utils/index.js";
 import { generateContactStatementPDF, generateContactStatementExcel } from "../utils/contactStatementGenerator.js";
+import { calculateContactCurrentBalance } from "../utils/balanceCalculator.js";
 
 // Get contact statement with all transactions
 export async function getContactStatement(req, res) {
@@ -30,7 +31,7 @@ export async function getContactStatement(req, res) {
         const contactQuery = `
             SELECT 
                 c.id, c.name, c.gstin, c.mobile, c.email, c."contactType",
-                c."currentBalance", c."currentBalanceType",
+                c."openingBalance", c."openingBalanceType",
                 c."billingAddress1", c."billingAddress2", c."billingCity", 
                 c."billingPincode", c."billingState", c."billingCountry",
                 comp.name as "companyName", comp."address1" as "companyAddress1",
@@ -48,6 +49,11 @@ export async function getContactStatement(req, res) {
         }
 
         const contact = contactResult.rows[0];
+        
+        // Calculate current balance using the balance calculator
+        const { balance: currentBalance, balanceType: currentBalanceType } = 
+            await calculateContactCurrentBalance(client, contactId, companyId);
+            
         let transactions = [];
 
         // Build date filter
@@ -235,8 +241,8 @@ export async function getContactStatement(req, res) {
             totalCredit,
             netBalance: totalSales - totalPurchases, // Business net
             runningBalance, // Accounting running balance
-            currentBalance: parseFloat(contact.currentBalance || 0),
-            currentBalanceType: contact.currentBalanceType,
+            currentBalance: currentBalance,
+            currentBalanceType: currentBalanceType,
             transactionCount: transactions.length
         };
 

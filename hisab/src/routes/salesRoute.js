@@ -11,6 +11,7 @@ router.use(authenticateUser);
 router.post('/createSale', salesController.createSale);
 router.put('/updateSale', salesController.updateSale);
 router.delete('/deleteSale', salesController.deleteSale);
+router.post('/bulkDeleteSales', salesController.bulkDeleteSales);
 router.get('/getSale', salesController.getSale);
 router.get('/listSales', salesController.listSales);
 router.get('/getNextInvoiceNumber', salesController.getNextInvoiceNumber);

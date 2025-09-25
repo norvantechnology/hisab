@@ -22,8 +22,6 @@ async function getAuthToken(gstin) {
       timeout: 10000
     });
 
-    console.log("authResponse>>", authResponse.data);
-
     if (authResponse.data?.Data?.AuthToken) {
       return {
         success: true,
@@ -114,9 +112,7 @@ export async function createCompany(req, res) {
     let logoUrl = null;
     if (req.file && req.file.buffer) {
       try {
-        console.log('Uploading company logo to S3...');
         logoUrl = await uploadFileToS3(req.file.buffer, req.file.originalname);
-        console.log('Logo uploaded successfully:', logoUrl);
       } catch (error) {
         console.error('Logo upload failed:', error);
         return errorResponse(res, `Logo upload failed: ${error.message}`, 400);
@@ -125,13 +121,10 @@ export async function createCompany(req, res) {
 
     // If GSTIN is provided, auto-fetch company details from IRIS IRP API
     if (gstin) {
-      console.log(`Fetching GST details for: ${gstin}`);
-
       const gstResult = await fetchGSTINDetails(gstin);
 
       if (gstResult.success && gstResult.data) {
         const gstData = gstResult.data;
-        console.log("GST Data received:", gstData);
 
         // Map the API response to your fields
         // Note: Adjust field names based on actual API response structure
@@ -150,8 +143,6 @@ export async function createCompany(req, res) {
         // Set defaults for India
         country = country || "India";
         currency = currency || "INR";
-
-        console.log("Mapped company data:", { name, city, state, pincode });
 
       } else {
         console.error("GST API failed:", gstResult.error);
@@ -219,9 +210,7 @@ export async function createCompany(req, res) {
         true
       ]);
 
-      console.log('Default bank account created:', bankAccountResult.rows[0]);
-
-    return successResponse(res, {
+      return successResponse(res, {
         message: gstin ? "Company created successfully with GST details and default cash account" : "Company created successfully with default cash account",
         company: newCompany,
         defaultBankAccount: bankAccountResult.rows[0]
@@ -232,7 +221,6 @@ export async function createCompany(req, res) {
       
       // Company was created successfully, but default bank account creation failed
       // Log the error but don't fail the entire operation
-      console.warn(`Company ${companyId} created, but default bank account creation failed:`, bankAccountError.message);
       
       return successResponse(res, {
         message: gstin ? "Company created successfully with GST details (default bank account creation failed)" : "Company created successfully (default bank account creation failed)",
@@ -358,9 +346,7 @@ export async function updateCompany(req, res) {
     let logoUrl = null;
     if (req.file && req.file.buffer) {
       try {
-        console.log('Uploading company logo to S3...');
         logoUrl = await uploadFileToS3(req.file.buffer, req.file.originalname);
-        console.log('Logo uploaded successfully:', logoUrl);
       } catch (error) {
         console.error('Logo upload failed:', error);
         return errorResponse(res, `Logo upload failed: ${error.message}`, 400);
@@ -370,13 +356,10 @@ export async function updateCompany(req, res) {
     // If GSTIN is provided, auto-fetch company details from IRIS IRP API
     let updatedFields = {};
     if (gstin) {
-      console.log(`Fetching GST details for: ${gstin}`);
-
       const gstResult = await fetchGSTINDetails(gstin);
 
       if (gstResult.success && gstResult.data) {
         const gstData = gstResult.data;
-        console.log("GST Data received:", gstData);
 
         // Map the API response to fields
         updatedFields.name = name || gstData.LegalName || gstData.TradeName || gstData.BusinessName;
@@ -395,7 +378,6 @@ export async function updateCompany(req, res) {
         updatedFields.country = country || "India";
         updatedFields.currency = currency || "INR";
 
-        console.log("Mapped company data from GST:", updatedFields);
       } else {
         console.error("GST API failed:", gstResult.error);
         return errorResponse(res, `Failed to fetch GST details: ${gstResult.error}`, 400);

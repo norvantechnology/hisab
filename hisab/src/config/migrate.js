@@ -13,8 +13,6 @@ const envPath = path.resolve(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 
 // Environment configuration loading
-console.log(`Loading environment from: ${envPath}`);
-console.log("DB_HOST:", process.env.DB_HOST ? "✅ Found" : "❌ Missing");
 
 const { Pool } = pg;
 
@@ -34,7 +32,6 @@ const modelsDir = path.join(__dirname, "../models");
 
 // Event listeners
 pool.on("connect", () => {
-  console.log("✅ Database connection established");
 });
 
 pool.on("error", (err) => {
@@ -48,7 +45,6 @@ pool.on("error", (err) => {
 async function ensureSchemaExists(schemaName) {
   try {
     await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schemaName}`);
-    console.log(`✅ Schema '${schemaName}' ensured`);
   } catch (err) {
     console.error(`❌ Failed to ensure schema '${schemaName}':`, err);
     throw err;
@@ -85,15 +81,12 @@ async function migrateModel(modelName) {
     const tableExists = await checkTableExists(`hisab.${modelName}`);
 
     if (tableExists) {
-      console.log(`ℹ️  Table hisab.${modelName} already exists`);
       return;
     }
 
-    console.log(`🔄 Creating table for hisab.${modelName}`);
     await client.query("BEGIN");
     await client.query(createTableQuery);
     await client.query("COMMIT");
-    console.log(`✅ Successfully created table hisab.${modelName}`);
   } catch (err) {
     await client.query("ROLLBACK");
     console.error(`❌ Failed to migrate model ${modelName}:`, err);
@@ -107,7 +100,6 @@ async function migrateModel(modelName) {
  * Run all migrations
  */
 async function runMigrations() {
-  console.log("🚀 Starting database migrations...");
 
   try {
     await pool.query("SELECT 1"); // Verify DB connection
@@ -118,7 +110,6 @@ async function runMigrations() {
       .map(file => file.replace(".sql", ""));
 
     if (modelFiles.length === 0) {
-      console.log("ℹ️  No migration files found in models directory");
       return;
     }
 
@@ -126,7 +117,6 @@ async function runMigrations() {
       await migrateModel(modelName);
     }
 
-    console.log("🎉 All migrations completed successfully!");
   } catch (err) {
     console.error("❌ Migration failed:", err);
     process.exit(1);

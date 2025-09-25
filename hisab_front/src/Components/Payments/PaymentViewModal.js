@@ -289,6 +289,12 @@ const PaymentViewModal = ({ isOpen, toggle, payment, onGeneratePDF, pdfLoading }
                     label: 'Current Balance',
                     color: 'info'
                 };
+            case 'opening-balance':
+                return {
+                    icon: <RiWalletLine className="me-1" size={14} />,
+                    label: 'Opening Balance',
+                    color: 'primary'
+                };
             case 'purchase':
                 return {
                     icon: <RiShoppingCartLine className="me-1" size={14} />,
@@ -354,6 +360,8 @@ const PaymentViewModal = ({ isOpen, toggle, payment, onGeneratePDF, pdfLoading }
         const totalAllocated = payment.transactions?.reduce((sum, t) => sum + parseAmount(t.amount), 0) || 0;
         const remainingAmount = allocatableAmount - totalAllocated;
         const isBalanced = Math.abs(remainingAmount) < 0.01;
+        const isOverpayment = remainingAmount > 0.01;
+        const isUnderpayment = remainingAmount < -0.01;
 
         return {
             baseAmount,
@@ -362,7 +370,11 @@ const PaymentViewModal = ({ isOpen, toggle, payment, onGeneratePDF, pdfLoading }
             allocatableAmount,
             totalAllocated,
             remainingAmount,
-            isBalanced
+            isBalanced,
+            isOverpayment,
+            isUnderpayment,
+            overpaymentAmount: isOverpayment ? remainingAmount : 0,
+            underpaymentAmount: isUnderpayment ? Math.abs(remainingAmount) : 0
         };
     };
 
@@ -563,11 +575,15 @@ const PaymentViewModal = ({ isOpen, toggle, payment, onGeneratePDF, pdfLoading }
                                         </span>
                                     </div>
                                     <div className="d-flex justify-content-between border-top pt-1">
-                                        <span style={{fontSize: '0.75rem'}}>Remaining:</span>
-                                        <span className={`fw-bold ${paymentSummary.remainingAmount < 0 ? 'text-danger' :
-                                                paymentSummary.remainingAmount > 0 ? 'text-warning' : 'text-success'}`} style={{fontSize: '0.75rem'}}>
+                                        <span style={{fontSize: '0.75rem'}}>
+                                            {paymentSummary.isOverpayment ? 'Excess/Credit:' : 
+                                             paymentSummary.isUnderpayment ? 'Shortfall:' : 'Remaining:'}
+                                        </span>
+                                        <span className={`fw-bold ${paymentSummary.isUnderpayment ? 'text-danger' :
+                                                paymentSummary.isOverpayment ? 'text-info' : 'text-success'}`} style={{fontSize: '0.75rem'}}>
                                             ₹{formatAmount(Math.abs(paymentSummary.remainingAmount))}
-                                            {paymentSummary.remainingAmount < 0 ? ' (Over)' : ''}
+                                            {paymentSummary.isOverpayment ? ' (Overpaid)' : 
+                                             paymentSummary.isUnderpayment ? ' (Underpaid)' : ''}
                                         </span>
                                     </div>
                                 </div>
@@ -608,9 +624,14 @@ const PaymentViewModal = ({ isOpen, toggle, payment, onGeneratePDF, pdfLoading }
 
                         {/* Warning for unbalanced payments */}
                         {!paymentSummary.isBalanced && (
-                            <Alert color="warning" className="mt-2 mb-0" style={{padding: '0.5rem', fontSize: '0.8rem'}}>
+                            <Alert color={paymentSummary.isOverpayment ? "info" : "warning"} className="mt-2 mb-0" style={{padding: '0.5rem', fontSize: '0.8rem'}}>
                                 <RiAlertLine className="me-1" size={14} />
-                                The allocated amounts don't match the allocatable amount.
+                                {paymentSummary.isOverpayment 
+                                    ? `This payment has an excess amount of ₹${formatAmount(paymentSummary.overpaymentAmount)} that can be used for future transactions or refunded.`
+                                    : paymentSummary.isUnderpayment
+                                    ? `This payment has a shortfall of ₹${formatAmount(paymentSummary.underpaymentAmount)}. Additional payment may be required.`
+                                    : 'The allocated amounts don\'t match the allocatable amount.'
+                                }
                             </Alert>
                         )}
                     </div>

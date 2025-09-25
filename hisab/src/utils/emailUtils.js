@@ -44,7 +44,6 @@ export async function sendEmail(params) {
 
     try {
         const info = await transporter.sendMail(mailOptions);
-        console.log(`Email sent to ${to}`, info.messageId);
         return info;
     } catch (error) {
         console.error('SMTP Error:', {

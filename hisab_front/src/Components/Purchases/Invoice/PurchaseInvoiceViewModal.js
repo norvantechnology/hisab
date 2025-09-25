@@ -21,6 +21,8 @@ import { generatePreviewHTML, adjustTemplateForCopies, generateMultipleCopies } 
 import { getTemplates } from '../../../services/templates';
 import { getPurchaseInvoiceForPrint } from '../../../services/purchaseInvoice';
 import { getDefaultCopies } from '../../../services/copyPreferences';
+import { getPaymentsForTransaction, getPaymentDetails } from '../../../services/payment';
+import PaymentViewModal from '../../Payments/PaymentViewModal';
 import { toast } from 'react-toastify';
 
 // Add CSS for spinner animation
@@ -36,13 +38,20 @@ const spinnerStyle = `
 
 const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfLoading }) => {
   const [defaultCopies, setDefaultCopies] = useState(2);
+  const [relatedPayments, setRelatedPayments] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState(null);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // Fetch default copy preference when modal opens
   useEffect(() => {
     if (isOpen) {
       fetchDefaultCopies();
+      if (invoice?.id) {
+        fetchRelatedPayments();
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, invoice?.id]);
 
   const fetchDefaultCopies = async () => {
     try {
@@ -82,6 +91,39 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
         {config.text}
       </Badge>
     );
+  };
+
+  const fetchRelatedPayments = async () => {
+    if (!invoice?.id) return;
+    
+    setPaymentsLoading(true);
+    try {
+      const response = await getPaymentsForTransaction('purchase', invoice.id);
+      if (response.success) {
+        setRelatedPayments(response.payments || []);
+      }
+    } catch (error) {
+      console.error('Error fetching related payments:', error);
+      setRelatedPayments([]);
+    } finally {
+      setPaymentsLoading(false);
+    }
+  };
+
+  const handlePaymentClick = async (payment) => {
+    try {
+      // Fetch complete payment details including allocations
+      const response = await getPaymentDetails(payment.id);
+      if (response.success) {
+        setSelectedPayment(response); // Use flat response structure
+        setShowPaymentModal(true);
+      } else {
+        toast.error('Failed to load payment details');
+      }
+    } catch (error) {
+      console.error('Error fetching payment details:', error);
+      toast.error('Failed to load payment details');
+    }
   };
 
   const getPaymentMethodDisplay = () => {
@@ -665,6 +707,56 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
             </Row>
           </CardBody>
         </Card>
+
+        {/* Payment Details Section */}
+        {relatedPayments.length > 0 && (
+          <Card className="border-0 shadow-sm mt-3">
+            <CardBody className="p-3">
+              <h6 className="text-warning mb-3 fw-bold d-flex align-items-center">
+                <RiWalletLine className="me-2" />
+                Payment Details
+              </h6>
+              {paymentsLoading ? (
+                <div className="text-center py-2">
+                  <div className="spinner-border spinner-border-sm text-warning" role="status">
+                    <span className="visually-hidden">Loading...</span>
+                  </div>
+                  <small className="text-muted ms-2">Loading payments...</small>
+                </div>
+              ) : (
+                <div className="payment-list">
+                  {relatedPayments.map((payment, index) => (
+                    <div 
+                      key={payment.id} 
+                      className="d-flex justify-content-between align-items-center py-2 px-2 border rounded mb-2 bg-white cursor-pointer"
+                      onClick={() => handlePaymentClick(payment)}
+                      style={{ cursor: 'pointer', transition: 'all 0.2s ease' }}
+                      onMouseEnter={(e) => e.target.closest('div').style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'}
+                      onMouseLeave={(e) => e.target.closest('div').style.boxShadow = 'none'}
+                    >
+                      <div className="flex-grow-1">
+                        <div className="fw-medium small text-warning">{payment.paymentNumber}</div>
+                        <div className="text-muted small">{new Date(payment.date).toLocaleDateString()}</div>
+                      </div>
+                      <div className="text-end me-2">
+                        <div className="fw-bold small text-danger">₹{parseFloat(payment.paidAmount || 0).toFixed(2)}</div>
+                        {payment.adjustmentType && payment.adjustmentType !== 'none' && (
+                          <div className="text-muted small">
+                            {payment.adjustmentType === 'extra_receipt' ? '+' : 
+                             payment.adjustmentType === 'discount' ? '-' : '+'}
+                            ₹{parseFloat(payment.adjustmentValue || 0).toFixed(2)}
+                          </div>
+                        )}
+                      </div>
+                      <RiArrowRightLine className="text-muted" size={14} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        )}
+
       </ModalBody>
       
       <ModalFooter className="bg-light py-2">
@@ -798,6 +890,18 @@ const PurchaseInvoiceViewModal = ({ isOpen, toggle, invoice, onGeneratePDF, pdfL
         </div>
       </ModalFooter>
     </Modal>
+
+    {/* Payment View Modal */}
+    {selectedPayment && (
+      <PaymentViewModal
+        isOpen={showPaymentModal}
+        toggle={() => {
+          setShowPaymentModal(false);
+          setSelectedPayment(null);
+        }}
+        payment={selectedPayment}
+      />
+    )}
     </>
   );
 };

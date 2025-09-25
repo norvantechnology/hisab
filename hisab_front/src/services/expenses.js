@@ -30,3 +30,11 @@ export const updateExpense = async (data) => {
         data
     });
 };
+
+export const bulkDeleteExpenses = async (ids) => {
+    return apiCall({
+        method: 'post',
+        endpoint: '/expenses/bulkDeleteExpenses',
+        data: { ids },
+    });
+};

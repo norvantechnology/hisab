@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Container, Row, Col, Card, CardBody, Button, Alert, Modal, ModalHeader, ModalBody, ModalFooter } from "reactstrap";
-import { RiAddLine, RiCloseLine, RiDownload2Line, RiSettings3Line } from "react-icons/ri";
+import { RiAddLine, RiCloseLine, RiDownload2Line, RiSettings3Line, RiDeleteBin6Line } from "react-icons/ri";
 import { toast,ToastContainer } from "react-toastify";
 import { useSearchParams } from 'react-router-dom';
 import ExportCSVModal from "../../../Components/Common/ExportCSVModal";
@@ -13,12 +13,14 @@ import SalesInvoiceViewModal from "../../../Components/Sales/Invoice/SalesInvoic
 import SalesInvoiceFilter from "../../../Components/Sales/Invoice/SalesInvoiceFilter";
 import ShareModal from "../../../Components/Common/ShareModal";
 import DeleteModal from "../../../Components/Common/DeleteModal";
+import BulkDeleteModal from "../../../Components/Common/BulkDeleteModal";
+import PaymentAdjustmentModal from "../../../Components/Common/PaymentAdjustmentModal";
 import PaymentForm from "../../../Components/Payments/PaymentForm";
 import PrintPreferencesManager from "../../../Components/Common/PrintPreferencesManager";
 
 
 // Services & Utils
-import { listSales, createSale, updateSales, deleteSale, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice, getSalesInvoiceForPrint } from "../../../services/salesInvoice";
+import { listSales, createSale, updateSales, deleteSale, bulkDeleteSales, generateSalesInvoicePDF, downloadSalesPDF, shareSalesInvoice, getSalesInvoiceForPrint } from "../../../services/salesInvoice";
 import { getTemplates } from "../../../services/templates";
 import { generatePreviewHTML, adjustTemplateForCopies, generateMultipleCopies } from "../../../utils/templatePreviewUtils";
 import { createPayment } from '../../../services/payment';
@@ -60,9 +62,14 @@ const SalesInvoicePage = () => {
             export: false,
             payment: false,
             share: false,
-            settings: false
+            settings: false,
+            bulkDelete: false,
+            paymentAdjustment: false
         },
         selectedInvoice: null,
+        selectedItems: [],
+        bulkDeleteLoading: false,
+        paymentConflict: null,
         isEditMode: false,
         apiLoading: false,
         apiError: null,
@@ -80,6 +87,9 @@ const SalesInvoicePage = () => {
         filters,
         modals,
         selectedInvoice,
+        selectedItems,
+        bulkDeleteLoading,
+        paymentConflict,
         isEditMode,
         apiLoading,
         apiError,
@@ -313,6 +323,77 @@ const SalesInvoicePage = () => {
         } catch (error) {
             setState(prev => ({ ...prev, apiLoading: false }));
             toast.error(error.message);
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedItems.length === 0) {
+            toast.warning("Please select items to delete");
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, bulkDeleteLoading: true }));
+            const response = await bulkDeleteSales(selectedItems);
+            
+            if (response.success) {
+                toast.success(`${response.successCount} sales deleted successfully`);
+                if (response.errorCount > 0) {
+                    toast.warning(`${response.errorCount} sales could not be deleted`);
+                }
+                setState(prev => ({ 
+                    ...prev, 
+                    selectedItems: [],
+                    modals: { ...prev.modals, bulkDelete: false }
+                }));
+                fetchData();
+            } else {
+                toast.error(response.message || "Failed to delete sales");
+            }
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            toast.error("Failed to delete sales");
+        } finally {
+            setState(prev => ({ ...prev, bulkDeleteLoading: false }));
+        }
+    };
+
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentConflict.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+            const response = isEditMode
+                ? await updateSales(formData)
+                : await createSale(formData);
+
+            if (response.success) {
+                toast.success(`Invoice ${isEditMode ? 'updated' : 'created'} successfully`);
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, main: false, paymentAdjustment: false },
+                    paymentConflict: null,
+                    apiLoading: false,
+                    apiError: null,
+                    isEditMode: false,
+                    selectedInvoice: null
+                }));
+                fetchData();
+            }
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            setState(prev => ({ 
+                ...prev, 
+                modals: { ...prev.modals, paymentAdjustment: false },
+                paymentConflict: null,
+                apiError: error.data?.message || error.message || 'Failed to process payment adjustment'
+            }));
         }
     };
 
@@ -578,13 +659,35 @@ const SalesInvoicePage = () => {
                 throw new Error(response.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`);
             }
         } catch (error) {
-            // Keep modal open and pass error to form component
+            console.log('🔍 Sales page caught error:', {
+                error,
+                status: error.status,
+                data: error.data,
+                hasPaymentConflict: error.data?.paymentConflict
+            });
+            
+            setState(prev => ({ ...prev, apiLoading: false }));
+            
+            // If it's a payment adjustment required (409), show payment adjustment modal at parent level
+            if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                console.log('✅ Sales page detected payment adjustment required, showing modal');
+                setState(prev => ({ 
+                    ...prev,
+                    modals: { ...prev.modals, paymentAdjustment: true },
+                    paymentConflict: {
+                        isActive: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: values
+                    }
+                }));
+                return; // Don't throw error, handle it through state
+            }
+            
+            // For other errors, set apiError to display in form
             setState(prev => ({ 
                 ...prev, 
-                apiLoading: false,
-                apiError: error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
+                apiError: error.data?.message || error.message || `Failed to ${isEditMode ? 'update' : 'create'} invoice`
             }));
-            // Don't show toast error anymore - form will display it
         }
     };
 
@@ -611,10 +714,23 @@ const SalesInvoicePage = () => {
     };
 
     const prepareExportData = () => {
-        return invoices.map(invoice => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? invoices.filter(invoice => selectedItems.includes(invoice.id))
+            : invoices;
+
+        console.log('📊 Sales CSV Export:', {
+            totalInvoices: invoices.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(invoice => ({
             'Invoice Number': invoice.invoiceNumber || 'N/A',
             'Date': new Date(invoice.invoiceDate).toLocaleDateString(),
-            'Customer': invoice.accountName || invoice.contactName || 'N/A',
+            'Customer': invoice.contactName || invoice.contact?.name || 'N/A',
+            'Bank Account': invoice.accountName || invoice.bankAccount?.accountName || 'N/A',
             'Amount': parseFloat(invoice.netReceivable || 0).toFixed(2),
             'Tax': parseFloat(invoice.taxAmount || 0).toFixed(2),
             'Discount': parseFloat(invoice.totalDiscount || 0).toFixed(2),
@@ -653,6 +769,16 @@ const SalesInvoicePage = () => {
                                 <RiDownload2Line className="align-bottom" /> 
                                 <span className="d-none d-sm-inline">Export</span>
                             </Button>
+                            {selectedItems.length > 0 && (
+                                <Button 
+                                    color="danger" 
+                                    onClick={() => toggleModal('bulkDelete', true)}
+                                    className="d-flex align-items-center justify-content-center gap-1"
+                                >
+                                    <RiDeleteBin6Line className="align-bottom" /> 
+                                    <span className="d-none d-sm-inline">Delete ({selectedItems.length})</span>
+                                </Button>
+                            )}
                             <Button 
                                 color="success" 
                                 onClick={handleAddClick}
@@ -681,6 +807,8 @@ const SalesInvoicePage = () => {
                         onPrint={handlePrint}
                         onShare={handleShare}
                         pdfLoading={pdfLoading}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 
@@ -710,6 +838,28 @@ const SalesInvoicePage = () => {
                     onDeleteClick={handleDeleteInvoice}
                     onCloseClick={() => toggleModal('delete', false)}
                     isLoading={apiLoading}
+                />
+
+                <BulkDeleteModal
+                    isOpen={modals.bulkDelete}
+                    toggle={() => toggleModal('bulkDelete', false)}
+                    selectedCount={selectedItems.length}
+                    onConfirm={handleBulkDelete}
+                    isLoading={bulkDeleteLoading}
+                />
+
+                <PaymentAdjustmentModal
+                    isOpen={modals.paymentAdjustment}
+                    toggle={() => setState(prev => ({ 
+                        ...prev, 
+                        modals: { ...prev.modals, paymentAdjustment: false },
+                        paymentConflict: null
+                    }))}
+                    paymentInfo={paymentConflict?.paymentInfo}
+                    newAmount={paymentConflict?.pendingFormData?.netReceivable}
+                    onConfirm={handlePaymentAdjustmentChoice}
+                    isLoading={apiLoading}
+                    transactionType="sale"
                 />
 
                 <ExportCSVModal

@@ -9,6 +9,7 @@ router.delete('/deleteExpenseCategory', authenticateUser, checkCompanyModulePerm
 router.get('/getExpenseCategories', authenticateUser, checkCompanyModulePermission('expense', 'VIEW'), expenseController.getExpenseCategories);
 router.post('/createExpense', authenticateUser, checkCompanyModulePermission('expense', 'CREATE'), expenseController.createExpense);
 router.delete('/deleteExpense', authenticateUser, checkCompanyModulePermission('expense', 'DELETE'), expenseController.deleteExpense);
+router.post('/bulkDeleteExpenses', authenticateUser, checkCompanyModulePermission('expense', 'DELETE'), expenseController.bulkDeleteExpenses);
 router.get('/getExpenses', authenticateUser, checkCompanyModulePermission('expense', 'VIEW'), expenseController.getExpenses);
 router.put('/updateExpense', authenticateUser, checkCompanyModulePermission('expense', 'EDIT'), expenseController.updateExpense);
 

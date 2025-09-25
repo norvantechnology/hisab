@@ -60,7 +60,8 @@ const ProductsPage = () => {
         viewLoading: false,
         categoriesLoading: false,
         taxCategoriesLoading: false,
-        newStockCategoryName: ''
+        newStockCategoryName: '',
+        selectedItems: []
     });
 
     const {
@@ -79,7 +80,8 @@ const ProductsPage = () => {
         viewLoading,
         categoriesLoading,
         taxCategoriesLoading,
-        newStockCategoryName
+        newStockCategoryName,
+        selectedItems
     } = state;
 
     // Use the modern company selection hook
@@ -494,12 +496,29 @@ const ProductsPage = () => {
         }));
     };
 
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
     const prepareExportData = () => {
-        return products.map(product => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? products.filter(product => selectedItems.includes(product.id))
+            : products;
+
+        console.log('📊 Products CSV Export:', {
+            totalProducts: products.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(product => ({
             'Name': product.name || 'N/A',
             'Item Code': product.itemCode || 'N/A',
             'HSN Code': product.hsnCode || '',
             'Rate': parseFloat(product.rate || 0).toFixed(2),
+            'Selling Price': parseFloat(product.sellingPrice || 0).toFixed(2),
             'Type': product.itemType ? product.itemType.charAt(0).toUpperCase() + product.itemType.slice(1) : '',
             'Unit': product.unitOfMeasurementName || '',
             'Category': product.categoryName || product.stockCategoryName || '',
@@ -564,6 +583,8 @@ const ProductsPage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 

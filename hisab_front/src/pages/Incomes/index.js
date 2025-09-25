@@ -1,21 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Container, Row, Col, Card, CardBody, Button } from 'reactstrap';
 import { toast , ToastContainer} from 'react-toastify';
-import { RiDownload2Line, RiAddLine } from 'react-icons/ri';
+import { RiDownload2Line, RiAddLine, RiDeleteBin6Line } from 'react-icons/ri';
 import BreadCrumb from '../../Components/Common/BreadCrumb';
 import IncomeFilters from '../../Components/Incomes/IncomeFilters';
 import IncomeTable from '../../Components/Incomes/IncomeTable';
 import IncomeForm from '../../Components/Incomes/IncomeForm';
 import IncomeViewModal from '../../Components/Incomes/IncomeViewModal';
 import AddCategoryModal from '../../Components/Incomes/AddCategoryModal';
+import PaymentForm from '../../Components/Payments/PaymentForm';
 import DeleteModal from "../../Components/Common/DeleteModal";
+import BulkDeleteModal from "../../Components/Common/BulkDeleteModal";
 import ExportCSVModal from '../../Components/Common/ExportCSVModal';
 import Loader from '../../Components/Common/Loader';
 import { getIncomeCategories, createIncomeCategory } from '../../services/categories';
 import { getBankAccounts } from '../../services/bankAccount';
 import { getContacts } from '../../services/contacts';
 import { getCurrentMonthRange } from '../../utils/dateUtils';
-import { createIncome, deleteIncome, getIncomes, updateIncome } from '../../services/incomes.js';
+import { createIncome, deleteIncome, bulkDeleteIncomes, getIncomes, updateIncome } from '../../services/incomes.js';
+import { createPayment } from '../../services/payment';
 import { getSelectedCompanyId } from '../../utils/apiCall';
 import useCompanySelectionState from '../../hooks/useCompanySelection';
 
@@ -49,8 +52,13 @@ const IncomesPage = () => {
             main: false,
             view: false,
             export: false,
-            category: false
+            category: false,
+            bulkDelete: false,
+            payment: false
         },
+        selectedIncomeForPayment: null,
+        selectedItems: [],
+        bulkDeleteLoading: false,
         newCategoryName: ''
     });
 
@@ -75,6 +83,9 @@ const IncomesPage = () => {
         exportModal,
         viewMode,
         modals,
+        selectedItems,
+        selectedIncomeForPayment,
+        bulkDeleteLoading,
         newCategoryName
     } = state;
 
@@ -95,6 +106,11 @@ const IncomesPage = () => {
 
     // Use the new company selection hook
     const { selectedCompanyId } = useCompanySelectionState();
+
+    // Debug: Monitor selectedIncomeForPayment state changes
+    useEffect(() => {
+        console.log('🔍 selectedIncomeForPayment state changed:', selectedIncomeForPayment);
+    }, [selectedIncomeForPayment]);
 
     // API calls with loading states
     const fetchData = async () => {
@@ -244,6 +260,85 @@ const IncomesPage = () => {
         }
     };
 
+    const handleBulkDelete = async () => {
+        if (selectedItems.length === 0) {
+            toast.warning("Please select items to delete");
+            return;
+        }
+
+        try {
+            setState(prev => ({ ...prev, bulkDeleteLoading: true }));
+            const response = await bulkDeleteIncomes(selectedItems);
+            
+            if (response.success) {
+                toast.success(`${response.successCount} incomes deleted successfully`);
+                if (response.errorCount > 0) {
+                    toast.warning(`${response.errorCount} incomes could not be deleted`);
+                }
+                setState(prev => ({ 
+                    ...prev, 
+                    selectedItems: [],
+                    modals: { ...prev.modals, bulkDelete: false }
+                }));
+                fetchData();
+            } else {
+                toast.error(response.message || "Failed to delete incomes");
+            }
+        } catch (error) {
+            console.error('Bulk delete error:', error);
+            toast.error("Failed to delete incomes");
+        } finally {
+            setState(prev => ({ ...prev, bulkDeleteLoading: false }));
+        }
+    };
+
+    const handleSelectionChange = (newSelectedItems) => {
+        setState(prev => ({ ...prev, selectedItems: newSelectedItems }));
+    };
+
+    const handleCreatePayment = (income) => {
+        console.log('🎯 handleCreatePayment called with income:', income);
+        
+        // Only allow payment for pending incomes with remaining amount
+        if (income.status !== 'pending' || parseFloat(income.remaining_amount || 0) <= 0) {
+            toast.error("Payment can only be created for pending incomes with remaining amount");
+            return;
+        }
+
+        console.log('✅ Setting selectedIncomeForPayment and opening payment modal');
+        setState(prev => ({
+            ...prev,
+            selectedIncomeForPayment: income,
+            modals: { ...prev.modals, payment: true }
+        }));
+    };
+
+    const handleSubmitPayment = async (paymentData) => {
+        try {
+            setState(prev => ({ ...prev, apiLoading: true }));
+
+            const response = await createPayment(paymentData);
+
+            if (response.success) {
+                toast.success("Payment created successfully");
+                setState(prev => ({
+                    ...prev,
+                    modals: { ...prev.modals, payment: false },
+                    selectedIncomeForPayment: null,
+                    apiLoading: false
+                }));
+                
+                // Refresh the data to show updated amounts
+                fetchData();
+            } else {
+                throw new Error(response.message || "Failed to create payment");
+            }
+        } catch (error) {
+            setState(prev => ({ ...prev, apiLoading: false }));
+            toast.error(error.message || "Failed to create payment");
+        }
+    };
+
     const handleAddCategory = async () => {
         if (!newCategoryName.trim()) {
             toast.error("Category name cannot be empty");
@@ -278,7 +373,8 @@ const IncomesPage = () => {
                 date: values.date,
                 categoryId: values.categoryId,
                 amount: values.amount.toString(),
-                notes: values.notes || ''
+                notes: values.notes || '',
+                paymentAdjustmentChoice: values.paymentAdjustmentChoice // Include payment adjustment choice
             };
 
             // Always include all payment-related fields to ensure proper clearing
@@ -322,7 +418,14 @@ const IncomesPage = () => {
         } catch (error) {
             console.error('Error in handleSubmitIncome:', error);
             setState(prev => ({ ...prev, apiLoading: false }));
-            toast.error(error.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'create'} income`);
+            
+            // If it's a payment conflict (409), let the form component handle it
+            if (error.status === 409 && error.data?.paymentConflict) {
+                throw error; // Re-throw to let IncomeForm handle the payment adjustment modal
+            }
+            
+            // Handle other errors with toast
+            toast.error(error.data?.message || error.message || `Failed to ${isEditMode ? 'update' : 'create'} income`);
         }
     };
 
@@ -345,7 +448,19 @@ const IncomesPage = () => {
     };
 
     const prepareExportData = () => {
-        return incomes.map(income => ({
+        // Export only selected items if any are selected, otherwise export all
+        const itemsToExport = selectedItems.length > 0 
+            ? incomes.filter(income => selectedItems.includes(income.id))
+            : incomes;
+
+        console.log('📊 Incomes CSV Export:', {
+            totalIncomes: incomes.length,
+            selectedCount: selectedItems.length,
+            exportingCount: itemsToExport.length,
+            exportType: selectedItems.length > 0 ? 'Selected items only' : 'All items'
+        });
+
+        return itemsToExport.map(income => ({
             'Date': new Date(income.date).toLocaleDateString(),
             'Category': income.categoryName || 'N/A',
             'Amount': parseFloat(income.amount || 0).toFixed(2),
@@ -392,6 +507,11 @@ const IncomesPage = () => {
                             <Button color="primary" onClick={() => toggleModal('export', true)}>
                                 <RiDownload2Line className="align-middle me-1" /> Export
                             </Button>
+                            {selectedItems.length > 0 && (
+                                <Button color="danger" onClick={() => toggleModal('bulkDelete', true)}>
+                                    <RiDeleteBin6Line className="align-middle me-1" /> Delete ({selectedItems.length})
+                                </Button>
+                            )}
                             <Button color="success" onClick={handleAddClick}>
                                 <RiAddLine className="align-middle me-1" /> Add Income
                             </Button>
@@ -410,6 +530,9 @@ const IncomesPage = () => {
                         onView={handleViewClick}
                         onEdit={handleEditClick}
                         onDelete={handleDeleteClick}
+                        onCreatePayment={handleCreatePayment}
+                        selectedItems={selectedItems}
+                        onSelectionChange={handleSelectionChange}
                     />
                 )}
 
@@ -449,11 +572,30 @@ const IncomesPage = () => {
                     isLoading={apiLoading}
                 />
 
+                <BulkDeleteModal
+                    isOpen={modals.bulkDelete}
+                    toggle={() => toggleModal('bulkDelete', false)}
+                    selectedCount={selectedItems.length}
+                    onConfirm={handleBulkDelete}
+                    isLoading={bulkDeleteLoading}
+                />
+
                 <ExportCSVModal
                     show={modals.export}
                     onCloseClick={() => toggleModal('export', false)}
                     data={prepareExportData()}
                     filename="incomes"
+                />
+
+                <PaymentForm
+                    isOpen={modals.payment}
+                    toggle={() => toggleModal('payment', false)}
+                    bankAccounts={bankAccounts}
+                    contacts={contacts}
+                    onSubmit={handleSubmitPayment}
+                    isLoading={apiLoading}
+                    selectedInvoice={selectedIncomeForPayment}
+                    invoiceType="income"
                 />
             </Container>
         </div>

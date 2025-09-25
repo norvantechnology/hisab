@@ -12,9 +12,60 @@ const ContactsTable = ({
   onView, 
   onEdit, 
   onDelete,
-  onViewStatement 
+  onViewStatement,
+  selectedItems = [],
+  onSelectionChange = () => {}
 }) => {
+    // Selection handlers
+    const isAllSelected = selectedItems.length === contacts.length && contacts.length > 0;
+    const isPartiallySelected = selectedItems.length > 0 && selectedItems.length < contacts.length;
+
+    const handleSelectAll = () => {
+        if (isAllSelected) {
+            onSelectionChange([]);
+        } else {
+            onSelectionChange(contacts.map(contact => contact.id));
+        }
+    };
+
+    const handleSelectItem = (id) => {
+        if (selectedItems.includes(id)) {
+            onSelectionChange(selectedItems.filter(item => item !== id));
+        } else {
+            onSelectionChange([...selectedItems, id]);
+        }
+    };
+
     const columns = useMemo(() => [
+        {
+            header: ({ table }) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={isAllSelected}
+                        ref={(input) => {
+                            if (input) input.indeterminate = isPartiallySelected;
+                        }}
+                        onChange={handleSelectAll}
+                    />
+                </div>
+            ),
+            accessorKey: "select",
+            cell: (cell) => (
+                <div className="d-flex align-items-center">
+                    <input
+                        type="checkbox"
+                        className="form-check-input"
+                        checked={selectedItems.includes(cell.row.original.id)}
+                        onChange={() => handleSelectItem(cell.row.original.id)}
+                    />
+                </div>
+            ),
+            enableColumnFilter: false,
+            enableSorting: false,
+            size: 50
+        },
         {
             header: "Name",
             accessorKey: "name",
@@ -84,27 +135,14 @@ const ContactsTable = ({
             header: "Current Balance",
             accessorKey: "calculatedBalance",
             cell: (cell) => {
-                // Debug logging to see what data we're receiving
-                console.log('=== CONTACT BALANCE DEBUG ===');
-                console.log('Contact name:', cell.row.original.name);
-                console.log('Full contact object:', cell.row.original);
-                console.log('calculatedBalance:', cell.row.original.calculatedBalance);
-                console.log('calculatedBalance.amount:', cell.row.original.calculatedBalance?.amount);
-                console.log('calculatedBalance.type:', cell.row.original.calculatedBalance?.type);
-                console.log('currentBalance:', cell.row.original.currentBalance);
-                console.log('currentBalanceType:', cell.row.original.currentBalanceType);
-                console.log('=== END DEBUG ===');
-                
-                // Use calculated balance if available, otherwise fall back to stored balance
+                // UPDATED: Always use calculated balance since we don't store balance in DB anymore
                 const calculatedBalance = cell.row.original.calculatedBalance;
                 const balance = calculatedBalance ? 
                     parseFloat(calculatedBalance.amount || 0) : 
-                    parseFloat(cell.row.original.currentBalance || 0);
+                    parseFloat(cell.row.original.openingBalance || 0); // Fallback to opening balance
                 const balanceType = calculatedBalance ? 
                     calculatedBalance.type : 
-                    cell.row.original.currentBalanceType;
-                
-
+                    cell.row.original.openingBalanceType || 'payable'; // Fallback to opening balance type
                 
                 if (balanceType === 'none' || balance === 0) {
                     return <span className="text-muted">₹0.00</span>;

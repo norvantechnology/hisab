@@ -6,10 +6,17 @@ import * as Yup from "yup";
 import { useFormik } from "formik";
 import BankAccountContactDropdown from '../Common/BankAccountContactDropdown';
 import BankAccountDropdown from '../Common/BankAccountDropdown';
+import PaymentAdjustmentModal from '../Common/PaymentAdjustmentModal';
 import CategoryDropdown from '../Common/CategoryDropdown';
 import { getTodayDate } from '../../utils/dateUtils';
 
 const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, onSubmit, isLoading, onAddCategory }) => {
+    const [paymentAdjustmentModal, setPaymentAdjustmentModal] = React.useState({
+        isOpen: false,
+        paymentInfo: null,
+        pendingFormData: null
+    });
+
     const validation = useFormik({
         enableReinitialize: true,
         initialValues: {
@@ -28,8 +35,8 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, 
             date: Yup.date().required("Date is required"),
             categoryId: Yup.string().required("Category is required"),
             paymentMethod: Yup.string().required("Payment method is required"),
-            bankAccountId: Yup.string().when(['paymentMethod', 'status'], {
-                is: (paymentMethod, status) => paymentMethod === 'bank' || (paymentMethod === 'contact' && status === 'paid'),
+            bankAccountId: Yup.string().when('paymentMethod', {
+                is: 'bank',
                 then: () => Yup.string().required("Bank account is required"),
                 otherwise: () => Yup.string()
             }),
@@ -55,9 +62,48 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, 
         }),
         onSubmit: async (values) => {
             console.log('Form submitted with values:', values);
-            await onSubmit(values);
+            
+            try {
+                await onSubmit(values);
+            } catch (error) {
+                if (error.status === 409 && error.data?.requiresPaymentAdjustment) {
+                    // Payment adjustment required - show adjustment modal
+                    console.log('✅ Expense: Payment adjustment modal should open now');
+                    setPaymentAdjustmentModal({
+                        isOpen: true,
+                        paymentInfo: error.data.paymentInfo,
+                        pendingFormData: values
+                    });
+                    return; // Don't close the form yet
+                }
+                // Re-throw other errors to be handled by parent
+                throw error;
+            }
         }
     });
+
+    // Handle payment adjustment choice
+    const handlePaymentAdjustmentChoice = async (choice) => {
+        try {
+            const formData = {
+                ...paymentAdjustmentModal.pendingFormData,
+                paymentAdjustmentChoice: choice
+            };
+            
+            await onSubmit(formData);
+            
+            // Close the payment adjustment modal
+            setPaymentAdjustmentModal({
+                isOpen: false,
+                paymentInfo: null,
+                pendingFormData: null
+            });
+        } catch (error) {
+            console.error('Error handling payment adjustment:', error);
+            // Keep the modal open and let parent handle the error
+            throw error;
+        }
+    };
 
     // Reset form when modal opens or selectedExpense changes
     useEffect(() => {
@@ -137,6 +183,13 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, 
 
     const handleStatusChange = (selectedOption) => {
         const status = selectedOption?.value;
+        
+        // Prevent status change if bank account is selected (should always be 'paid')
+        if (validation.values.paymentMethod === 'bank') {
+            console.log(`🚫 Cannot change status when bank account is selected. Status remains 'paid'.`);
+            return;
+        }
+        
         validation.setFieldValue('status', status);
         
         if (status === 'pending') {
@@ -320,6 +373,17 @@ const ExpenseForm = ({ isOpen, toggle, isEditMode, categories, selectedExpense, 
                     </ModalFooter>
                 </Form>
             </ModalBody>
+
+            {/* Payment Adjustment Modal */}
+            <PaymentAdjustmentModal
+                isOpen={paymentAdjustmentModal.isOpen}
+                toggle={() => setPaymentAdjustmentModal(prev => ({ ...prev, isOpen: false }))}
+                paymentInfo={paymentAdjustmentModal.paymentInfo}
+                newAmount={paymentAdjustmentModal.pendingFormData?.amount}
+                onConfirm={handlePaymentAdjustmentChoice}
+                isLoading={isLoading}
+                transactionType="expense"
+            />
         </Modal>
     );
 };

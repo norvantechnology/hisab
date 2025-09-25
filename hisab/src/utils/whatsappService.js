@@ -38,7 +38,6 @@ export async function sendWhatsAppTextMessage(recipientPhone, message) {
             }
         );
 
-        console.log(`WhatsApp message sent to ${recipientPhone}:`, response.data);
         return response.data;
     } catch (error) {
         console.error('WhatsApp API Error:', {
@@ -85,7 +84,6 @@ export async function sendWhatsAppDocument(recipientPhone, documentUrl, filename
             }
         );
 
-        console.log(`WhatsApp document sent to ${recipientPhone}:`, response.data);
         return response.data;
     } catch (error) {
         console.error('WhatsApp API Error:', {
@@ -158,7 +156,6 @@ export async function sendWhatsAppInteractiveMessage(recipientPhone, bodyText, b
             }
         );
 
-        console.log(`WhatsApp interactive message sent to ${recipientPhone}:`, response.data);
         return response.data;
     } catch (error) {
         console.error('WhatsApp API Error:', {

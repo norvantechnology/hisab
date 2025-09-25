@@ -300,7 +300,6 @@ const BankAccounts = () => {
                 .oneOf(Object.keys(ACCOUNT_TYPES), "Invalid account type")
                 .required("Account type is required"),
             openingBalance: Yup.number()
-                .min(0, "Balance cannot be negative")
                 .required("Opening balance is required"),
         }),
         onSubmit: async (values) => {
